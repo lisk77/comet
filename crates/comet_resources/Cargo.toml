@@ -1,0 +1,19 @@
+[package]
+name = "comet_resources"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+comet_log = { path = "../comet_log" }
+chrono = "0.4.38"
+
+wgpu = { version = "22.0"}
+anyhow = "1.0"
+tobj = { version = "3.2", default-features = false, features = ["async"]}
+bytemuck = { version = "1.16", features = [ "derive" ] }
+log = "0.4.22"
+
+[dependencies.image]
+version = "0.24"
+default-features = false
+features = ["png", "jpeg", "hdr"]

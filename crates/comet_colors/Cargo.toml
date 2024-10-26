@@ -1,0 +1,8 @@
+[package]
+name = "comet_colors"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+comet_math = { path = "../comet_math" }
+wgpu = { version = "22.0" }

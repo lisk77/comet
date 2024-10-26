@@ -1,0 +1,27 @@
+[package]
+name = "comet_renderer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+comet_math = { path = "../comet_math" }
+comet_resources = { path = "../comet_resources" }
+comet_colors = { path = "../comet_colors" }
+comet_log = { path = "../comet_log" }
+
+cfg-if = "1"
+anyhow = "1.0"
+bytemuck = { version = "1.16", features = [ "derive" ] }
+cgmath = "0.18"
+env_logger = "0.10"
+pollster = "0.3"
+log = "0.4"
+tobj = { version = "3.2", default-features = false, features = ["async"]}
+wgpu = { version = "22.0"}
+winit = { version = "0.29", features = ["rwh_05"] }
+instant = "0.1"
+
+[dependencies.image]
+version = "0.24"
+default-features = false
+features = ["png", "jpeg", "hdr"]

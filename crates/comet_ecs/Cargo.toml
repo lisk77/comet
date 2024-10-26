@@ -1,0 +1,12 @@
+[package]
+name = "comet_ecs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bit-set = "0.8.0"
+component_derive = { path = "./component_derive" }
+comet_math = { path = "../comet_math" }
+comet_resources = { path = "../comet_resources" }
+comet_log = { path = "../comet_log" }
+chrono = "0.4"
