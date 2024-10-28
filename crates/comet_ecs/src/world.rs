@@ -125,6 +125,25 @@ impl World {
 		self.archetypes.create_archetype(components);
 	}
 
+	fn remove_archetype(&mut self, components: ComponentSet) {
+		self.archetypes.remove_archetype(&components);
+	}
+
+	fn remove_archetype_subsets(&mut self, components: ComponentSet) {
+		let component_sets = self.archetypes.component_sets();
+		let keys: Vec<ComponentSet> = component_sets.iter()
+			.enumerate()
+			.filter_map(|(i, &ref elem)| if elem.is_subset(&components) { Some(i) } else { None })
+			.collect::<Vec<usize>>()
+			.iter()
+			.map(|index| component_sets[*index].clone())
+			.collect::<Vec<ComponentSet>>();
+
+		for key in keys {
+			self.remove_archetype(key.clone());
+		}
+	}
+
 	fn add_entity_to_archetype(&mut self, entity_id: u32, components: ComponentSet) {
 		self.archetypes.add_entity_to_archetype(&components, entity_id);
 	}
@@ -159,6 +178,7 @@ impl World {
 
 	pub fn register_component<T: Component + 'static>(&mut self) {
 		self.components.register_component::<T>(self.entities.len());
+		self.create_archetype(ComponentSet::from_ids(vec![T::type_id()]));
 		info!(format!("Registered component: {}", T::type_name()));
 	}
 
@@ -177,8 +197,10 @@ impl World {
 		if !self.archetypes.contains_archetype(&self.get_component_set(entity_id)) {
 			self.create_archetype(self.get_component_set(entity_id));
 		}
-		self.add_entity_to_archetype(entity_id as u32, self.get_component_set(entity_id));
-
+		self.add_entity_to_archetype(entity_id as u32, ComponentSet::from_ids(vec![T::type_id()]));
+		if self.get_component_set(entity_id) != ComponentSet::from_ids(vec![T::type_id()]) {
+			self.add_entity_to_archetype(entity_id as u32, self.get_component_set(entity_id));
+		}
 		info!(format!("Added component {} to entity {}", T::type_name(), entity_id));
 		debug!(format!("{:?}", self.archetypes));
 	}
@@ -191,7 +213,7 @@ impl World {
 
 	pub fn get_component<T: Component + 'static>(&self, entity_id: usize) -> &T {
 		assert_ne!(self.entities.get(entity_id), None, "There is no entity with this ID ({}) in the world!", entity_id);
-		assert!(self.components.get_component::<T>(entity_id) != None, "There is no component {} bound to the entity {} in the world!", T::type_name(), entity_id);
+		//assert_ne!(self.components.get_component::<T>(entity_id), None, "There is no component {} bound to the entity {} in the world!", T::type_name(), entity_id);
 		self.components.get_component::<T>(entity_id).unwrap()
 	}
 
@@ -203,7 +225,7 @@ impl World {
 
 	pub fn get_entities_with(&self, components: ComponentSet) -> Vec<u32> {
 		assert!(self.archetypes.contains_archetype(&components), "The given components {:?} are not registered in the world!", components);
-		info!(format!("Querying entities with components: {:?}", components));
+		//debug!(format!("Querying entities with components: {:?}", components));
 		self.archetypes.get_archetype(&components).unwrap().clone()
 	}
 }

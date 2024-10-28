@@ -15,7 +15,7 @@ pub trait InnerSpace {
 
 /// Representation of a 2D Vector
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Vec2 {
 	x: f32,
@@ -41,6 +41,14 @@ impl Vec2 {
 
 	pub fn y(&self) -> f32 {
 		self.y
+	}
+
+	pub fn set_x(&mut self, new_x: f32) {
+		self.x = new_x;
+	}
+
+	pub fn set_y(&mut self, new_y: f32) {
+		self.y = new_y;
 	}
 
 	pub fn length(&self) -> f32 {
@@ -123,7 +131,7 @@ impl Mul<f32> for Vec2 {
 
 /// Representation of a 3D Vector
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Vec3 {
 	pub x: f32,
@@ -159,6 +167,18 @@ impl Vec3 {
 
 	pub fn z(&self) -> f32 {
 		self.z
+	}
+
+	pub fn set_x(&mut self, new_x: f32) {
+		self.x = new_x;
+	}
+
+	pub fn set_y(&mut self, new_y: f32) {
+		self.y = new_y;
+	}
+
+	pub fn set_z(&mut self, new_z: f32) {
+		self.z = new_z;
 	}
 
 	pub fn into_quaternion(&self) -> Quat {
@@ -418,7 +438,7 @@ impl Mul<f32> for Vec3 {
 
 /// Representation of a 4D Vector
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Vec4 {
 	x: f32,
@@ -467,6 +487,22 @@ impl Vec4 {
 
 	pub fn w(&self) -> f32 {
 		self.w
+	}
+
+	pub fn set_x(&mut self, new_x: f32) {
+		self.x = new_x;
+	}
+
+	pub fn set_y(&mut self, new_y: f32) {
+		self.y = new_y;
+	}
+
+	pub fn set_z(&mut self, new_z: f32) {
+		self.z = new_z;
+	}
+
+	pub fn set_w(&mut self, new_w: f32) {
+		self.w = new_w;
 	}
 
 	pub fn xxxx(&self) -> Vec4 {

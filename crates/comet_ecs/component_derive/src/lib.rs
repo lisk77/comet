@@ -12,6 +12,7 @@ pub fn my_trait_derive(input: TokenStream) -> TokenStream {
 
     // Get the name of the struct
     let name = &input.ident;
+    let name = &input.ident;
 
     let fields = if let Data::Struct(data) = &input.data {
         match &data.fields {

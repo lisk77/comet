@@ -1,4 +1,4 @@
-use std::path::Path;
+//use comet_resources::Vertex;
 use crate::math::{
 	Vec2,
 	Vec3
@@ -23,15 +23,12 @@ pub trait Component: Send + Sync + PartialEq + Default +  'static {
 
 #[derive(Component)]
 pub struct Position2D {
-	x: f32,
-	y: f32
+	position: Vec2
 }
 
 #[derive(Component)]
 pub struct Position3D {
-	x: f32,
-	y: f32,
-	z: f32
+	position: Vec3
 }
 
 #[derive(Component)]
@@ -50,81 +47,109 @@ pub struct Rotation3D {
 pub struct Renderer2D {
 	is_visible: bool,
 	texture: &'static str,
-	scale: f32
+	scale: Vec2
 }
 
 impl Position2D {
 	pub fn from_vec(vec: Vec2) -> Self {
 		Self {
-			x: vec.x(),
-			y: vec.y()
+			position: vec
 		}
 	}
 
 	pub fn as_vec(&self) -> Vec2 {
-		Vec2::new(
-			self.x,
-			self.y
-		)
+		self.position
 	}
 
-	pub fn x(&self) -> &f32 {
-		&self.x
+	pub fn x(&self) -> f32 {
+		self.position.x()
 	}
 
-	pub fn y(&self) -> &f32 {
-		&self.y
+	pub fn y(&self) -> f32 {
+		self.position.y()
 	}
 
 	pub fn set_x(&mut self, new_x: f32) {
-		self.x = new_x;
+		self.position.set_x(new_x);
 	}
 
 	pub fn set_y(&mut self, new_y: f32) {
-		self.y = new_y;
+		self.position.set_y(new_y);
 	}
 }
 
 impl Position3D {
 	pub fn from_vec(vec: Vec3) -> Self {
 		Self {
-			x: vec.x(),
-			y: vec.y(),
-			z: vec.z()
+			position: vec
 		}
 	}
 
 	pub fn as_vec(&self) -> Vec3 {
-		Vec3::new(
-			self.x,
-			self.y,
-			self.z
-		)
+		self.position
 	}
 
-	pub fn x(&self) -> &f32 {
-		&self.x
+	pub fn x(&self) -> f32 {
+		self.position.x()
 	}
 
-	pub fn y(&self) -> &f32 {
-		&self.y
+	pub fn y(&self) -> f32 {
+		self.position.y()
 	}
 
-	pub fn z(&self) -> &f32 {
-		&self.z
+	pub fn z(&self) -> f32 {
+		self.position.z()
 	}
 
 	pub fn set_x(&mut self, new_x: f32) {
-		self.x = new_x;
+		self.position.set_x(new_x);
 	}
 
 	pub fn set_y(&mut self, new_y: f32) {
-		self.y = new_y;
+		self.position.set_y(new_y);
 	}
 
 	pub fn set_z(&mut self, new_z: f32) {
-		self.z = new_z
+		self.position.set_z(new_z);
 	}
+}
+
+pub trait Render {
+	fn is_visible(&self) -> bool;
+	fn set_visibility(&mut self, is_visible: bool);
+	fn get_texture(&self) -> String;
+	fn set_texture(&mut self, texture: &'static str);
+	//fn get_vertex_data(&self) -> Vec<Vertex>;
+}
+
+impl Render for Renderer2D {
+	fn is_visible(&self) -> bool {
+		self.is_visible
+	}
+
+	fn set_visibility(&mut self, is_visible: bool) {
+		self.is_visible = is_visible;
+	}
+
+	fn get_texture(&self) -> String {
+		self.texture.clone().parse().unwrap()
+	}
+
+	/// Use the actual file name of the texture instead of the path
+	/// e.g. "comet_icon.png" instead of "resources/textures/comet_icon.png"
+	/// The resource manager will already look in the resources/textures folder
+	fn set_texture(&mut self, texture: &'static str) {
+		self.texture = texture;
+	}
+
+	/*fn get_vertex_data(&self) -> Vec<Vertex> {
+		vec![
+			Vertex::new([0.0, 0.0, 0.0], [0.0, 0.0]),
+			Vertex::new([1.0, 0.0, 0.0], [1.0, 0.0]),
+			Vertex::new([1.0, 1.0, 0.0], [1.0, 1.0]),
+			Vertex::new([0.0, 1.0, 0.0], [0.0, 1.0])
+		]
+	}*/
 }
 
 // ##################################################

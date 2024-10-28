@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use comet_ecs::World;
-use comet_resources::ResourceManager;
+use comet_ecs::{Component, ComponentSet, Render, Renderer2D, Transform2D, World};
+use comet_resources::{ResourceManager, Vertex};
 use comet_renderer::{Renderer};
 
 use winit::{
@@ -11,7 +11,7 @@ use winit::{
 };
 use comet_colors::LinearRgba;
 use comet_ecs::math::Point3;
-use log::warn;
+use comet_log::*;
 use winit::dpi::{LogicalSize, PhysicalSize};
 
 pub enum ApplicationType {
@@ -74,6 +74,51 @@ impl<'a> App<'a> {
 		Some(Icon::from_rgba(rgba_image.into_raw(), width, height).unwrap())
 	}
 
+	pub fn render_scene_2d(&self, renderer: &mut Renderer) {
+		let entities =  self.world.get_entities_with(ComponentSet::from_ids(vec![Renderer2D::type_id()]));
+		let mut vertex_buffer: Vec<Vertex> = Vec::new();
+		let mut index_buffer: Vec<u16> = Vec::new();
+
+		for entity in entities {
+			let renderer_component =  self.world().get_component::<Renderer2D>(entity as usize);
+			let transform_component = self.world().get_component::<Transform2D>(entity as usize);
+
+			if renderer_component.is_visible() {
+				//renderer.draw_texture_at(renderer_component.get_texture(), Point3::new(transform_component.position().x(), transform_component.position().y(), 0.0));
+				let position = transform_component.position();
+				let region = renderer.get_texture(renderer_component.get_texture().to_string());
+				let (dim_x, dim_y) = region.dimensions();
+
+				let (bound_x, bound_y) =
+					((dim_x as f32/ renderer.config().width as f32) * 0.5, (dim_y as f32/ renderer.config().height as f32) * 0.5);
+
+				let buffer_size = vertex_buffer.len() as u16;
+
+				vertex_buffer.append(&mut vec![
+					Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x0(), region.y0()] ),
+					Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x0(), region.y1()] ),
+					Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x1(), region.y1()] ) ,
+					Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x1(), region.y0()] )
+				]);
+
+				index_buffer.append(&mut vec![
+					0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
+					1 + buffer_size, 2 + buffer_size, 3 + buffer_size
+				]);
+			}
+		}
+
+		renderer.set_buffers(vertex_buffer, index_buffer);
+
+		/*for entity in entities {
+			let renderer_component = self.world.get_component::<Renderer2D>(entity as usize);
+			let position_component = self.world.get_component::<Transform2D>(entity as usize);
+			if renderer_component.is_visible() {
+				renderer.draw_texture_at(renderer_component.get_texture(), Point3::new(position_component.position().x(), position_component.position().y(), 0.0));
+			}
+		}*/
+	}
+
 	pub fn world(&self) -> &World {
 		&self.world
 	}
@@ -116,12 +161,14 @@ impl<'a> App<'a> {
 
 		window.set_maximized(true);
 
+		renderer.initialize_atlas();
+
 		event_loop.run(|event, control_flow| {
 			if self.should_quit {
 				control_flow.exit()
 			}
-
 			game_manager(&mut self.world, &mut renderer);
+			self.render_scene_2d(&mut renderer);
 
 			match event {
 				Event::WindowEvent {
@@ -161,7 +208,9 @@ impl<'a> App<'a> {
 								}
 							}
 						}
-						_ => { input_manager(event, &mut self, &mut renderer) }
+						_ => {
+							input_manager(event, &mut self, &mut renderer);
+						}
 					}
 				}
 				_ => {}

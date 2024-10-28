@@ -2,6 +2,7 @@ mod camera;
 
 use core::default::Default;
 use std::iter;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use cgmath::num_traits::FloatConst;
@@ -13,67 +14,14 @@ use winit::{
     dpi::PhysicalSize,
     window::Window
 };
+use winit::dpi::Position;
 use comet_colors::LinearRgba;
+use comet_log::error;
 use comet_math;
 use comet_math::{Mat4, Point3, Vec3};
 use comet_resources::{ResourceManager, texture, Vertex, Texture};
+use comet_resources::texture_atlas::TextureRegion;
 use crate::camera::{Camera, CameraUniform};
-// RAINBOW TRIANGLE
-/*const VERTICES: &[Vertex] = &[
-	Vertex :: new ( [0.0, 0.5, 0.0], [1.0, 0.0, 0.0] ),
-	Vertex :: new ( [-0.5, -0.5, 0.0], [0.0, 1.0, 0.0] ),
-	Vertex :: new ( [0.5, -0.5, 0.0], [0.0, 0.0, 1.0] ),
-];*/
-
-// RAW PENTAGON
-/*const VERTICES: &[Vertex] = &[
-	Vertex :: new ( [-0.0868241, 0.49240386, 0.0], [0.5, 0.0, 0.5] ), // A
-	Vertex :: new ( [-0.49513406, 0.06958647, 0.0], [0.5, 0.0, 0.5] ), // B
-	Vertex :: new ( [-0.21918549, -0.44939706, 0.0], [0.5, 0.0, 0.5] ), // C
-	Vertex :: new ( [0.35966998, -0.3473291, 0.0], [0.5, 0.0, 0.5] ), // D
-	Vertex :: new ( [0.44147372, 0.2347359, 0.0], [0.5, 0.0, 0.5] ), // E
-];*/
-
-// RAINBOW PENTAGON
-/*const VERTICES: &[Vertex] = &[
-	Vertex :: new ( [-0.0868241, 0.49240386, 0.0], [1.0, 0.0, 0.0] ), // A
-	Vertex :: new ( [-0.49513406, 0.06958647, 0.0], [0.0, 0.35, 1.0] ), // B
-	Vertex :: new ( [-0.21918549, -0.44939706, 0.0], [0.2, 1.0, 0.2] ), // C
-	Vertex :: new ( [0.35966998, -0.3473291, 0.0], [1.0, 0.85, 0.2] ), // D
-	Vertex :: new ( [0.44147372, 0.2347359, 0.0], [1.0, 0.2, 0.6] ), // E
-];
-
-const INDICES: &[u16] = &[
-	0, 1, 4,
-	1, 2, 4,
-	2, 3, 4,
-];*/
-
-// RAW QUAD
-/*const VERTICES: &[Vertex] = &[
-	Vertex :: new ( [-0.5, 0.5, 0.0], [0.0, 0.0, 1.0] ),
-	Vertex :: new ( [-0.5, -0.5, 0.0], [0.0, 1.0, 0.0] ),
-	Vertex :: new ( [0.5, -0.5, 0.0], [1.0, 0.0, 0.0] ),
-	Vertex :: new ( [0.5, 0.5, 0.0], [1.0, 0.0, 1.0] )
-];
-
-const INDICES: &[u16] = &[
-	0, 1, 3,
-	1, 2, 3
-];*/
-
-
-/*
-vec![
-							Vertex :: new ( [-0.1, 0.1, 0.0], [0.0, 0.0] ),
-							Vertex :: new ( [-0.1, -0.1, 0.0], [0.0, 1.0] ),
-							Vertex :: new ( [0.1, -0.1, 0.0], [1.0, 1.0] ),
-							Vertex :: new ( [0.1, 0.1, 0.0], [1.0, 0.0] ),
-						], vec![
-							0, 1, 3,
-							1, 2, 3
-						]
-*/
 
 pub struct Projection {
     aspect: f32,
@@ -410,12 +358,21 @@ impl<'a> Renderer<'a> {
         self.deltatime
     }
 
+    pub fn config(&self) -> &wgpu::SurfaceConfiguration {
+        &self.config
+    }
+
     fn vertex_data_mut(&mut self) -> &mut Vec<Vertex> {
         &mut self.vertex_data
     }
 
     fn index_data_mut(&mut self) -> &mut Vec<u16> {
         &mut self.index_data
+    }
+
+    pub fn get_texture(&self, texture_path: String) -> &TextureRegion {
+        assert!(self.resource_manager.texture_atlas().textures().contains_key(&texture_path), "Texture not found in atlas");
+        self.resource_manager.texture_atlas().textures().get(&texture_path).unwrap()
     }
 
     fn create_rectangle(&self, width: f32, height: f32) -> Vec<Vertex> {
@@ -512,7 +469,37 @@ impl<'a> Renderer<'a> {
         self.diffuse_bind_group = diffuse_bind_group;
     }
 
-    pub(crate) fn set_buffers(&mut self, new_vertex_buffer: Vec<Vertex>, new_index_buffer: Vec<u16>) {
+    pub fn get_project_root() -> std::io::Result<PathBuf> {
+        let path = std::env::current_dir()?;
+        let mut path_ancestors = path.as_path().ancestors();
+
+        while let Some(p) = path_ancestors.next() {
+            let has_cargo =
+                std::fs::read_dir(p)?
+                    .into_iter()
+                    .any(|p| p.unwrap().file_name() == std::ffi::OsString::from("Cargo.lock"));
+            if has_cargo {
+                return Ok(PathBuf::from(p))
+            }
+        }
+        Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Ran out of places to find Cargo.toml"))
+
+    }
+
+    pub fn initialize_atlas(&mut self) {
+        let texture_path = "resources/textures/".to_string();
+        let mut paths: Vec<String> = Vec::new();
+
+        for path in std::fs::read_dir(Self::get_project_root().unwrap().as_os_str().to_str().unwrap().to_string() + "\\resources\\textures").unwrap() {
+            paths.push(texture_path.clone() + path.unwrap().file_name().to_str().unwrap());
+        }
+
+        error!(format!("{:?}", paths));
+
+        self.set_texture_atlas(paths);
+    }
+
+    pub fn set_buffers(&mut self, new_vertex_buffer: Vec<Vertex>, new_index_buffer: Vec<u16>) {
         match new_vertex_buffer == self.vertex_data {
             true => return,
             false => {
@@ -539,7 +526,7 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    pub(crate) fn push_to_buffers(&mut self, new_vertex_buffer: &mut Vec<Vertex>, new_index_buffer: &mut Vec<u16>) {
+    pub fn push_to_buffers(&mut self, new_vertex_buffer: &mut Vec<Vertex>, new_index_buffer: &mut Vec<u16>) {
         self.vertex_data.append(new_vertex_buffer);
         self.index_data.append(new_index_buffer);
 
@@ -577,14 +564,12 @@ impl<'a> Renderer<'a> {
         self.num_indices = self.index_data.len() as u32;
     }
 
-    pub fn draw_texture_at(&mut self, texture_path: &str, position: Point3) {
-        let region = self.resource_manager.texture_locations().get(texture_path).unwrap();
+    pub fn draw_texture_at(&mut self, texture_path: String, position: Point3) {
+        let region = self.resource_manager.texture_locations().get(&texture_path).unwrap();
         let (dim_x, dim_y) = region.dimensions();
 
         let (bound_x, bound_y) =
             ((dim_x as f32/ self.config.width as f32) * 0.5, (dim_y as f32/ self.config.height as f32) * 0.5);
-        /*let bound_x = dim_x as f32/ self.config.width as f32 * 0.5;
-		let bound_y = bound_x;*/
 
         let vertices: &mut Vec<Vertex> = &mut vec![
             Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.x0(), region.y0()] ),

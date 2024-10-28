@@ -411,6 +411,17 @@ impl ComponentStorage {
 		self.keys.contains(type_id)
 	}
 
+	pub fn contains_components(&self, component_set: ComponentSet) -> bool {
+		let mut contains = true;
+		for type_id in component_set.set.iter() {
+			if !self.keys.contains(type_id) {
+				contains = false;
+				break;
+			}
+		}
+		contains
+	}
+
 	pub fn get<T: Component + 'static>(&self) -> Option<&SparseSet> {
 		self.components.get(*self.index_map.get(&T::type_id()).unwrap())
 	}
