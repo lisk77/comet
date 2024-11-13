@@ -5,6 +5,8 @@ a free and open source games framework
 > This project is in early development and is not yet ready for use.
 > 
 > It could be potentially used to make something very basic in a very hacky way but it is not a good experience 
+> 
+> UPDATE: It is slowly getting where I want it to be (at least for 2D)
 
 ## Features
 
@@ -26,8 +28,8 @@ a free and open source games framework
 - [ ] ECS
   - [x] Components
   - [x] Entities
-  - [ ] Archetypes
-  - [ ] World
+  - [x] Archetypes
+  - [x] World
 - [ ] Scene
   - [ ] rendering
   - [ ] loading
