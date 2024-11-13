@@ -1,7 +1,9 @@
 [package]
 name = "comet_math"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
+comet_log = { path = "../comet_log" }
 num-traits = "0.2.19"
+chrono = "0.4.0"

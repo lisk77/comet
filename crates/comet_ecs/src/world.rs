@@ -23,16 +23,16 @@ pub struct World {
 }
 
 impl World {
-	pub fn new(dimension: &str) -> Self {
+	pub fn new(application: &str) -> Self {
 		let mut component_storage = ComponentStorage::new();
-		match dimension {
+		match application {
 			"2D" => component_storage.register_component::<Transform2D>(0),
 			"3D" => component_storage.register_component::<Transform3D>(0),
 			_ => {}
 		}
 
 		Self {
-			dimension: dimension.to_string(),
+			dimension: application.to_string(),
 			id_queue: IdQueue::new(),
 			next_id: 0,
 			entities: Vec::new(),
@@ -118,7 +118,7 @@ impl World {
 		self.id_queue.sorted_enqueue(entity_id as u32);
 		self.get_next_id();
 		self.remove_entity_from_archetype_subsets(entity_id as u32, self.get_component_set(entity_id));
-		info!(format!("Deleted entity! ID: {}", entity_id));
+		info!("Deleted entity! ID: {}", entity_id);
 	}
 
 	fn create_archetype(&mut self, components: ComponentSet) {
@@ -179,12 +179,12 @@ impl World {
 	pub fn register_component<T: Component + 'static>(&mut self) {
 		self.components.register_component::<T>(self.entities.len());
 		self.create_archetype(ComponentSet::from_ids(vec![T::type_id()]));
-		info!(format!("Registered component: {}", T::type_name()));
+		info!("Registered component: {}", T::type_name());
 	}
 
 	pub fn deregister_component<T: Component + 'static>(&mut self) {
 		self.components.deregister_component::<T>();
-		info!(format!("Deregistered component: {}", T::type_name()));
+		info!("Deregistered component: {}", T::type_name());
 	}
 
 	pub fn add_component<T: Component + 'static>(&mut self, entity_id: usize, component: T) {
@@ -201,14 +201,13 @@ impl World {
 		if self.get_component_set(entity_id) != ComponentSet::from_ids(vec![T::type_id()]) {
 			self.add_entity_to_archetype(entity_id as u32, self.get_component_set(entity_id));
 		}
-		info!(format!("Added component {} to entity {}", T::type_name(), entity_id));
-		debug!(format!("{:?}", self.archetypes));
+		info!("Added component {} to entity {}", T::type_name(), entity_id);
 	}
 
 	pub fn remove_component<T: Component + 'static>(&mut self, entity_id: usize) {
 		self.components.remove_component::<T>(entity_id);
 		self.remove_entity_from_archetype_subsets(entity_id as u32, self.get_component_set(entity_id));
-		info!(format!("Removed component {} from entity {}", T::type_name(), entity_id));
+		info!("Removed component {} from entity {}", T::type_name(), entity_id);
 	}
 
 	pub fn get_component<T: Component + 'static>(&self, entity_id: usize) -> &T {

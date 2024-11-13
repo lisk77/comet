@@ -1,9 +1,10 @@
 [package]
 name = "comet_renderer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
+comet_ecs = { path = "../comet_ecs" }
 comet_math = { path = "../comet_math" }
 comet_resources = { path = "../comet_resources" }
 comet_colors = { path = "../comet_colors" }

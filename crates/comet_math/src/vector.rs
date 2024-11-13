@@ -1,12 +1,13 @@
 use crate::point::{Point2, Point3};
 use crate::quaternion::Quat;
 use crate::utilities::acos;
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+use comet_log::*;
 
 pub trait InnerSpace {
 	fn dot(&self, other: &Self) -> f32;
 	fn dist(&self, other: &Self) -> f32;
-	fn vAngle(&self, other: &Self) -> f32;
+	fn v_angle(&self, other: &Self) -> f32;
 }
 
 // ##################################################
@@ -103,6 +104,13 @@ impl Add<Vec2> for Vec2 {
 	}
 }
 
+impl AddAssign for Vec2 {
+	fn add_assign(&mut self, other: Vec2) {
+		self.x += other.x;
+		self.y += other.y;
+	}
+}
+
 impl Sub<Vec2> for Vec2 {
 	type Output = Vec2;
 
@@ -114,6 +122,13 @@ impl Sub<Vec2> for Vec2 {
 	}
 }
 
+impl SubAssign for Vec2 {
+	fn sub_assign(&mut self, other: Vec2) {
+		self.x -= other.x;
+		self.y -= other.y;
+	}
+}
+
 impl Mul<f32> for Vec2 {
 	type Output = Vec2;
 
@@ -122,6 +137,228 @@ impl Mul<f32> for Vec2 {
 			x: self.x * other,
 			y: self.y * other,
 		}
+	}
+}
+
+impl Into<[f32;2]> for Vec2 {
+	fn into(self) -> [f32;2] {
+		[self.x, self.y]
+	}
+}
+
+impl Into<Vec2> for [f32;2] {
+	fn into(self) -> Vec2 {
+		Vec2 {
+			x: self[0],
+			y: self[1],
+		}
+	}
+}
+
+/// Representation of a 2D integer Vector
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IVec2 {
+	x: i64,
+	y: i64,
+}
+
+impl IVec2 {
+	pub const X: IVec2 = IVec2 { x: 1, y: 0 };
+	pub const Y: IVec2 = IVec2 { x: 0, y: 1 };
+	pub const ZERO: IVec2 = IVec2 { x: 0, y: 0 };
+
+	pub const fn new(x: i64, y: i64) -> Self {
+		IVec2 { x, y }
+	}
+
+	pub fn from_point(p: Point2) -> Self {
+		Self { x: p.x() as i64, y: p.y() as i64 }
+	}
+
+	pub fn as_vec2(&self) -> Vec2 {
+		Vec2 {
+			x: self.x as f32,
+			y: self.y as f32,
+		}
+	}
+
+	pub fn x(&self) -> i64 {
+		self.x
+	}
+
+	pub fn y(&self) -> i64 {
+		self.y
+	}
+
+	pub fn set_x(&mut self, new_x: i64) {
+		self.x = new_x;
+	}
+
+	pub fn set_y(&mut self, new_y: i64) {
+		self.y = new_y;
+	}
+
+	pub fn length(&self) -> i64 {
+		((self.x * self.x + self.y * self.y) as f32).sqrt() as i64
+	}
+
+	pub fn normalize(&self) -> Self {
+		let factor = 1.0 / self.length() as f32;
+		IVec2 {
+			x: (factor * self.x as f32) as i64,
+			y: (factor * self.y as f32) as i64,
+		}
+	}
+
+	pub fn xx(&self) -> Self {
+		Self {
+			x: self.x,
+			y: self.x,
+		}
+	}
+
+	pub fn xy(&self) -> Self {
+		Self {
+			x: self.x,
+			y: self.y,
+		}
+	}
+
+	pub fn yx(&self) -> Self {
+		Self {
+			x: self.y,
+			y: self.x,
+		}
+	}
+
+	pub fn yy(&self) -> Self {
+		Self {
+			x: self.y,
+			y: self.y,
+		}
+	}
+}
+
+impl Add<IVec2> for IVec2 {
+	type Output = IVec2;
+
+	fn add(self, other: IVec2) -> IVec2 {
+		IVec2 {
+			x: self.x + other.x,
+			y: self.y + other.y,
+		}
+	}
+}
+
+impl Add<IVec2> for Vec2 {
+	type Output = Vec2;
+
+	fn add(self, other: IVec2) -> Vec2 {
+		Vec2 {
+			x: self.x + other.x as f32,
+			y: self.y + other.y as f32,
+		}
+	}
+}
+
+impl Add<Vec2> for IVec2 {
+	type Output = Vec2;
+
+	fn add(self, other: Vec2) -> Vec2 {
+		Vec2 {
+			x: self.x as f32 + other.x,
+			y: self.y as f32 + other.y,
+		}
+	}
+}
+
+impl AddAssign for IVec2 {
+	fn add_assign(&mut self, other: IVec2) {
+		self.x += other.x;
+		self.y += other.y;
+	}
+}
+
+impl Sub<IVec2> for IVec2 {
+	type Output = IVec2;
+
+	fn sub(self, other: IVec2) -> IVec2 {
+		IVec2 {
+			x: self.x - other.x,
+			y: self.y - other.y,
+		}
+	}
+}
+
+impl Sub<IVec2> for Vec2 {
+	type Output = Vec2;
+
+	fn sub(self, other: IVec2) -> Vec2 {
+		Vec2 {
+			x: self.x - other.x as f32,
+			y: self.y - other.y as f32,
+		}
+	}
+}
+
+impl Sub<Vec2> for IVec2 {
+	type Output = Vec2;
+
+	fn sub(self, other: Vec2) -> Vec2 {
+		Vec2 {
+			x: self.x as f32 - other.x,
+			y: self.y as f32 - other.y,
+		}
+	}
+}
+
+impl SubAssign for IVec2 {
+	fn sub_assign(&mut self, other: IVec2) {
+		self.x -= other.x;
+		self.y -= other.y;
+	}
+}
+
+impl Mul<f32> for IVec2 {
+	type Output = IVec2;
+
+	fn mul(self, other: f32) -> IVec2 {
+		IVec2 {
+			x: self.x * other as i64,
+			y: self.y * other as i64,
+		}
+	}
+}
+
+impl From<IVec2> for Vec2 {
+	fn from(v: IVec2) -> Vec2 {
+		Vec2 {
+			x: v.x as f32,
+			y: v.y as f32,
+		}
+	}
+}
+
+impl From<Vec2> for IVec2 {
+	fn from(v: Vec2) -> IVec2 {
+		IVec2 {
+			x: v.x as i64,
+			y: v.y as i64,
+		}
+	}
+}
+
+impl Into<[i64;2]> for IVec2 {
+	fn into(self) -> [i64;2] {
+		[self.x, self.y]
+	}
+}
+
+impl Into<[f32;2]> for IVec2 {
+	fn into(self) -> [f32;2] {
+		[self.x as f32, self.y as f32]
 	}
 }
 
@@ -179,17 +416,6 @@ impl Vec3 {
 
 	pub fn set_z(&mut self, new_z: f32) {
 		self.z = new_z;
-	}
-
-	pub fn into_quaternion(&self) -> Quat {
-		Quat {
-			s: 0.0,
-			v: Vec3 {
-				x: self.x,
-				y: self.y,
-				z: self.z,
-			}
-		}
 	}
 
 	pub fn length(&self) -> f32 {
@@ -408,6 +634,14 @@ impl Add<Vec3> for Vec3 {
 	}
 }
 
+impl AddAssign for Vec3 {
+	fn add_assign(&mut self, other: Vec3) {
+		self.x += other.x;
+		self.y += other.y;
+		self.z += other.z;
+	}
+}
+
 impl Sub<Vec3> for Vec3 {
 	type Output = Vec3;
 
@@ -420,6 +654,14 @@ impl Sub<Vec3> for Vec3 {
 	}
 }
 
+impl SubAssign for Vec3 {
+	fn sub_assign(&mut self, other: Vec3) {
+		self.x -= other.x;
+		self.y -= other.y;
+		self.z -= other.z;
+	}
+}
+
 impl Mul<f32> for Vec3 {
 	type Output = Vec3;
 
@@ -428,6 +670,202 @@ impl Mul<f32> for Vec3 {
 			x: self.x * other,
 			y: self.y * other,
 			z: self.z * other,
+		}
+	}
+}
+
+impl Into<Quat> for Vec3 {
+	fn into(self) -> Quat {
+		Quat::new(0.0, self)
+	}
+}
+
+impl Into<[f32;3]> for Vec3 {
+	fn into(self) -> [f32;3] {
+		[self.x, self.y, self.z]
+	}
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IVec3 {
+	pub x: i64,
+	pub y: i64,
+	pub z: i64,
+}
+
+impl IVec3 {
+	pub const X: IVec3 = IVec3 { x: 1, y: 0, z: 0 };
+	pub const Y: IVec3 = IVec3 { x: 0, y: 1, z: 0 };
+	pub const Z: IVec3 = IVec3 { x: 0, y: 0, z: 1 };
+	pub const ZERO: IVec3 = IVec3 { x: 0, y: 0, z: 0 };
+
+	pub const fn new(x: i64, y: i64, z: i64) -> Self {
+		IVec3 { x, y, z }
+	}
+
+	pub fn from_point(p: Point3) -> Self {
+		Self {
+			x: p.x() as i64,
+			y: p.y() as i64,
+			z: p.z() as i64,
+		}
+	}
+
+	pub fn x(&self) -> i64 {
+		self.x
+	}
+
+	pub fn y(&self) -> i64 {
+		self.y
+	}
+
+	pub fn z(&self) -> i64 {
+		self.z
+	}
+
+	pub fn set_x(&mut self, new_x: i64) {
+		self.x = new_x;
+	}
+
+	pub fn set_y(&mut self, new_y: i64) {
+		self.y = new_y;
+	}
+
+	pub fn set_z(&mut self, new_z: i64) {
+		self.z = new_z;
+	}
+
+	pub fn length(&self) -> i64 {
+		((self.x * self.x + self.y * self.y + self.z * self.z) as f32).sqrt() as i64
+	}
+
+	pub fn normalize(&self) -> Self {
+		let factor = 1 / self.length();
+		IVec3 {
+			x: factor * self.x,
+			y: factor * self.y,
+			z: factor * self.z,
+		}
+	}
+}
+
+impl Add<IVec3> for IVec3 {
+	type Output = IVec3;
+
+	fn add(self, other: IVec3) -> IVec3 {
+		IVec3 {
+			x: self.x + other.x,
+			y: self.y + other.y,
+			z: self.z + other.z,
+		}
+	}
+}
+
+impl Add<IVec3> for Vec3 {
+	type Output = Vec3;
+
+	fn add(self, other: IVec3) -> Vec3 {
+		Vec3 {
+			x: self.x + other.x as f32,
+			y: self.y + other.y as f32,
+			z: self.z + other.z as f32,
+		}
+	}
+}
+
+impl Add<Vec3> for IVec3 {
+	type Output = Vec3;
+
+	fn add(self, other: Vec3) -> Vec3 {
+		Vec3 {
+			x: self.x as f32 + other.x,
+			y: self.y as f32 + other.y,
+			z: self.z as f32 + other.z,
+		}
+	}
+}
+
+impl AddAssign for IVec3 {
+	fn add_assign(&mut self, other: IVec3) {
+		self.x += other.x;
+		self.y += other.y;
+		self.z += other.z;
+	}
+}
+
+impl Sub<IVec3> for IVec3 {
+	type Output = IVec3;
+
+	fn sub(self, other: IVec3) -> IVec3 {
+		IVec3 {
+			x: self.x - other.x,
+			y: self.y - other.y,
+			z: self.z - other.z,
+		}
+	}
+}
+
+impl Sub<IVec3> for Vec3 {
+	type Output = Vec3;
+
+	fn sub(self, other: IVec3) -> Vec3 {
+		Vec3 {
+			x: self.x - other.x as f32,
+			y: self.y - other.y as f32,
+			z: self.z - other.z as f32,
+		}
+	}
+}
+
+impl Sub<Vec3> for IVec3 {
+	type Output = Vec3;
+
+	fn sub(self, other: Vec3) -> Vec3 {
+		Vec3 {
+			x: self.x as f32 - other.x,
+			y: self.y as f32 - other.y,
+			z: self.z as f32 - other.z,
+		}
+	}
+}
+
+impl SubAssign for IVec3 {
+	fn sub_assign(&mut self, other: IVec3) {
+		self.x -= other.x;
+		self.y -= other.y;
+	}
+}
+
+impl Mul<f32> for IVec3 {
+	type Output = IVec3;
+
+	fn mul(self, other: f32) -> IVec3 {
+		IVec3 {
+			x: self.x * other as i64,
+			y: self.y * other as i64,
+			z: self.z * other as i64,
+		}
+	}
+}
+
+impl From<IVec3> for Vec3 {
+	fn from(v: IVec3) -> Vec3 {
+		Vec3 {
+			x: v.x as f32,
+			y: v.y as f32,
+			z: v.z as f32,
+		}
+	}
+}
+
+impl From<Vec3> for IVec3 {
+	fn from(v: Vec3) -> IVec3 {
+		IVec3 {
+			x: v.x as i64,
+			y: v.y as i64,
+			z: v.z as i64,
 		}
 	}
 }
@@ -2568,6 +3006,15 @@ impl Add<Vec4> for Vec4 {
 	}
 }
 
+impl AddAssign for Vec4 {
+	fn add_assign(&mut self, other: Vec4) {
+		self.x += other.x;
+		self.y += other.y;
+		self.z += other.z;
+		self.w += other.w;
+	}
+}
+
 impl Sub<Vec4> for Vec4 {
 	type Output = Vec4;
 
@@ -2578,6 +3025,15 @@ impl Sub<Vec4> for Vec4 {
 			z: self.z - other.z,
 			w: self.w - other.w,
 		}
+	}
+}
+
+impl SubAssign for Vec4 {
+	fn sub_assign(&mut self, other: Vec4) {
+		self.x -= other.x;
+		self.y -= other.y;
+		self.z -= other.z;
+		self.w -= other.w;
 	}
 }
 
@@ -2594,6 +3050,12 @@ impl Mul<f32> for Vec4 {
 	}
 }
 
+impl Into<[f32;4]> for Vec4 {
+	fn into(self) -> [f32;4] {
+		[self.x, self.y, self.z, self.w]
+	}
+}
+
 impl InnerSpace for Vec2 {
 	fn dot(&self, other: &Self) -> f32 {
 		self.x * other.x + self.y * other.y
@@ -2607,7 +3069,8 @@ impl InnerSpace for Vec2 {
 			.length()
 	}
 
-	fn vAngle(&self, other: &Self) -> f32 {
+	fn v_angle(&self, other: &Self) -> f32 {
+		//debug!("{:?}", dot(self,other)/(self.length()*other.length()));
 		acos(dot(self, other) / (self.length() * other.length()))
 	}
 }
@@ -2626,7 +3089,7 @@ impl InnerSpace for Vec3 {
 			.length()
 	}
 
-	fn vAngle(&self, other: &Self) -> f32 {
+	fn v_angle(&self, other: &Self) -> f32 {
 		acos(dot(self, other) / (self.length() * other.length()))
 	}
 }
@@ -2646,7 +3109,7 @@ impl InnerSpace for Vec4 {
 			.length()
 	}
 
-	fn vAngle(&self, other: &Self) -> f32 {
+	fn v_angle(&self, other: &Self) -> f32 {
 		acos(dot(self, other) / (self.length() * other.length()))
 	}
 }
@@ -2672,5 +3135,5 @@ pub fn v_dist<T: InnerSpace>(v1: &T, v2: &T) -> f32 {
 }
 
 pub fn v_angle<T: InnerSpace>(v1: &T, v2: &T) -> f32 {
-	v1.vAngle(v2)
+	v1.v_angle(v2)
 }

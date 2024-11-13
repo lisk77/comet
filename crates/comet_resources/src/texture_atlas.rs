@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::Path;
-use chrono::Local;
 use std::time::Instant;
 use image::{DynamicImage, GenericImage, GenericImageView, ImageFormat};
 use comet_log::*;
@@ -165,7 +164,7 @@ impl TextureAtlas {
 		//base.save_with_format(output_path, ImageFormat::Png).expect("Failed to save texture atlas");
 
 		info!("Texture atlas created!");
-		debug!(format!("{:?}", regions));
+		//debug!(format!("{:?}", regions));
 
 		/*let t1 = Instant::now();
 		let delta = t1.duration_since(t0);

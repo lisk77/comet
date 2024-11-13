@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use comet_ecs::{Component, ComponentSet, Render, Renderer2D, Transform2D, World};
 use comet_resources::{ResourceManager, Vertex};
 use comet_renderer::{Renderer};
@@ -13,6 +14,11 @@ use comet_colors::LinearRgba;
 use comet_ecs::math::Point3;
 use comet_log::*;
 use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::event_loop::ControlFlow;
+use winit::platform::windows::WindowBuilderExtWindows;
+use winit_input_helper::WinitInputHelper;
+use comet_input::input_handler::InputHandler;
+use comet_input::keyboard::Key;
 
 pub enum ApplicationType {
 	App2D,
@@ -24,6 +30,10 @@ pub struct App<'a> {
 	icon: Option<Icon>,
 	size: Option<LogicalSize<u32>>,
 	clear_color: Option<LinearRgba>,
+	setup: Option<fn(&mut World)>,
+	input_manager: WinitInputHelper,
+	delta_time: f32,
+	update_timer: f32,
 	world: World,
 	fullscreen: bool,
 	should_quit: bool
@@ -41,6 +51,10 @@ impl<'a> App<'a> {
 			icon: None,
 			size: None,
 			clear_color: None,
+			setup: None,
+			input_manager: WinitInputHelper::new(),
+			delta_time: 0.0,
+			update_timer: 0.0166667,
 			world,
 			fullscreen: false,
 			should_quit: false
@@ -67,56 +81,16 @@ impl<'a> App<'a> {
 		self
 	}
 
+	pub fn with_setup(mut self, setup: fn(&mut World)) -> Self {
+		self.setup = Some(setup);
+		self
+	}
+
 	fn load_icon(path: &std::path::Path) -> Option<Icon> {
 		let image = image::open(path).expect("Failed to open icon image");
 		let rgba_image = image.to_rgba8();
 		let (width, height) = rgba_image.dimensions();
 		Some(Icon::from_rgba(rgba_image.into_raw(), width, height).unwrap())
-	}
-
-	pub fn render_scene_2d(&self, renderer: &mut Renderer) {
-		let entities =  self.world.get_entities_with(ComponentSet::from_ids(vec![Renderer2D::type_id()]));
-		let mut vertex_buffer: Vec<Vertex> = Vec::new();
-		let mut index_buffer: Vec<u16> = Vec::new();
-
-		for entity in entities {
-			let renderer_component =  self.world().get_component::<Renderer2D>(entity as usize);
-			let transform_component = self.world().get_component::<Transform2D>(entity as usize);
-
-			if renderer_component.is_visible() {
-				//renderer.draw_texture_at(renderer_component.get_texture(), Point3::new(transform_component.position().x(), transform_component.position().y(), 0.0));
-				let position = transform_component.position();
-				let region = renderer.get_texture(renderer_component.get_texture().to_string());
-				let (dim_x, dim_y) = region.dimensions();
-
-				let (bound_x, bound_y) =
-					((dim_x as f32/ renderer.config().width as f32) * 0.5, (dim_y as f32/ renderer.config().height as f32) * 0.5);
-
-				let buffer_size = vertex_buffer.len() as u16;
-
-				vertex_buffer.append(&mut vec![
-					Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x0(), region.y0()] ),
-					Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x0(), region.y1()] ),
-					Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x1(), region.y1()] ) ,
-					Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x1(), region.y0()] )
-				]);
-
-				index_buffer.append(&mut vec![
-					0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
-					1 + buffer_size, 2 + buffer_size, 3 + buffer_size
-				]);
-			}
-		}
-
-		renderer.set_buffers(vertex_buffer, index_buffer);
-
-		/*for entity in entities {
-			let renderer_component = self.world.get_component::<Renderer2D>(entity as usize);
-			let position_component = self.world.get_component::<Transform2D>(entity as usize);
-			if renderer_component.is_visible() {
-				renderer.draw_texture_at(renderer_component.get_texture(), Point3::new(position_component.position().x(), position_component.position().y(), 0.0));
-			}
-		}*/
 	}
 
 	pub fn world(&self) -> &World {
@@ -127,8 +101,35 @@ impl<'a> App<'a> {
 		&mut self.world
 	}
 
+	pub fn input_manager(&self) -> &WinitInputHelper {
+		&self.input_manager
+	}
+
+	pub fn key_pressed(&self, key: Key) -> bool {
+		self.input_manager.key_pressed(key)
+	}
+
+	pub fn key_held(&self, key: Key) -> bool {
+		self.input_manager.key_held(key)
+	}
+
+	pub fn key_released(&self, key: Key) -> bool {
+		self.input_manager.key_released(key)
+	}
+
+	pub fn dt(&self) -> f32 {
+		self.delta_time
+	}
+
 	pub fn quit(&mut self) {
 		self.should_quit = true;
+	}
+
+	pub fn get_time_step(&self) -> f32 {
+		self.update_timer
+	}
+	pub fn set_time_step(&mut self, time_step: f32) {
+		self.update_timer = time_step;
 	}
 
 	fn create_window(app_title: &str, app_icon: &Option<Icon>, window_size: &Option<LogicalSize<u32>>, event_loop: &EventLoop<()>) -> winit::window::Window {
@@ -141,6 +142,13 @@ impl<'a> App<'a> {
 		else {
 			winit_window
 		};
+		let winit_window = if let Some(icon) = app_icon.clone() {
+			winit_window.with_taskbar_icon(Some(icon))
+		}
+		else {
+			winit_window
+		};
+
 		let winit_window = if let Some(size) = window_size.clone() {
 			winit_window.with_inner_size(size)
 		}
@@ -151,66 +159,64 @@ impl<'a> App<'a> {
 		winit_window.build(event_loop).unwrap()
 	}
 
-	async fn run_app<F: Fn(&WindowEvent, &mut App, &mut Renderer), G: Fn(&mut World, &mut Renderer)>(mut self, input_manager: F, game_manager: G) {
-		env_logger::init();
+	async fn run_app<U: Fn(&mut App, &mut Renderer, f32)>(mut self, update: U) {
 		let event_loop = EventLoop::new().unwrap();
 		let window = Self::create_window(self.title, &self.icon, &self.size ,&event_loop);
-
 		let mut renderer = Renderer::new(&window, self.clear_color.clone()).await.unwrap();
-		let mut surface_configured = false;
-
 		window.set_maximized(true);
+
+		if let Some(setup) = self.setup {
+			setup(&mut self.world);
+		}
 
 		renderer.initialize_atlas();
 
-		event_loop.run(|event, control_flow| {
+		let mut time_stack = 0.0;
+
+		event_loop.run(|event, elwt| {
+			self.delta_time = renderer.update();
+
 			if self.should_quit {
-				control_flow.exit()
+				elwt.exit()
 			}
-			game_manager(&mut self.world, &mut renderer);
-			self.render_scene_2d(&mut renderer);
+
+			self.input_manager.update(&event);
+
+			time_stack += self.delta_time;
+			while time_stack > self.update_timer {
+				let time = self.get_time_step();
+				update(&mut self, &mut renderer, time);
+				time_stack -= self.update_timer;
+			}
+
+			renderer.render_scene_2d(self.world());
 
 			match event {
-				Event::WindowEvent {
-					ref event,
-					window_id,
-				} if window_id == renderer.window().id() => {
+				Event::WindowEvent { ref event, window_id, }
+				if window_id == renderer.window().id() => {
 					match event {
-						WindowEvent::CloseRequested {} => control_flow.exit(),
+						WindowEvent::CloseRequested {} => elwt.exit(),
 						WindowEvent::Resized(physical_size) => {
-							surface_configured = true;
 							renderer.resize(*physical_size);
 						}
 						WindowEvent::RedrawRequested => {
 							renderer.window().request_redraw();
 
-							if !surface_configured {
-								return;
-							}
-
-							/*if self.fullscreen && !renderer.window().fullscreen().is_some() {
-								renderer.resize(renderer.window().inner_size().into());
-							}*/
-
-							renderer.update();
-							//println!("{}", 1.0/dt);
 							match renderer.render() {
 								Ok(_) => {}
 								Err(
 									wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
 								) => renderer.resize(renderer.size()),
 								Err(wgpu::SurfaceError::OutOfMemory) => {
-									log::error!("OutOfMemory");
-									control_flow.exit();
+									error!("OutOfMemory");
+									elwt.exit();
 								}
 								Err(wgpu::SurfaceError::Timeout) => {
 									warn!("Surface timeout")
 								}
 							}
 						}
-						_ => {
-							input_manager(event, &mut self, &mut renderer);
-						}
+						_ => {}
 					}
 				}
 				_ => {}
@@ -218,7 +224,7 @@ impl<'a> App<'a> {
 		}).unwrap();
 	}
 
-	pub fn run<F: Fn(&WindowEvent, &mut App, &mut Renderer), G: Fn(&mut World, &mut Renderer)>(mut self, input_manager: F, game_manager: G) {
-		pollster::block_on(self.run_app(input_manager, game_manager));
+	pub fn run<U: Fn(&mut App, &mut Renderer, f32)>(mut self, update: U) {
+		pollster::block_on(self.run_app(update));
 	}
 }

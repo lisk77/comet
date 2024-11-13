@@ -26,7 +26,8 @@ instant = "0.1"
 image = { version = "0.24", default_features = false, features = ["png", "jpeg", "hdr"] }
 chrono = "0.4.38"
 colored = "2.1.0"
-
+winit_input_helper = "0.16.0"
+spin_sleep = "1.2.1"
 
 [build-dependencies]
 anyhow = "1.0"
@@ -43,7 +44,7 @@ members = [
     "./crates/comet_ecs",
     "./crates/comet_input",
     "./crates/comet_log"
-]
+, "crates/comet_ui"]
 
 [workspace.dependencies]
 comet_app = { path = "./crates/comet_app", workspace = true }

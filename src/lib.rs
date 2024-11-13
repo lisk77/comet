@@ -7,3 +7,7 @@ pub use comet_app as app;
 pub use comet_colors as colors;
 pub use comet_input as input;
 pub use comet_log as log;
+
+pub mod prelude {
+	pub use comet_app::App;
+}

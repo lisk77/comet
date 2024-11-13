@@ -1,6 +1,6 @@
 [package]
 name = "comet_app"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -9,6 +9,7 @@ comet_renderer = { path = "../comet_renderer" }
 comet_resources = { path = "../comet_resources" }
 comet_colors = { path = "../comet_colors" }
 comet_log = { path = "../comet_log" }
+comet_input = { path = "../comet_input" }
 
 winit = { version = "0.29", features = ["rwh_05"] }
 env_logger = "0.10"
@@ -18,6 +19,8 @@ log = "0.4.22"
 anyhow = "1.0.89"
 bytemuck = "1.18.0"
 chrono = "0.4.0"
+winit_input_helper = "0.16.0"
+spin_sleep = "1.2.1"
 
 [dependencies.image]
 version = "0.24"

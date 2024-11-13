@@ -1,21 +1,10 @@
-//use comet_resources::Vertex;
+use std::cell::RefCell;
+use std::rc::Rc;
 use crate::math::{
 	Vec2,
 	Vec3
 };
 use component_derive::Component;
-
-pub trait Component: Send + Sync + PartialEq + Default +  'static {
-	fn new() -> Self where Self: Sized;
-
-	fn type_id() -> std::any::TypeId {
-		std::any::TypeId::of::<Self>()
-	}
-
-	fn type_name() -> String {
-		std::any::type_name::<Self>().to_string()
-	}
-}
 
 // ##################################################
 // #                    BASIC                       #
@@ -44,11 +33,64 @@ pub struct Rotation3D {
 }
 
 #[derive(Component)]
+pub struct Rectangle2D{
+	position: Position2D,
+	size: Vec2
+}
+
+#[derive(Component)]
 pub struct Renderer2D {
 	is_visible: bool,
 	texture: &'static str,
 	scale: Vec2
 }
+
+// ##################################################
+// #                   BUNDLES                      #
+// ##################################################
+
+#[derive(Component)]
+pub struct Transform2D {
+	position: Position2D,
+	rotation: Rotation2D
+}
+
+#[derive(Component)]
+pub struct Transform3D {
+	position: Position3D,
+	rotation: Rotation3D
+}
+
+// ##################################################
+// #                    TRAITS                      #
+// ##################################################
+
+pub trait Component: Send + Sync + PartialEq + Default +  'static {
+	fn new() -> Self where Self: Sized;
+
+	fn type_id() -> std::any::TypeId {
+		std::any::TypeId::of::<Self>()
+	}
+
+	fn type_name() -> String {
+		std::any::type_name::<Self>().to_string()
+	}
+}
+
+pub trait Collider {
+	fn is_colliding(&self, other: &Self) -> bool;
+}
+
+pub trait Render {
+	fn is_visible(&self) -> bool;
+	fn set_visibility(&mut self, is_visible: bool);
+	fn get_texture(&self) -> String;
+	fn set_texture(&mut self, texture: &'static str);
+}
+
+// ##################################################
+// #                    IMPLS                       #
+// ##################################################
 
 impl Position2D {
 	pub fn from_vec(vec: Vec2) -> Self {
@@ -114,12 +156,44 @@ impl Position3D {
 	}
 }
 
-pub trait Render {
-	fn is_visible(&self) -> bool;
-	fn set_visibility(&mut self, is_visible: bool);
-	fn get_texture(&self) -> String;
-	fn set_texture(&mut self, texture: &'static str);
-	//fn get_vertex_data(&self) -> Vec<Vertex>;
+impl Rectangle2D {
+	pub fn new(position: Position2D, size: Vec2) -> Self {
+		Self {
+			position,
+			size
+		}
+	}
+
+	pub fn position(&self) -> Position2D {
+		self.position
+	}
+
+	pub fn set_position(&mut self, position: Position2D) {
+		self.position = position;
+	}
+
+	pub fn size(&self) -> Vec2 {
+		self.size
+	}
+}
+
+impl Collider for Rectangle2D {
+	fn is_colliding(&self, other: &Self) -> bool {
+		let x1 = self.position().x();
+		let y1 = self.position().y();
+		let w1 = self.size().x();
+		let h1 = self.size().y();
+
+		let x2 = other.position().x();
+		let y2 = other.position().y();
+		let w2 = other.size().x();
+		let h2 = other.size().y();
+
+		x1 < x2 + w2 &&
+		x1 + w1 > x2 &&
+		y1 < y2 + h2 &&
+		y1 + h1 > y2
+	}
 }
 
 impl Render for Renderer2D {
@@ -141,31 +215,6 @@ impl Render for Renderer2D {
 	fn set_texture(&mut self, texture: &'static str) {
 		self.texture = texture;
 	}
-
-	/*fn get_vertex_data(&self) -> Vec<Vertex> {
-		vec![
-			Vertex::new([0.0, 0.0, 0.0], [0.0, 0.0]),
-			Vertex::new([1.0, 0.0, 0.0], [1.0, 0.0]),
-			Vertex::new([1.0, 1.0, 0.0], [1.0, 1.0]),
-			Vertex::new([0.0, 1.0, 0.0], [0.0, 1.0])
-		]
-	}*/
-}
-
-// ##################################################
-// #                   BUNDLES                      #
-// ##################################################
-
-#[derive(Component)]
-pub struct Transform2D {
-	position: Position2D,
-	rotation: Rotation2D
-}
-
-#[derive(Component)]
-pub struct Transform3D {
-	position: Position3D,
-	rotation: Rotation3D
 }
 
 impl Transform2D {
@@ -183,6 +232,13 @@ impl Transform2D {
 
 	pub fn rotation_mut(&mut self) -> &mut Rotation2D {
 		&mut self.rotation
+	}
+
+	pub fn translate(&mut self, displacement: Vec2) {
+		let x = self.position().x() + displacement.x();
+		let y = self.position().y() + displacement.y();
+		self.position_mut().set_x(x);
+		self.position_mut().set_y(y);
 	}
 }
 
@@ -203,5 +259,3 @@ impl Transform3D {
 		&mut self.rotation
 	}
 }
-
-

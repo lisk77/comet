@@ -1,4 +1,4 @@
-use comet_math::Point3;
+use comet_math::{Point3, Vec2, Vec3};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -11,44 +11,30 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
 const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.0001;
 
 pub struct Camera {
-	eye: cgmath::Point3<f32>,
-	target: cgmath::Point3<f32>,
-	up: cgmath::Vector3<f32>,
-	aspect: f32,
-	fovy: f32,
-	znear: f32,
-	zfar: f32,
+	zoom: f32,
+	dimension: Vec2,
+	position: Vec3
 }
 
 impl Camera {
 	pub fn new(
-		eye: cgmath::Point3<f32>,
-		target: cgmath::Point3<f32>,
-		up: cgmath::Vector3<f32>,
-		aspect: f32,
-		fovy: f32,
-		znear: f32,
-		zfar: f32,
+		zoom: f32,
+		dimension: Vec2,
+		position: Vec3
 	) -> Self {
 		Self {
-			eye,
-			target,
-			up,
-			aspect,
-			fovy,
-			znear,
-			zfar,
+			zoom,
+			dimension,
+			position
 		}
 	}
 
 	pub fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
 		// 1.
-		let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-		// 2.
-		let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
 
+		let proj = cgmath::ortho(self.position.x() - self.dimension.x() / 2.0, self.position.x() + self.dimension.x() / 2.0, self.position.y() - self.dimension.y() / 2.0, self.position.y() + self.dimension.y() / 2.0, 1.0, 0.0);
 		// 3.
-		return OPENGL_TO_WGPU_MATRIX * proj * view;
+		return OPENGL_TO_WGPU_MATRIX * proj;
 	}
 }
 

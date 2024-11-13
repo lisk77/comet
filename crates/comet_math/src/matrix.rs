@@ -11,7 +11,7 @@ trait LinearTransformation {
 // ##################################################
 
 
-/// Representation of a 2x2 Matrix in row major
+/// Representation of a 2x2 Matrix
 #[repr(C)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq)]
@@ -39,10 +39,17 @@ impl Mat2 {
 		}
 	}
 
-	pub fn from_vec(row1: Vec2, row2: Vec2) -> Self {
+	pub fn from_rows(row1: Vec2, row2: Vec2) -> Self {
 		Self {
 			x00: row1.x(), x01: row1.y(),
 			x10: row2.x(), x11: row2.y()
+		}
+	}
+
+	pub fn from_cols(col1: Vec2, col2: Vec2) -> Self {
+		Self {
+			x00: col1.x(), x01: col2.x(),
+			x10: col1.y(), x11: col2.y()
 		}
 	}
 
@@ -64,6 +71,15 @@ impl Mat2 {
 		match row {
 			0 => Some(Vec2::new(self.x00, self.x01)),
 			1 => Some(Vec2::new(self.x10, self.x11)),
+			_ => None
+		}
+	}
+
+	pub fn get_col(&self, col: usize) -> Option<Vec2> {
+		assert!(col <= 1, "This row ({}) is out of bounds! Bounds: 0..1", col);
+		match col {
+			0 => Some(Vec2::new(self.x00, self.x10)),
+			1 => Some(Vec2::new(self.x01, self.x11)),
 			_ => None
 		}
 	}
@@ -91,6 +107,16 @@ impl Mat2 {
 		}
 	}
 
+	pub fn set_col(&mut self, col: usize, col_content: Vec2) {
+		assert!(col <= 1, "This row ({}) is out of bounds! Bounds: 0..1", col);
+
+		match col {
+			0 => { self.x00 = col_content.x(); self.x10 = col_content.y(); },
+			1 => { self.x01 = col_content.x(); self.x11 = col_content.y(); },
+			_ => {}
+		}
+	}
+
 	pub fn det(&self) -> f32 {
 		self.x00 * self.x11
 			- self.x01 * self.x10
@@ -107,6 +133,12 @@ impl Mat2 {
 		let tmp = self.get_row(row1).expect(format!("This row ({}) is out of bounds! Bounds: 0..1", row1).as_str());
 		self.set_row(row1, self.get_row(row2).expect(format!("This row ({}) is out of bounds! Bounds: 0..1", row2).as_str()));
 		self.set_row(row2, tmp);
+	}
+
+	pub fn swap_cols(&mut self, col1: usize, col2: usize) {
+		let tmp = self.get_col(col1).expect(format!("This row ({}) is out of bounds! Bounds: 0..1", col1).as_str());
+		self.set_col(col1, self.get_col(col2).expect(format!("This row ({}) is out of bounds! Bounds: 0..1", col2).as_str()));
+		self.set_col(col2, tmp);
 	}
 }
 
@@ -187,11 +219,12 @@ impl Div<f32> for Mat2 {
 	}
 }
 
+/// [WARN]: This will return a column-major array for wgpu use!
 impl Into<[[f32; 2]; 2]> for Mat2 {
 	fn into(self) -> [[f32; 2]; 2] {
 		[
-			[self.x00, self.x01],
-			[self.x10, self.x11],
+			[self.x00, self.x10],
+			[self.x01, self.x11],
 		]
 	}
 }
@@ -235,11 +268,19 @@ impl Mat3 {
 		}
 	}
 
-	pub fn from_vec(row1: Vec3, row2: Vec3, row3: Vec3) -> Self {
+	pub fn from_rows(row1: Vec3, row2: Vec3, row3: Vec3) -> Self {
 		Self {
 			x00: row1.x(), x01: row1.y(), x02: row1.z(),
 			x10: row2.x(), x11: row2.y(), x12: row2.z(),
 			x20: row3.x(), x21: row3.y(), x22: row3.z()
+		}
+	}
+
+	pub fn from_cols(col1: Vec3, col2: Vec3, col3: Vec3) -> Self {
+		Self {
+			x00: col1.x(), x01: col2.x(), x02: col3.x(),
+			x10: col1.y(), x11: col2.y(), x12: col3.y(),
+			x20: col1.z(), x21: col2.z(), x22: col3.z()
 		}
 	}
 
@@ -266,6 +307,16 @@ impl Mat3 {
 			0 => Some(Vec3::new(self.x00, self.x01, self.x02)),
 			1 => Some(Vec3::new(self.x10, self.x11, self.x12)),
 			2 => Some(Vec3::new(self.x20, self.x21, self.x22)),
+			_ => None
+		}
+	}
+
+	pub fn get_col(&self, col: usize) -> Option<Vec3> {
+		assert!(col <= 2, "This row ({}) is out of bounds! Bounds: 0..2", col);
+		match col {
+			0 => Some(Vec3::new(self.x00, self.x10, self.x20)),
+			1 => Some(Vec3::new(self.x01, self.x11, self.x21)),
+			2 => Some(Vec3::new(self.x02, self.x12, self.x22)),
 			_ => None
 		}
 	}
@@ -298,6 +349,16 @@ impl Mat3 {
 		}
 	}
 
+	pub fn set_col(&mut self, col: usize, col_content: Vec3) {
+		assert!(col <= 2, "This row ({}) is out of bounds! Bounds: 0..2", col);
+		match col {
+			0 => { self.x00 = col_content.x; self.x10 = col_content.y; self.x20 = col_content.z; },
+			1 => { self.x01 = col_content.x; self.x11 = col_content.y; self.x21 = col_content.z; },
+			2 => { self.x02 = col_content.x; self.x12 = col_content.y; self.x22 = col_content.z; }
+			_ => {}
+		}
+	}
+
 	pub fn det(&self) -> f32 {
 		self.x00 * self.x11 * self.x22
 			+ self.x01 * self.x12 * self.x20
@@ -319,6 +380,12 @@ impl Mat3 {
 		let tmp = self.get_row(row1).expect(format!("This row ({}) is out of bounds! Bounds: 0..2", row1).as_str());
 		self.set_row(row1, self.get_row(row2).expect(format!("This row ({}) is out of bounds! Bounds: 0..2", row2).as_str()));
 		self.set_row(row2, tmp);
+	}
+
+	pub fn swap_cols(&mut self, col1: usize, col2: usize) {
+		let tmp = self.get_col(col1).expect(format!("This row ({}) is out of bounds! Bounds: 0..2", col1).as_str());
+		self.set_col(col1, self.get_col(col2).expect(format!("This row ({}) is out of bounds! Bounds: 0..2", col2).as_str()));
+		self.set_col(col2, tmp);
 	}
 }
 
@@ -412,9 +479,9 @@ impl Div<f32> for Mat3 {
 impl Into<[[f32; 3]; 3]> for Mat3 {
 	fn into(self) -> [[f32; 3]; 3] {
 		[
-			[self.x00, self.x01, self.x02],
-			[self.x10, self.x11, self.x12],
-			[self.x20, self.x21, self.x22],
+			[self.x00, self.x10, self.x20],
+			[self.x01, self.x11, self.x21],
+			[self.x02, self.x12, self.x22],
 		]
 	}
 }
@@ -470,12 +537,21 @@ impl Mat4 {
 		}
 	}
 
-	pub fn from_vec(row1: Vec4, row2: Vec4, row3: Vec4, row4: Vec4) -> Self {
+	pub fn from_rows(row1: Vec4, row2: Vec4, row3: Vec4, row4: Vec4) -> Self {
 		Self {
 			x00: row1.x(), x01: row1.y(), x02: row1.z(), x03: row1.w(),
 			x10: row2.x(), x11: row2.y(), x12: row2.z(), x13: row2.w(),
 			x20: row3.x(), x21: row3.y(), x22: row3.z(), x23: row3.w(),
 			x30: row4.x(), x31: row4.y(), x32: row4.z(), x33: row4.w()
+		}
+	}
+
+	pub fn from_cols(col1: Vec4, col2: Vec4, col3: Vec4, col4: Vec4) -> Self {
+		Self {
+			x00: col1.x(), x01: col2.x(), x02: col3.x(), x03: col4.x(),
+			x10: col1.y(), x11: col2.y(), x12: col3.y(), x13: col4.y(),
+			x20: col1.z(), x21: col2.z(), x22: col3.z(), x23: col4.z(),
+			x30: col1.w(), x31: col2.w(), x32: col3.w(), x33: col4.w()
 		}
 	}
 
@@ -486,19 +562,19 @@ impl Mat4 {
 		let cam = camera.to_vec();
 
 
-		/*Mat4::new(
+		Mat4::new(
 			s.x().clone(), u.x().clone(), -f.x().clone(), 0.0,
 			s.y().clone(), u.y().clone(), -f.y().clone(), 0.0,
 			s.z().clone(), u.z().clone(), -f.z().clone(), 0.0,
 			-dot(&cam, &s), -dot(&cam, &u), dot(&cam, &f),1.0
-		)*/
+		)
 
-		Mat4::new(
+		/*Mat4::new(
 			s.x().clone(), s.y().clone(), s.z().clone(), 0.0,
 			u.x().clone(), u.y().clone(), u.z().clone(), 0.0,
 			-f.x().clone(), -f.y().clone(), -f.z().clone(), 0.0,
 			-dot(&cam, &s), -dot(&cam, &u), dot(&cam, &f), 1.0
-		)
+		)*/
 
 	}
 
@@ -524,20 +600,29 @@ impl Mat4 {
 		let bottom = -ymax;
 		let top = ymax;
 
-		/*Mat4::new(
+		Mat4::new(
 			(2.0 * near) / (right - left), 0.0, (right + left) / (right - left), 0.0,
 			0.0, (2.0 * near) / (top - bottom), (top + bottom) / (top - bottom), 0.0,
 			0.0, 0.0, -(far + near) / (far - near), -(2.0 * far * near) / (far - near),
 			0.0, 0.0, -1.0, 0.0
-		)*/
+		)
 
-		Mat4::new(
+		/*Mat4::new(
 			(2.0 * near) / (right - left), 0.0, 0.0, 0.0,
 			0.0, (2.0 * near) / (top - bottom), 0.0, 0.0,
 			(right + left) / (right - left), (top + bottom) / (top - bottom), -(far + near) / (far - near), -1.0,
 			0.0, 0.0, -(2.0 * far * near) / (far - near), 0.0
-		)
+		)*/
 
+	}
+
+	pub fn orthographic_matrix(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Self {
+		Mat4::new(
+			2.0 / (right - left), 0.0, 0.0, 0.0,
+			0.0, 2.0 / (top - bottom), 0.0, 0.0,
+			0.0, 0.0, -2.0 / (far - near), 0.0,
+			-(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1.0
+		)
 	}
 
 	pub fn get(&self, row: usize, col: usize) -> Option<f32> {
@@ -571,6 +656,17 @@ impl Mat4 {
 			1 => Some(Vec4::new(self.x10, self.x11, self.x12, self.x13)),
 			2 => Some(Vec4::new(self.x20, self.x21, self.x22, self.x23)),
 			3 => Some(Vec4::new(self.x30, self.x31, self.x32, self.x33)),
+			_ => None
+		}
+	}
+
+	pub fn get_col(&self, col: usize) -> Option<Vec4> {
+		assert!(col <= 3, "This row ({}) is out of bounds! Bounds: 0..3", col);
+		match col {
+			0 => Some(Vec4::new(self.x00, self.x10, self.x20, self.x30)),
+			1 => Some(Vec4::new(self.x01, self.x11, self.x21, self.x31)),
+			2 => Some(Vec4::new(self.x02, self.x12, self.x22, self.x32)),
+			3 => Some(Vec4::new(self.x03, self.x13, self.x23, self.x33)),
 			_ => None
 		}
 	}
@@ -610,6 +706,17 @@ impl Mat4 {
 		}
 	}
 
+	pub fn set_col(&mut self, col: usize, col_content: Vec4) {
+		assert!(col <= 3, "This column ({}) is out of bounds! Bounds: 0..3", col);
+		match col {
+			0 => { self.x00 = col_content.x(); self.x10 = col_content.y(); self.x20 = col_content.z(); self.x30 = col_content.w(); },
+			1 => { self.x01 = col_content.x(); self.x11 = col_content.y(); self.x21 = col_content.z(); self.x31 = col_content.w(); },
+			2 => { self.x02 = col_content.x(); self.x12 = col_content.y(); self.x22 = col_content.z(); self.x32 = col_content.w(); },
+			3 => { self.x03 = col_content.x(); self.x13 = col_content.y(); self.x23 = col_content.z(); self.x33 = col_content.w(); }
+			_ => {}
+		}
+	}
+
 	pub fn det(&self) -> f32 {
 		self.x00 * (self.x11 * (self.x22* self.x33 - self.x23 * self.x32)
 			- self.x21 * (self.x12 * self.x33 - self.x13 * self.x32)
@@ -632,6 +739,18 @@ impl Mat4 {
 			x20: self.x02, x21: self.x12, x22: self.x22, x23: self.x32,
 			x30: self.x03, x31: self.x13, x32: self.x23, x33: self.x33
 		}
+	}
+
+	pub fn swap_rows(&mut self, row1: usize, row2: usize) {
+		let tmp = self.get_row(row1).expect(format!("This row ({}) is out of bounds! Bounds: 0..2", row1).as_str());
+		self.set_row(row1, self.get_row(row2).expect(format!("This row ({}) is out of bounds! Bounds: 0..2", row2).as_str()));
+		self.set_row(row2, tmp);
+	}
+
+	pub fn swap_cols(&mut self, col1: usize, col2: usize) {
+		let tmp = self.get_col(col1).expect(format!("This row ({}) is out of bounds! Bounds: 0..2", col1).as_str());
+		self.set_col(col1, self.get_col(col2).expect(format!("This row ({}) is out of bounds! Bounds: 0..2", col2).as_str()));
+		self.set_col(col2, tmp);
 	}
 }
 
@@ -715,10 +834,10 @@ impl Mul<Mat4> for Mat4 {
 impl Into<[[f32; 4]; 4]> for Mat4 {
 	fn into(self) -> [[f32; 4]; 4] {
 		[
-			[self.x00, self.x01, self.x02, self.x03],
-			[self.x10, self.x11, self.x12, self.x13],
-			[self.x20, self.x21, self.x22, self.x23],
-			[self.x30, self.x31, self.x32, self.x33],
+			[self.x00, self.x10, self.x20, self.x30],
+			[self.x01, self.x11, self.x21, self.x31],
+			[self.x02, self.x12, self.x22, self.x32],
+			[self.x03, self.x13, self.x23, self.x33],
 		]
 	}
 }

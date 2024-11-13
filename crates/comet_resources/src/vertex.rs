@@ -5,13 +5,15 @@ use wgpu::Color;
 pub struct Vertex {
 	position: [f32; 3],
 	tex_coords: [f32; 2],
+	color: [f32; 4]
 }
 
 impl Vertex {
-	pub fn new(position: [f32; 3], tex_coords: [f32; 2]) -> Self {
+	pub fn new(position: [f32; 3], tex_coords: [f32; 2], color: [f32; 4]) -> Self {
 		Self {
 			position,
-			tex_coords
+			tex_coords,
+			color
 		}
 	}
 
@@ -21,6 +23,10 @@ impl Vertex {
 
 	pub fn set_tex_coords(&mut self, new_tex_coords: [f32; 2]) {
 		self.tex_coords = new_tex_coords
+	}
+
+	pub fn set_color(&mut self, new_color: [f32; 4]) {
+		self.color = new_color
 	}
 
 	pub fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -37,6 +43,11 @@ impl Vertex {
 					offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
 					shader_location: 1,
 					format: wgpu::VertexFormat::Float32x2,
+				},
+				wgpu::VertexAttribute {
+					offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
+					shader_location: 2,
+					format: wgpu::VertexFormat::Float32x4,
 				}
 			]
 		}

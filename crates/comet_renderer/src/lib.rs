@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use cgmath::num_traits::FloatConst;
 use image::GenericImageView;
-use log::info;
 use wgpu::Color;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -16,9 +15,10 @@ use winit::{
 };
 use winit::dpi::Position;
 use comet_colors::LinearRgba;
-use comet_log::error;
+use comet_ecs::{Component, ComponentSet, Render, Renderer2D, Transform2D, World};
+use comet_log::*;
 use comet_math;
-use comet_math::{Mat4, Point3, Vec3};
+use comet_math::{Mat4, Point3, Vec2, Vec3};
 use comet_resources::{ResourceManager, texture, Vertex, Texture};
 use comet_resources::texture_atlas::TextureRegion;
 use crate::camera::{Camera, CameraUniform};
@@ -67,10 +67,10 @@ pub struct Renderer<'a> {
     diffuse_texture: texture::Texture,
     diffuse_bind_group: wgpu::BindGroup,
     resource_manager: ResourceManager,
-    /*camera: Camera,
+    camera: Camera,
 	camera_uniform: CameraUniform,
 	camera_buffer: wgpu::Buffer,
-	camera_bind_group: wgpu::BindGroup,*/
+	camera_bind_group: wgpu::BindGroup,
 }
 
 impl<'a> Renderer<'a> {
@@ -199,64 +199,47 @@ impl<'a> Renderer<'a> {
             label: Some("diffuse_bind_group"),
         });
 
-        /*let camera = Camera::new(
-			// position the camera 1 unit up and 2 units back
-			// +z is out of the screen
-			(0.0, 1.0, 2.0).into(),
-			// have it look at the origin
-			(0.0, 0.0, 0.0).into(),
-			// which way is "up"
-			cgmath::Vector3::unit_y(),
-			config.width as f32 / config.height as f32,
-			45.0,
-			0.1,
-			100.0,
-		);
+        let camera = Camera::new(1.0, Vec2::new(2.0, 2.0), Vec3::new(0.0, 0.0, 0.0));
 
-		let mut camera_uniform = CameraUniform::new();
-		camera_uniform.update_view_proj(&camera);
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
 
-		let camera_buffer = device.create_buffer_init(
-			&wgpu::util::BufferInitDescriptor {
-				label: Some("Camera Buffer"),
-				contents: bytemuck::cast_slice(&[camera_uniform]),
-				usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-			}
-		);
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
-		let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[
-				wgpu::BindGroupLayoutEntry {
-					binding: 0,
-					visibility: wgpu::ShaderStages::VERTEX,
-					ty: wgpu::BindingType::Buffer {
-						ty: wgpu::BufferBindingType::Uniform,
-						has_dynamic_offset: false,
-						min_binding_size: None,
-					},
-					count: None,
-				}
-			],
-			label: Some("camera_bind_group_layout"),
-		});
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
 
-		let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &camera_bind_group_layout,
-			entries: &[
-				wgpu::BindGroupEntry {
-					binding: 0,
-					resource: camera_buffer.as_entire_binding(),
-				}
-			],
-			label: Some("camera_bind_group"),
-		});*/
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+            label: Some("camera_bind_group"),
+        });
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &texture_bind_group_layout,
-                    //&camera_bind_group_layout,
+                    &camera_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -347,10 +330,10 @@ impl<'a> Renderer<'a> {
             diffuse_texture,
             diffuse_bind_group,
             resource_manager,
-            /*camera,
+            camera,
 			camera_uniform,
 			camera_buffer,
-			camera_bind_group,*/
+			camera_bind_group,
         })
     }
 
@@ -380,10 +363,10 @@ impl<'a> Renderer<'a> {
             ((width/ self.config.width as f32) * 0.5, (height/ self.config.height as f32) * 0.5);
 
         vec![
-            Vertex :: new ( [-bound_x,  bound_y, 0.0], [0.0, 0.0] ),
-            Vertex :: new ( [-bound_x, -bound_y, 0.0], [0.0, 1.0] ),
-            Vertex :: new ( [ bound_x, -bound_y, 0.0], [1.0, 1.0]) ,
-            Vertex :: new ( [ bound_x,  bound_y, 0.0], [1.0, 0.0] )
+            Vertex :: new ( [-bound_x,  bound_y, 0.0], [0.0, 0.0], [0.0, 0.0, 0.0, 0.0] ),
+            Vertex :: new ( [-bound_x, -bound_y, 0.0], [0.0, 1.0], [0.0, 0.0, 0.0, 0.0] ),
+            Vertex :: new ( [ bound_x, -bound_y, 0.0], [1.0, 1.0], [0.0, 0.0, 0.0, 0.0] ),
+            Vertex :: new ( [ bound_x,  bound_y, 0.0], [1.0, 0.0], [0.0, 0.0, 0.0, 0.0] )
         ]
     }
 
@@ -401,10 +384,10 @@ impl<'a> Renderer<'a> {
             ((self.diffuse_texture.size.width as f32/ self.config.width as f32) * 0.5, (self.diffuse_texture.size.height as f32/ self.config.height as f32) * 0.5);
 
         let vertices: Vec<Vertex> = vec![
-            Vertex :: new ( [-bound_x,  bound_y, 0.0], [0.0, 0.0] ),
-            Vertex :: new ( [-bound_x, -bound_y, 0.0], [0.0, 1.0] ),
-            Vertex :: new ( [ bound_x, -bound_y, 0.0], [1.0, 1.0]) ,
-            Vertex :: new ( [ bound_x,  bound_y, 0.0], [1.0, 0.0] )
+            Vertex :: new ( [-bound_x,  bound_y, 0.0], [0.0, 0.0], [0.0, 0.0, 0.0, 0.0] ),
+            Vertex :: new ( [-bound_x, -bound_y, 0.0], [0.0, 1.0], [0.0, 0.0, 0.0, 0.0] ),
+            Vertex :: new ( [ bound_x, -bound_y, 0.0], [1.0, 1.0], [0.0, 0.0, 0.0, 0.0] ),
+            Vertex :: new ( [ bound_x,  bound_y, 0.0], [1.0, 0.0], [0.0, 0.0, 0.0, 0.0] )
         ];
 
         /*let vertices: Vec<Vertex> = vec![
@@ -494,8 +477,6 @@ impl<'a> Renderer<'a> {
             paths.push(texture_path.clone() + path.unwrap().file_name().to_str().unwrap());
         }
 
-        error!(format!("{:?}", paths));
-
         self.set_texture_atlas(paths);
     }
 
@@ -572,10 +553,10 @@ impl<'a> Renderer<'a> {
             ((dim_x as f32/ self.config.width as f32) * 0.5, (dim_y as f32/ self.config.height as f32) * 0.5);
 
         let vertices: &mut Vec<Vertex> = &mut vec![
-            Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.x0(), region.y0()] ),
-            Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.x0(), region.y1()] ),
-            Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.x1(), region.y1()] ) ,
-            Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.x1(), region.y0()] )
+            Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0] ),
+            Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0] ),
+            Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0] ) ,
+            Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0] )
         ];
 
         let buffer_size = self.vertex_data.len() as u16;
@@ -586,6 +567,45 @@ impl<'a> Renderer<'a> {
         ];
 
         self.push_to_buffers(vertices, indices)
+    }
+
+    pub fn render_scene_2d(&mut self, world: &World) {
+        let entities =  world.get_entities_with(ComponentSet::from_ids(vec![Renderer2D::type_id()]));
+        let mut vertex_buffer: Vec<Vertex> = Vec::new();
+        let mut index_buffer: Vec<u16> = Vec::new();
+
+        for entity in entities {
+            let renderer_component =  world.get_component::<Renderer2D>(entity as usize);
+            let transform_component = world.get_component::<Transform2D>(entity as usize);
+
+            if renderer_component.is_visible() {
+                //renderer.draw_texture_at(renderer_component.get_texture(), Point3::new(transform_component.position().x(), transform_component.position().y(), 0.0));
+                let mut position = transform_component.position().clone();
+                position.set_x(position.x() / self.config().width as f32);
+                position.set_y(position.y() / self.config().height as f32);
+                let region = self.get_texture(renderer_component.get_texture().to_string());
+                let (dim_x, dim_y) = region.dimensions();
+
+                let (bound_x, bound_y) =
+                    ((dim_x as f32/ self.config().width as f32) * 0.5, (dim_y as f32/ self.config().height as f32) * 0.5);
+
+                let buffer_size = vertex_buffer.len() as u16;
+
+                vertex_buffer.append(&mut vec![
+                    Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0] ),
+                    Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0] ),
+                    Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0] ) ,
+                    Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0] )
+                ]);
+
+                index_buffer.append(&mut vec![
+                    0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
+                    1 + buffer_size, 2 + buffer_size, 3 + buffer_size
+                ]);
+            }
+        }
+
+        self.set_buffers(vertex_buffer, index_buffer);
     }
 
     pub fn window(&self) -> &Window {
@@ -606,10 +626,11 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> f32 {
         let now = Instant::now();
         self.deltatime = now.duration_since(self.last_frame_time).as_secs_f32();  // Time delta in seconds
         self.last_frame_time = now;
+        self.deltatime
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -642,7 +663,7 @@ impl<'a> Renderer<'a> {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-            //render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
