@@ -18,13 +18,13 @@ a free and open source games framework
   - [ ] 3D
     - [ ] Meshes
     - [ ] Normal maps
-    - 
   - [x] Texture Atlas
   - [ ] Shaders
   - [ ] Materials
   - [ ] Text
   - [ ] Particles
   - [ ] Animations
+  - [ ] Lighting
 - [ ] Sound
 - [ ] Input
   - [ ] Universal input manager
