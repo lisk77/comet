@@ -9,28 +9,41 @@ a free and open source games framework
 > UPDATE: It is slowly getting where I want it to be (at least for 2D)
 
 ## Features
+(not ordered by importance)
 
+- [x] Fixed update steps (60 updates per second right now)
 - [ ] Rendering
   - [x] 2D
     - [x] Textures
   - [ ] 3D
+    - [ ] Meshes
+    - [ ] Normal maps
+    - 
   - [x] Texture Atlas
   - [ ] Shaders
   - [ ] Materials
-  - [ ] Fonts
+  - [ ] Text
   - [ ] Particles
   - [ ] Animations
 - [ ] Sound
 - [ ] Input
+  - [ ] Universal input manager
   - [x] Keyboard
   - [x] Mouse
   - [ ] Gamepad
-- [ ] ECS
+- [x] ECS
   - [x] Components
   - [x] Entities
   - [x] Archetypes
   - [x] World
 - [ ] Scene
-  - [ ] rendering
   - [ ] loading
   - [ ] saving
+- [ ] UI
+  - [ ] Buttons
+  - [ ] Text
+  - [ ] Input
+- [ ] Physics
+  - [ ] 2D
+  - [ ] 3D
+- [ ] Plugin System 
