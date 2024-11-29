@@ -3,8 +3,13 @@ use comet::{
 		App,
 		ApplicationType::*
 	},
-	renderer::Renderer,
-	ecs::*,
+	renderer::Renderer2D,
+	ecs::{
+		Render2D,
+		Transform2D,
+		Component,
+		Render
+	},
 	math::*,
 	input::keyboard::*,
 	log::*
@@ -44,11 +49,14 @@ fn update_position(input: WinitInputHelper, transform: &mut Transform2D, dt: f32
 	}
 }
 
-fn setup(world: &mut World) {
-	world.register_component::<Renderer2D>();
+fn setup(app: &mut App, renderer: &mut Renderer2D) {
+	renderer.initialize_atlas();
+
+	let world = app.world_mut();
+	world.register_component::<Render2D>();
 	//world.register_component::<Rectangle2D>();
 
-	let mut renderer2d = Renderer2D::new();
+	let mut renderer2d = Render2D::new();
 	renderer2d.set_texture(r"resources/textures/comet_icon.png");
 	renderer2d.set_visibility(true);
 
@@ -71,10 +79,14 @@ fn setup(world: &mut World) {
 
 }
 
-fn update(app: &mut App, renderer: &mut Renderer, dt: f32) {
+fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
 	if app.key_pressed(Key::Escape) { app.quit() }
-	if app.key_pressed(Key::KeyC) { app.set_time_step(0.0016667) }
-	if app.key_pressed(Key::KeyV) { app.set_time_step(0.0166667) }
+	if app.key_pressed(Key::KeyP) {
+		if app.dt() == f32::INFINITY { app.set_update_rate(60) }
+		else {
+			app.set_update_rate(0);
+		}
+	}
 	if app.key_pressed(Key::KeyE) { app.world_mut().get_component_mut::<Transform2D>(0).translate([0f32,0f32].into()) }
 	if app.key_held(Key::KeyW)
 		|| app.key_held(Key::KeyA)
@@ -86,7 +98,7 @@ fn update(app: &mut App, renderer: &mut Renderer, dt: f32) {
 
 	let mut transform = app.world_mut().get_component_mut::<Transform2D>(0);
 
-
+	renderer.render_scene_2d(app.world());
 }
 
 fn main() {
@@ -94,7 +106,6 @@ fn main() {
 		.with_title("Comet App")
 		.with_icon(r"resources/textures/comet_icon.png")
 		.with_size(1920, 1080)
-		.with_setup(setup)
-		.run(update)
+		.run::<Renderer2D>(setup, update)
 	;
 }

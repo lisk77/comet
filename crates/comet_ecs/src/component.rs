@@ -39,7 +39,7 @@ pub struct Rectangle2D{
 }
 
 #[derive(Component)]
-pub struct Renderer2D {
+pub struct Render2D {
 	is_visible: bool,
 	texture: &'static str,
 	scale: Vec2
@@ -196,7 +196,7 @@ impl Collider for Rectangle2D {
 	}
 }
 
-impl Render for Renderer2D {
+impl Render for Render2D {
 	fn is_visible(&self) -> bool {
 		self.is_visible
 	}

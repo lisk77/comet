@@ -1,9 +1,10 @@
 mod camera;
+pub mod renderer;
 
 use core::default::Default;
 use std::iter;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use cgmath::num_traits::FloatConst;
 use image::GenericImageView;
@@ -15,13 +16,14 @@ use winit::{
 };
 use winit::dpi::Position;
 use comet_colors::LinearRgba;
-use comet_ecs::{Component, ComponentSet, Render, Renderer2D, Transform2D, World};
+use comet_ecs::{Component, ComponentSet, Render, Renderer2D as R2D, Transform2D, World};
 use comet_log::*;
 use comet_math;
 use comet_math::{Mat4, Point3, Vec2, Vec3};
 use comet_resources::{ResourceManager, texture, Vertex, Texture};
 use comet_resources::texture_atlas::TextureRegion;
 use crate::camera::{Camera, CameraUniform};
+use crate::renderer::Renderer;
 
 pub struct Projection {
     aspect: f32,
@@ -47,8 +49,7 @@ impl Projection {
     }
 }
 
-pub struct Renderer<'a> {
-    window: &'a Window,
+pub struct Renderer2D<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -73,15 +74,13 @@ pub struct Renderer<'a> {
 	camera_bind_group: wgpu::BindGroup,
 }
 
-impl<'a> Renderer<'a> {
-    pub async fn new(window: &'a Window, clear_color: Option<LinearRgba>) -> anyhow::Result<Renderer<'a>> {
+impl<'a> Renderer2D<'a> {
+    pub async fn new(window: Arc<Window>, clear_color: Option<LinearRgba>) -> Renderer2D<'a> {
         let vertex_data: Vec<Vertex> = vec![];
         let index_data: Vec<u16> = vec![];
 
-        let size = PhysicalSize::<u32>::new(1920, 1080); //window.inner_size();
+        let size = PhysicalSize::<u32>::new(1920, 1080);
 
-        // The instance is a handle to our GPU
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()
@@ -103,8 +102,6 @@ impl<'a> Renderer<'a> {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     required_features: wgpu::Features::empty(),
-                    // WebGL doesn't support all of wgpu's features, so if
-                    // we're building for the web we'll have to disable some.
                     required_limits: wgpu::Limits::default(),
                     memory_hints: Default::default(),
                 },
@@ -114,9 +111,6 @@ impl<'a> Renderer<'a> {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
-        // one will result all the colors comming out darker. If you want to support non
-        // Srgb surfaces, you'll need to account for that when drawing to the frame.
         let surface_format = surface_caps
             .formats
             .iter()
@@ -279,12 +273,8 @@ impl<'a> Renderer<'a> {
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
-                // or Features::POLYGON_MODE_POINT
                 polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
                 unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
             depth_stencil: None,
@@ -293,10 +283,7 @@ impl<'a> Renderer<'a> {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            // If the pipeline will be used with a multiview render pass, this
-            // indicates how many array layers the attachments will have.
             multiview: None,
-            // Useful for optimizing shader compilation on Android
             cache: None,
         });
 
@@ -310,8 +297,7 @@ impl<'a> Renderer<'a> {
             }
         };
 
-        Ok(Self {
-            window,
+        Self {
             surface,
             device,
             queue,
@@ -334,7 +320,7 @@ impl<'a> Renderer<'a> {
 			camera_uniform,
 			camera_buffer,
 			camera_bind_group,
-        })
+        }
     }
 
     pub fn dt(&self) -> f32 {
@@ -570,12 +556,12 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn render_scene_2d(&mut self, world: &World) {
-        let entities =  world.get_entities_with(ComponentSet::from_ids(vec![Renderer2D::type_id()]));
+        let entities =  world.get_entities_with(ComponentSet::from_ids(vec![R2D::type_id()]));
         let mut vertex_buffer: Vec<Vertex> = Vec::new();
         let mut index_buffer: Vec<u16> = Vec::new();
 
         for entity in entities {
-            let renderer_component =  world.get_component::<Renderer2D>(entity as usize);
+            let renderer_component =  world.get_component::<R2D>(entity as usize);
             let transform_component = world.get_component::<Transform2D>(entity as usize);
 
             if renderer_component.is_visible() {
@@ -606,10 +592,6 @@ impl<'a> Renderer<'a> {
         }
 
         self.set_buffers(vertex_buffer, index_buffer);
-    }
-
-    pub fn window(&self) -> &Window {
-        &self.window
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {
@@ -673,5 +655,27 @@ impl<'a> Renderer<'a> {
         output.present();
 
         Ok(())
+    }
+}
+
+impl<'a> Renderer for Renderer2D<'a> {
+    async fn new(window: Arc<Window>, clear_color: Option<LinearRgba>) -> Renderer2D<'a> {
+        Self::new(window.clone(), clear_color).await
+    }
+
+    fn size(&self) -> PhysicalSize<u32> {
+        self.size()
+    }
+
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.resize(new_size)
+    }
+
+    fn update(&mut self) -> f32 {
+        self.update()
+    }
+
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.render()
     }
 }
