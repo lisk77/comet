@@ -16,7 +16,7 @@ use winit::{
 };
 use winit::dpi::Position;
 use comet_colors::LinearRgba;
-use comet_ecs::{Component, ComponentSet, Render, Renderer2D as R2D, Transform2D, World};
+use comet_ecs::{Component, ComponentSet, Render, Render2D, Transform2D, World};
 use comet_log::*;
 use comet_math;
 use comet_math::{Mat4, Point3, Vec2, Vec3};
@@ -556,12 +556,12 @@ impl<'a> Renderer2D<'a> {
     }
 
     pub fn render_scene_2d(&mut self, world: &World) {
-        let entities =  world.get_entities_with(ComponentSet::from_ids(vec![R2D::type_id()]));
+        let entities =  world.get_entities_with(ComponentSet::from_ids(vec![Render2D::type_id()]));
         let mut vertex_buffer: Vec<Vertex> = Vec::new();
         let mut index_buffer: Vec<u16> = Vec::new();
 
         for entity in entities {
-            let renderer_component =  world.get_component::<R2D>(entity as usize);
+            let renderer_component =  world.get_component::<Render2D>(entity as usize);
             let transform_component = world.get_component::<Transform2D>(entity as usize);
 
             if renderer_component.is_visible() {
