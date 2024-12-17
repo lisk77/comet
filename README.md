@@ -15,6 +15,7 @@ The project structure should look like this:
 ```
 project
 │   Cargo.toml
+│   build.rs
 │   src
 │   └── main.rs
 │   resources
@@ -47,6 +48,32 @@ fn main() {
           .with_size(1920, 1080) // Sets the window size
           .with_game_state(GameState::new()) // Adds a custom game state struct
           .run::<Renderer2D>(setup, update) // Starts app
+}
+```
+
+```rust
+// build.rs
+
+use anyhow::*;
+use fs_extra::copy_items;
+use fs_extra::dir::CopyOptions;
+use std::env;
+
+fn main() -> Result<()> {
+  // This tells cargo to rerun this script if something in /resources/ changes.
+  println!("cargo:rerun-if-changed=resources/textures/*");
+  println!("cargo:rerun-if-changed=resources/shaders/*");
+
+  let out_dir = env::var("OUT_DIR")?;
+  let mut copy_options = CopyOptions::new();
+  copy_options.overwrite = true;
+  let mut paths_to_copy = Vec::new();
+  paths_to_copy.push("resources/textures/");
+  paths_to_copy.push("resources/shaders/");
+
+  copy_items(&paths_to_copy, out_dir, &copy_options)?;
+
+  Ok(())
 }
 ```
 
