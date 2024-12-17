@@ -1,8 +1,9 @@
+use std::any::{type_name, Any};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use comet_ecs::{Component, ComponentSet, Render, Transform2D, World};
 use comet_resources::{ResourceManager, Vertex};
-use comet_renderer::{Renderer2D};
+use comet_renderer::renderer2d::Renderer2D;
 
 use winit::{
 	event::{self, *},
@@ -20,6 +21,7 @@ use winit_input_helper::WinitInputHelper;
 use comet_input::input_handler::InputHandler;
 use comet_input::keyboard::Key;
 use comet_renderer::renderer::Renderer;
+use crate::GameState;
 
 pub enum ApplicationType {
 	App2D,
@@ -34,6 +36,7 @@ pub struct App<'a> {
 	input_manager: WinitInputHelper,
 	delta_time: f32,
 	update_timer: f32,
+	game_state: Option<Box<dyn Any>>,
 	world: World,
 	fullscreen: bool,
 	should_quit: bool
@@ -54,6 +57,7 @@ impl<'a> App<'a> {
 			input_manager: WinitInputHelper::new(),
 			delta_time: 0.0,
 			update_timer: 0.0166667,
+			game_state: None,
 			world,
 			fullscreen: false,
 			should_quit: false
@@ -80,11 +84,24 @@ impl<'a> App<'a> {
 		self
 	}
 
+	pub fn with_game_state(mut self, game_state: impl Any + 'static) -> Self {
+		self.game_state = Some(Box::new(game_state));
+		self
+	}
+
 	fn load_icon(path: &std::path::Path) -> Option<Icon> {
 		let image = image::open(path).expect("Failed to open icon image");
 		let rgba_image = image.to_rgba8();
 		let (width, height) = rgba_image.dimensions();
 		Some(Icon::from_rgba(rgba_image.into_raw(), width, height).unwrap())
+	}
+
+	pub fn game_state<T: 'static>(&self) -> Option<&T> {
+		self.game_state.as_ref()?.downcast_ref::<T>()
+	}
+
+	pub fn game_state_mut<T: 'static>(&mut self) -> Option<&mut T> {
+		self.game_state.as_mut()?.downcast_mut::<T>()
 	}
 
 	pub fn world(&self) -> &World {
@@ -118,6 +135,8 @@ impl<'a> App<'a> {
 	pub fn dt(&self) -> f32 {
 		self.update_timer
 	}
+
+	/// Sets the amount of times the game is updated per second
 	pub fn set_update_rate(&mut self, update_rate: u32) {
 		if update_rate == 0 {
 			self.update_timer = f32::INFINITY;
@@ -146,16 +165,21 @@ impl<'a> App<'a> {
 	}
 
 	pub fn run<R: Renderer>(mut self, setup: fn(&mut App, &mut R), update: fn(&mut App, &mut R, f32)) {
+		info!("Starting up {}!", self.title);
+
 		pollster::block_on(async {
 			let event_loop = EventLoop::new().unwrap();
 			let window = Arc::new(Self::create_window(self.title, &self.icon, &self.size ,&event_loop));
 			let mut renderer = R::new(window.clone(), self.clear_color.clone()).await; // Pass Arc<Mutex<Window>> to renderer
-			window.set_maximized(true);  // Lock window to set maximized
+			info!("Renderer created! ({})", type_name::<R>());
+			window.set_maximized(true);
 
+			info!("Setting up!");
 			setup(&mut self, &mut renderer);
 
 			let mut time_stack = 0.0;
 
+			info!("Starting event loop!");
 			event_loop.run(|event, elwt| {
 				self.delta_time = renderer.update();
 
@@ -175,6 +199,26 @@ impl<'a> App<'a> {
 				}
 
 				match event {
+					Event::WindowEvent { ref event, window_id} => {
+						match event {
+							WindowEvent::CloseRequested {} => elwt.exit(),
+							WindowEvent::Resized(physical_size) => {
+								renderer.resize(*physical_size);
+							}
+							WindowEvent::RedrawRequested => {
+								window.request_redraw();
+								match renderer.render() {
+									Ok(_) => {},
+									Err(e) => error!("Error rendering: {}", e)
+								}
+							}
+							_ => {}
+						}
+					}
+					_ => {}
+				}
+
+				/*match event {
 					Event::WindowEvent { ref event, window_id, } =>
 						match event {
 							WindowEvent::CloseRequested {} => elwt.exit(),
@@ -184,7 +228,7 @@ impl<'a> App<'a> {
 							WindowEvent::RedrawRequested => {
 								window.request_redraw();
 
-								match renderer.render() {
+								/*match renderer.render() {
 									Ok(_) => {}
 									Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => renderer.resize(renderer.size()),
 									Err(wgpu::SurfaceError::OutOfMemory) => {
@@ -194,12 +238,12 @@ impl<'a> App<'a> {
 									Err(wgpu::SurfaceError::Timeout) => {
 										warn!("Surface timeout")
 									}
-								}
+								}*/
 							}
 							_ => {}
 						}
 					_ => {}
-				}
+				*/
 			}).unwrap()
 		}
 		);

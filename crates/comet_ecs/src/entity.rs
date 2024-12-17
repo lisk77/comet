@@ -1,5 +1,4 @@
 use bit_set::BitSet;
-use crate::ComponentSet;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entity {

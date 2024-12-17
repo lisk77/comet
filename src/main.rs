@@ -1,9 +1,10 @@
+use std::ops::Deref;
 use comet::{
 	app::{
 		App,
 		ApplicationType::*
 	},
-	renderer::Renderer2D,
+	renderer::renderer2d::Renderer2D,
 	ecs::{
 		Render2D,
 		Transform2D,
@@ -17,6 +18,27 @@ use comet::{
 
 use winit_input_helper::WinitInputHelper;
 use comet_input::input_handler::InputHandler;
+
+#[derive(Debug, Clone)]
+struct GameState {
+	running: bool
+}
+
+impl GameState {
+	pub fn new() -> Self {
+		Self {
+			running: true
+		}
+	}
+
+	pub fn is_running(&self) -> bool {
+		self.running
+	}
+
+	pub fn set_running(&mut self, running: bool) {
+		self.running = running;
+	}
+}
 
 fn update_position(input: WinitInputHelper, transform: &mut Transform2D, dt: f32) {
 	let mut direction = Vec2::ZERO;
@@ -43,14 +65,28 @@ fn update_position(input: WinitInputHelper, transform: &mut Transform2D, dt: f32
 		let displacement = normalized_dir * 777.7 * dt;
 		transform.translate(displacement);
 	}
+}
 
-	if (transform.position().as_vec() - previous.as_vec()).x() > 13.0 {
-		debug!("Actual Displacement: {:?}", transform.position().as_vec() - previous.as_vec());
+fn handle_input(app: &mut App, dt: f32) {
+	if app.key_pressed(Key::NumpadAdd) { debug!("pressed +"); app.set_update_rate(120); }
+	if app.key_pressed(Key::Minus) { app.set_update_rate(60); }
+	if app.key_pressed(Key::KeyQ) { app.quit() }
+	if app.key_pressed(Key::KeyE) { app.world_mut().get_component_mut::<Transform2D>(0).translate([0f32,0f32].into()) }
+	if app.key_held(Key::KeyW)
+		|| app.key_held(Key::KeyA)
+		|| app.key_held(Key::KeyS)
+		|| app.key_held(Key::KeyD)
+	{
+		update_position(app.input_manager().clone(), app.world_mut().get_component_mut::<Transform2D>(0), dt);
 	}
 }
 
 fn setup(app: &mut App, renderer: &mut Renderer2D) {
 	renderer.initialize_atlas();
+	renderer.load_shader(None, "blacknwhite.wgsl");
+	renderer.load_shader(None, "crt.wgsl");
+	renderer.load_shader(None, "glitch.wgsl");
+	renderer.apply_shader("glitch.wgsl");
 
 	let world = app.world_mut();
 	world.register_component::<Render2D>();
@@ -66,7 +102,7 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
 	let transform = world.get_component_mut::<Transform2D>(id as usize);
 	transform.translate(Vec2::X*5.0);
 
-	world.add_component(id as usize, renderer2d);
+//	world.add_component(id as usize, renderer2d);
 
 	/*let rectangle2d = Rectangle2D::new(*tranform.position(), Vec2::new(0.1, 0.1));
 	world.add_component(id as usize, rectangle2d);
@@ -80,23 +116,16 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
 }
 
 fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
-	if app.key_pressed(Key::Escape) { app.quit() }
-	if app.key_pressed(Key::KeyP) {
-		if app.dt() == f32::INFINITY { app.set_update_rate(60) }
-		else {
-			app.set_update_rate(0);
-		}
-	}
-	if app.key_pressed(Key::KeyE) { app.world_mut().get_component_mut::<Transform2D>(0).translate([0f32,0f32].into()) }
-	if app.key_held(Key::KeyW)
-		|| app.key_held(Key::KeyA)
-		|| app.key_held(Key::KeyS)
-		|| app.key_held(Key::KeyD)
-	{
-		update_position(app.input_manager().clone(), app.world_mut().get_component_mut::<Transform2D>(0), dt);
+	let is_running = app.game_state::<GameState>().map(|gs| gs.is_running()).unwrap_or(false);
+
+	match is_running {
+		true => handle_input(app, dt),
+		false => {}
 	}
 
-	let mut transform = app.world_mut().get_component_mut::<Transform2D>(0);
+	if app.key_pressed(Key::KeyP) { app.game_state_mut::<GameState>().map(|gs| gs.set_running(!gs.is_running())); }
+	if app.key_pressed(Key::KeyC) { renderer.apply_shader("blacknwhite.wgsl"); }
+	if app.key_pressed(Key::KeyR) { renderer.apply_base_shader(); }
 
 	renderer.render_scene_2d(app.world());
 }
@@ -106,6 +135,7 @@ fn main() {
 		.with_title("Comet App")
 		.with_icon(r"resources/textures/comet_icon.png")
 		.with_size(1920, 1080)
+		.with_game_state(GameState::new())
 		.run::<Renderer2D>(setup, update)
 	;
 }

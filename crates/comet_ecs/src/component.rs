@@ -1,5 +1,8 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+// This is collection of basic components that are implemented out of the box
+// You can use these components as is or as a reference to create your own components
+// Also just as a nomenclature: bundles are a component made up of multiple components,
+// so it's a collection of components bundled together (like Transform2D)
+
 use crate::math::{
 	Vec2,
 	Vec3

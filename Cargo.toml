@@ -44,7 +44,7 @@ members = [
     "./crates/comet_ecs",
     "./crates/comet_input",
     "./crates/comet_log"
-, "crates/comet_ui"]
+, "crates/comet_ui", "crates/comet_fonts", "crates/comet_sound"]
 
 [workspace.dependencies]
 comet_app = { path = "./crates/comet_app", workspace = true }

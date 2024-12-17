@@ -6,6 +6,8 @@ pub mod resources;
 pub mod texture;
 pub mod vertex;
 pub mod texture_atlas;
+pub mod graphic_resource_manager;
+mod material;
 /*use std::io::{BufReader, Cursor};
 use wgpu::util::DeviceExt;
 
