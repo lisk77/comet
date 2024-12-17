@@ -6,7 +6,7 @@ a free and open source games framework
 > 
 > It could be potentially used to make something very basic in a very hacky way but it is not a good experience 
 > 
-> UPDATE: It is slowly getting where I want it to be (at least for 2D)
+> Installation is manual as of right now but if it reaches an exaptable state I will publish the crate
 
 ## Recommended setup
 
@@ -16,11 +16,21 @@ The project structure should look like this:
 project
 │   Cargo.toml
 │   build.rs
-│   src
-│   └── main.rs
+│   crates
+│   └── comet
 │   resources
 │   └── shaders
 │   └── textures
+│   src
+│   └── main.rs
+```
+
+```toml
+# Cargo.toml
+...
+[dependencies]
+comet = { path = "crates/comet" }
+...
 ```
 
 ```rust
