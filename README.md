@@ -46,6 +46,14 @@ use comet::{
   renderer::renderer2d::Renderer2D,
 };
 
+struct GameState {}
+
+impl GameState {
+  pub fn new() -> Self {
+    Self {}
+  }
+}
+
 // This function will be called once before the event loop starts
 fn setup(app: &mut App, renderer: &mut Renderer2D) {}
 // This function will be called every tick 
