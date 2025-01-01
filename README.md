@@ -57,7 +57,7 @@ impl GameState {
 // This function will be called once before the event loop starts
 fn setup(app: &mut App, renderer: &mut Renderer2D) {}
 // This function will be called every tick 
-fn update(app: &mut App, renderer: &mut Renderer2D) {}
+fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {}
 
 fn main() {
   App::new(App2D) // Generate a basic 2D app
