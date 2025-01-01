@@ -16,7 +16,6 @@ use comet_ecs::math::Point3;
 use comet_log::*;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event_loop::ControlFlow;
-use winit::platform::windows::WindowBuilderExtWindows;
 use winit_input_helper::WinitInputHelper;
 use comet_input::input_handler::InputHandler;
 use comet_input::keyboard::Key;
