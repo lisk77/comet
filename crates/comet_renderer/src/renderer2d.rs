@@ -24,7 +24,7 @@ pub struct Renderer2D<'a> {
 	config: wgpu::SurfaceConfiguration,
 	size: winit::dpi::PhysicalSize<u32>,
 	render_pipeline_layout: wgpu::PipelineLayout,
-	render_pipeline: wgpu::RenderPipeline,
+	pipelines: Vec<wgpu::RenderPipeline>,
 	render_pass: Vec<RenderPassInfo>,
 	last_frame_time: Instant,
 	deltatime: f32,
@@ -254,6 +254,9 @@ impl<'a> Renderer2D<'a> {
 			cache: None,
 		});
 
+		let mut pipelines = Vec::new();
+		pipelines.push(render_pipeline);
+
 		let clear_color = match clear_color {
 			Some(color) => color.to_wgpu(),
 			None => wgpu::Color {
@@ -271,7 +274,7 @@ impl<'a> Renderer2D<'a> {
 			config,
 			size,
 			render_pipeline_layout,
-			render_pipeline,
+			pipelines,
 			render_pass: vec![],
 			last_frame_time: Instant::now(),
 			deltatime: 0.0,
@@ -323,6 +326,13 @@ impl<'a> Renderer2D<'a> {
 		info!("Shader ({}) loaded successfully", file_name);
 	}
 
+	pub fn load_shaders(&mut self, shader_stages: Vec<Option<ShaderStage>>, file_names: Vec<&str>) {
+		for (i, file_name) in file_names.iter().enumerate() {
+			self.load_shader(shader_stages[i].clone(), file_name);
+			info!("Shader ({}) loaded successfully", file_name);
+		}
+	}
+
 	/// A function that applies a shader to the entire surface of the `Renderer2D` if the shader is loaded.
 	pub fn apply_shader(&mut self, shader: &str) {
 		let shader_module = self.graphic_resource_manager.get_shader(((Self::get_project_root().unwrap().as_os_str().to_str().unwrap().to_string() + "\\resources\\shaders\\").as_str().to_string() + shader).as_str()).unwrap();
@@ -372,7 +382,7 @@ impl<'a> Renderer2D<'a> {
 				push_constant_ranges: &[],
 			});
 
-		self.render_pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+		self.pipelines[0] = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
 			label: Some("Render Pipeline"),
 			layout: Some(&render_pipeline_layout),
 			vertex: wgpu::VertexState {
@@ -477,7 +487,7 @@ impl<'a> Renderer2D<'a> {
 				push_constant_ranges: &[],
 			});
 
-		self.render_pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+		self.pipelines[0] = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
 			label: Some("Render Pipeline"),
 			layout: Some(&render_pipeline_layout),
 			vertex: wgpu::VertexState {
@@ -779,7 +789,7 @@ impl<'a> Renderer2D<'a> {
 				label: Some("Render Encoder"),
 			});
 
-
+		for pipeline in &self.pipelines {
 			let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 				label: Some("Render Pass"),
 				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -795,35 +805,13 @@ impl<'a> Renderer2D<'a> {
 				timestamp_writes: None,
 			});
 
-			render_pass.set_pipeline(&self.render_pipeline);
+			render_pass.set_pipeline(pipeline);
 			render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
 			render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
 			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 			render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
-
-
-			if self.render_pass.len() > 0 {
-				for (i, pass_info) in self.render_pass.iter().enumerate() {
-					let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-						label: Some(format!("Custom Render Pass {}", i).as_str()),
-						color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-							view: &view,
-							resolve_target: None,
-							ops: wgpu::Operations {
-								load: wgpu::LoadOp::Load,
-								store: wgpu::StoreOp::Store,
-							},
-						})],
-						depth_stencil_attachment: None,
-						occlusion_query_set: None,
-						timestamp_writes: None,
-					});
-
-				}
-
-
-			}
+		}
 
 		self.queue.submit(iter::once(encoder.finish()));
 		output.present();

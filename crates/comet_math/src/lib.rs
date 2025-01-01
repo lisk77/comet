@@ -12,4 +12,4 @@ pub mod matrix;
 pub mod quaternion;
 pub mod bezier;
 pub mod easings;
-mod noise;
+pub mod noise;

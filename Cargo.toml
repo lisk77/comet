@@ -2,6 +2,9 @@
 name = "comet"
 version = "0.1.0"
 edition = "2021"
+authors = ["lisk77 <contact@lisk77.dev>"]
+description = "A games framework"
+repository = "https://github.com/lisk77/comet"
 
 [dependencies]
 comet_app = { path = "./crates/comet_app", workspace = true }
@@ -43,8 +46,11 @@ members = [
     "./crates/comet_resources",
     "./crates/comet_ecs",
     "./crates/comet_input",
-    "./crates/comet_log"
-, "crates/comet_ui", "crates/comet_fonts", "crates/comet_sound"]
+    "./crates/comet_log",
+    "./crates/comet_ui",
+    "./crates/comet_fonts",
+    "./crates/comet_sound"
+]
 
 [workspace.dependencies]
 comet_app = { path = "./crates/comet_app", workspace = true }

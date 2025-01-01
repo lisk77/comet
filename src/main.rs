@@ -1,4 +1,6 @@
 use std::ops::Deref;
+use colored::Color::White;
+use image::{GrayImage, Luma};
 use comet::{
 	app::{
 		App,
@@ -18,6 +20,7 @@ use comet::{
 
 use winit_input_helper::WinitInputHelper;
 use comet_input::input_handler::InputHandler;
+use comet_math::noise::{PerlinNoise, ValueNoise, WhiteNoise};
 
 #[derive(Debug, Clone)]
 struct GameState {
@@ -42,7 +45,6 @@ impl GameState {
 
 fn update_position(input: WinitInputHelper, transform: &mut Transform2D, dt: f32) {
 	let mut direction = Vec2::ZERO;
-	let previous = transform.position().clone();
 
 	if input.key_held(Key::KeyW) {
 		direction += Vec2::Y;
@@ -86,7 +88,6 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
 	renderer.load_shader(None, "blacknwhite.wgsl");
 	renderer.load_shader(None, "crt.wgsl");
 	renderer.load_shader(None, "glitch.wgsl");
-	renderer.apply_shader("glitch.wgsl");
 
 	let world = app.world_mut();
 	world.register_component::<Render2D>();
@@ -130,12 +131,40 @@ fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
 	renderer.render_scene_2d(app.world());
 }
 
+fn save_image_fromg_f32_vec(pixels: Vec<f32>, width: u32, height: u32, path: &str) -> Result<(), Box<dyn std::error::Error>>{
+	//debug!("{:?}", pixels);
+	if pixels.len() != (width * height) as usize {
+		return Err("The size of the input Vec does not match the width and height".into());
+	}
+
+	// Create a new image buffer with the given width and height.
+	let mut img = GrayImage::new(width, height);
+
+	// Iterate over the `Vec<f32>` and convert each value to u8.
+	for (i, &val) in pixels.iter().enumerate() {
+		let pixel_value = (val * 255.0).clamp(0.0, 255.0) as u8;
+		let x = (i as u32) % width;
+		let y = (i as u32) / width;
+
+		img.put_pixel(x, y, Luma([pixel_value]));
+	}
+
+	// Save the image to the specified path.
+	img.save(path)?;
+
+	Ok(())
+}
+
 fn main() {
-	App::new(App2D)
+	//let mut perlin = PerlinNoise::new(1000, 1000, 5.0, 777);
+	let mut perlin = ValueNoise::new(1000, 1000, 15.0, 77);
+	let noise = perlin.generate();
+	save_image_fromg_f32_vec(noise, 1000, 1000, "C:\\Users\\lisk77\\Code Sharing\\comet\\resources\\textures\\perlin.png").unwrap();
+	/*App::new(App2D)
 		.with_title("Comet App")
 		.with_icon(r"resources/textures/comet_icon.png")
 		.with_size(1920, 1080)
 		.with_game_state(GameState::new())
 		.run::<Renderer2D>(setup, update)
-	;
+	;*/
 }

@@ -10,4 +10,10 @@ pub use comet_log as log;
 
 pub mod prelude {
 	pub use comet_app::App;
+	pub use comet_app::ApplicationType::App2D;
+	pub use comet_renderer::renderer2d::Renderer2D;
+	pub use comet_input::input_handler;
+	pub use comet_log::*;
+	pub use comet_colors::*;
+	pub use comet_ecs::*;
 }

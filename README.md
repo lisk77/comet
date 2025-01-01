@@ -115,7 +115,9 @@ fn main() -> Result<()> {
   - [ ] UI
     - [ ] Buttons
     - [ ] Input
-  - [ ] Multiple render passes 
+  - [ ] Post-processing
+    - [ ] Multiple render passes
+    - [ ] Individual effects
 - [ ] Sound
 - [ ] Input
   - [ ] Universal input manager
@@ -136,3 +138,22 @@ fn main() -> Result<()> {
 - [x] Plugin System (at least right now)
   - [x] Adding custom game state struct
   - [x] Adding custom renderer
+- [ ] Math
+  - [x] Vectors
+  - [x] Matrices
+  - [ ] Quaternions
+  - [x] Interpolation
+  - [ ] Bezier curves
+  - [x] Easing functions
+  - [ ] Noise
+    - [ ] White
+    - [ ] Perlin
+    - [ ] Simplex
+    - [ ] Worley
+    - [ ] Fractal
+    - [ ] Cellular
+    - [ ] Gradient
+    - [ ] Value
+    - [ ] Cubic
+  - [ ] Ray-casting
+  - [ ] Pathfinding

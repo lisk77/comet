@@ -101,19 +101,23 @@ pub fn pointDerivative(func: fn(f32) -> f32, x: f32, h: f32) -> f32 {
 // #                 INTERPOLATION                  #
 // ##################################################
 
+/// Linear interpolation between the values `a` and `b` with the parameter `t`, while `t` is in the range [0,1].
 pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
 	(1.0 - t) * a + t * b
 }
 
-pub fn invLerp(a: f32, b:f32, value: f32) -> f32 {
+/// The inverse operation of linear interpolation. Given the values `a` and `b` and the result `value`, this function returns the parameter `t`.
+pub fn inv_lerp(a: f32, b:f32, value: f32) -> f32 {
 	(value - a) / (b - a)
 }
 
+/// Two-dimensional linear interpolation between the values `a` and `b` with the parameter `t`, while `t` is in the range [0,1].
 pub fn lerp2(a: Vec2, b: Vec2, t: f32) -> Vec2 {
 	a * (1.0 - t) + b * t
 }
 
-pub fn invLerp2(a: Vec2, b: Vec2, value: Vec2) -> Option<f32> {
+/// The inverse operation of the two-dimensional linear interpolation. Given the values `a` and `b` and the result `value`, this function returns the parameter `t`.
+pub fn inv_lerp2(a: Vec2, b: Vec2, value: Vec2) -> Option<f32> {
 	let tx = (value.x() - a.x()) / (b.x() - a.x());
 	let ty = (value.y() - a.y()) / (b.y() - a.y());
 
@@ -123,11 +127,13 @@ pub fn invLerp2(a: Vec2, b: Vec2, value: Vec2) -> Option<f32> {
 	None
 }
 
+/// Three-dimensional linear interpolation between the values `a` and `b` with the parameter `t`, while `t` is in the range [0,1].
 pub fn lerp3(a: Vec3, b: Vec3, t: f32) -> Vec3 {
 	a * (1.0 - t) + b * t
 }
 
-pub fn invLerp3(a: Vec3, b: Vec3, value: Vec3) -> Option<f32> {
+/// The inverse operation of the three-dimensional linear interpolation. Given the values `a` and `b` and the result `value`, this function returns the parameter `t`.
+pub fn inv_lerp3(a: Vec3, b: Vec3, value: Vec3) -> Option<f32> {
 	let tx = (value.x() - a.x())/(b.x() - a.x());
 	let ty = (value.y() - a.y())/(b.y() - a.y());
 	let tz = (value.z() - a.z())/(b.z() - a.z());
@@ -136,6 +142,30 @@ pub fn invLerp3(a: Vec3, b: Vec3, value: Vec3) -> Option<f32> {
 		return Some(tx);
 	}
 	None
+}
+
+/// Four-dimensional linear interpolation between the values `a` and `b` with the parameter `t`, while `t` is in the range [0,1].
+pub fn lerp4(a: Vec4, b: Vec4, t: f32) -> Vec4 {
+	a * (1.0 - t) + b * t
+}
+
+/// The inverse operation of the four-dimensional linear interpolation. Given the values `a` and `b` and the result `value`, this function returns the parameter `t`.
+pub fn inv_lerp4(a: Vec4, b: Vec4, value: Vec4) -> Option<f32> {
+	let tx = (value.x() - a.x())/(b.x() - a.x());
+	let ty = (value.y() - a.y())/(b.y() - a.y());
+	let tz = (value.z() - a.z())/(b.z() - a.z());
+	let tw = (value.w() - a.w())/(b.w() - a.w());
+
+	if (tx == ty) && (ty == tz) && (tz == tw) {
+		return Some(tx);
+	}
+	None
+}
+
+/// Cubic interpolation with the polynomial 3t² - 2t³
+fn cubic_interpolation(a: f32, b: f32, t: f32) -> f32 {
+	let g = (3.0 - t * 2.0) * t * t;
+	(b-a) * g + a
 }
 
 // ##################################################
