@@ -3,7 +3,6 @@ use std::{
 };
 
 use wgpu::{naga, Device, FilterMode, Queue, ShaderModule, TextureFormat, TextureUsages};
-use wgpu::naga::back::{glsl, hlsl};
 use wgpu::naga::ShaderStage;
 use crate::{texture, Texture};
 use crate::texture_atlas::{TextureAtlas, TextureRegion};
