@@ -1,7 +1,8 @@
 use std::any::{type_name, Any};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
 use std::time::{Duration, Instant};
-use comet_ecs::{Component, ComponentSet, Render, Transform2D, World};
+use comet_ecs::{Component, ComponentSet, Render, Transform2D, Transform3D, World};
 use comet_resources::{ResourceManager, Vertex};
 use comet_renderer::renderer2d::Renderer2D;
 
@@ -42,12 +43,7 @@ pub struct App<'a> {
 }
 
 impl<'a> App<'a> {
-	pub fn new(application_type: ApplicationType) -> Self {
-		let world = match application_type {
-			ApplicationType::App2D => World::new("2D"),
-			ApplicationType::App3D => World::new("3D"),
-		};
-
+	pub fn new() -> Self {
 		Self {
 			title: "Untitled",
 			icon: None,
@@ -57,7 +53,7 @@ impl<'a> App<'a> {
 			delta_time: 0.0,
 			update_timer: 0.0166667,
 			game_state: None,
-			world,
+			world: World::new(),
 			fullscreen: false,
 			should_quit: false
 		}
@@ -85,6 +81,20 @@ impl<'a> App<'a> {
 
 	pub fn with_game_state(mut self, game_state: impl Any + 'static) -> Self {
 		self.game_state = Some(Box::new(game_state));
+		self
+	}
+
+	pub fn with_preset(mut self, preset: ApplicationType) -> Self {
+		match preset {
+			ApplicationType::App2D => {
+				info!("Creating 2D app!");
+				self.world.register_component::<Transform2D>()
+			},
+			ApplicationType::App3D => {
+				info!("Creating 3D app!");
+				self.world.register_component::<Transform3D>()
+			}
+		};
 		self
 	}
 
@@ -163,13 +173,28 @@ impl<'a> App<'a> {
 		winit_window.build(event_loop).unwrap()
 	}
 
+	/*pub fn run<R: Renderer>(mut self, setup: fn(&mut App, &mut R), update: fn(&mut App, &mut R, f32)) {
+		info!("Starting up {}!", self.title);
+
+		pollster::block_on(async {
+			let event_loop = EventLoop::new().unwrap();
+			let window = Arc::new(Self::create_window(self.title, &self.icon, &self.size ,&event_loop));
+			let mut renderer = R::new(window.clone(), self.clear_color.clone()).await;
+			info!("Renderer created! ({})", type_name::<R>());
+
+			setup(&mut self, &mut renderer);
+		});
+
+		info!("Shutting down {}!", self.title);
+	}*/
+
 	pub fn run<R: Renderer>(mut self, setup: fn(&mut App, &mut R), update: fn(&mut App, &mut R, f32)) {
 		info!("Starting up {}!", self.title);
 
 		pollster::block_on(async {
 			let event_loop = EventLoop::new().unwrap();
 			let window = Arc::new(Self::create_window(self.title, &self.icon, &self.size ,&event_loop));
-			let mut renderer = R::new(window.clone(), self.clear_color.clone()).await; // Pass Arc<Mutex<Window>> to renderer
+			let mut renderer = R::new(window.clone(), self.clear_color.clone()).await;
 			info!("Renderer created! ({})", type_name::<R>());
 			window.set_maximized(true);
 
@@ -216,35 +241,9 @@ impl<'a> App<'a> {
 					}
 					_ => {}
 				}
-
-				/*match event {
-					Event::WindowEvent { ref event, window_id, } =>
-						match event {
-							WindowEvent::CloseRequested {} => elwt.exit(),
-							WindowEvent::Resized(physical_size) => {
-								renderer.resize(*physical_size);
-							}
-							WindowEvent::RedrawRequested => {
-								window.request_redraw();
-
-								/*match renderer.render() {
-									Ok(_) => {}
-									Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => renderer.resize(renderer.size()),
-									Err(wgpu::SurfaceError::OutOfMemory) => {
-										error!("OutOfMemory");
-										elwt.exit();
-									}
-									Err(wgpu::SurfaceError::Timeout) => {
-										warn!("Surface timeout")
-									}
-								}*/
-							}
-							_ => {}
-						}
-					_ => {}
-				*/
 			}).unwrap()
-		}
-		);
+		});
+
+		info!("Shutting down {}!", self.title);
 	}
 }

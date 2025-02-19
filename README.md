@@ -38,13 +38,7 @@ comet = { path = "crates/comet" }
 
 // This will be cleaned up in the future 
 // but for now I don't have a prelude.
-use comet::{
-  app::{
-    App,
-    ApplicationType::*
-  },
-  renderer::renderer2d::Renderer2D,
-};
+use comet::prelude::*;
 
 struct GameState {}
 
@@ -60,7 +54,8 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {}
 fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {}
 
 fn main() {
-  App::new(App2D) // Generate a basic 2D app
+  App::new() // Generate a basic 2D app
+          .with_preset(App2D) // Pre-registers the `Transform2D` component in the world
           .with_title("Comet App") // Sets the window title
           .with_icon(r"resources/textures/comet_icon.png") // Sets the window icon
           .with_size(1920, 1080) // Sets the window size
@@ -78,7 +73,6 @@ use fs_extra::dir::CopyOptions;
 use std::env;
 
 fn main() -> Result<()> {
-  // This tells cargo to rerun this script if something in /resources/ changes.
   println!("cargo:rerun-if-changed=resources/textures/*");
   println!("cargo:rerun-if-changed=resources/shaders/*");
 

@@ -14,7 +14,6 @@ use crate::{
 use comet_log::*;
 
 pub struct World {
-	dimension: String,
 	id_queue: IdQueue,
 	next_id: u32,
 	entities: Vec<Option<Entity>>,
@@ -23,16 +22,10 @@ pub struct World {
 }
 
 impl World {
-	pub fn new(application: &str) -> Self {
+	pub fn new() -> Self {
 		let mut component_storage = ComponentStorage::new();
-		match application {
-			"2D" => component_storage.register_component::<Transform2D>(0),
-			"3D" => component_storage.register_component::<Transform3D>(0),
-			_ => {}
-		}
 
 		Self {
-			dimension: application.to_string(),
 			id_queue: IdQueue::new(),
 			next_id: 0,
 			entities: Vec::new(),
@@ -55,10 +48,6 @@ impl World {
 		}
 	}
 
-	pub fn dimension(&self) -> &String {
-		&self.dimension
-	}
-
 	pub fn id_queue(&self) -> &IdQueue {
 		&self.id_queue
 	}
@@ -79,21 +68,10 @@ impl World {
 		let id = self.next_id;
 		if (self.next_id as usize) >= self.entities.len() {
 			self.entities.push(Some(Entity::new(self.next_id)));
-			match self.dimension.as_str() {
-				"2D" => self.add_component::<Transform2D>(self.next_id as usize, Transform2D::new()),
-				"3D" => self.add_component::<Transform3D>(self.next_id as usize, Transform3D::new()),
-				_ => {}
-			}
 			self.get_next_id();
 			return id;
 		}
 		self.entities[self.next_id as usize] = Some(Entity::new(self.next_id));
-		println!("{:?}", self.dimension);
-		match self.dimension.as_str() {
-			"2D" => self.add_component::<Transform2D>(self.next_id as usize, Transform2D::new()),
-			"3D" => self.add_component::<Transform3D>(self.next_id as usize, Transform3D::new()),
-			_ => {}
-		}
 		self.get_next_id();
 		id
 	}
