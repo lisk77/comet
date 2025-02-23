@@ -21,6 +21,7 @@ bytemuck = "1.18.0"
 chrono = "0.4.0"
 winit_input_helper = "0.16.0"
 spin_sleep = "1.2.1"
+crossbeam-channel = "0.5.14"
 
 [dependencies.image]
 version = "0.24"

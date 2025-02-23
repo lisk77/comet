@@ -740,12 +740,12 @@ impl<'a> Renderer2D<'a> {
 			let renderer_component =  world.get_component::<Render2D>(entity as usize);
 			let transform_component = world.get_component::<Transform2D>(entity as usize);
 
-			if renderer_component.is_visible() {
+			if renderer_component.unwrap().is_visible() {
 				//renderer.draw_texture_at(renderer_component.get_texture(), Point3::new(transform_component.position().x(), transform_component.position().y(), 0.0));
-				let mut position = transform_component.position().clone();
+				let mut position = transform_component.unwrap().position().clone();
 				position.set_x(position.x() / self.config().width as f32);
 				position.set_y(position.y() / self.config().height as f32);
-				let region = self.get_texture_region(renderer_component.get_texture().to_string());
+				let region = self.get_texture_region(renderer_component.unwrap().get_texture().to_string());
 				let (dim_x, dim_y) = region.dimensions();
 
 				let (bound_x, bound_y) =

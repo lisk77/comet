@@ -193,6 +193,9 @@ impl Drop for BlobVec {
 	}
 }
 
+unsafe impl Send for BlobVec {}
+unsafe impl Sync for BlobVec {}
+
 fn array_layout(layout: &Layout, n: usize) -> Option<Layout> {
 	let (array_layout, offset) = repeat_layout(layout, n)?;
 	debug_assert_eq!(layout.size(), offset);
@@ -538,7 +541,7 @@ impl Hash for ComponentSet {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Archetypes {
 	archetypes: HashMap<ComponentSet, Vec<u32>>
 }

@@ -8,6 +8,7 @@ use crate::math::{
 	Vec3
 };
 use component_derive::Component;
+use crate::Entity;
 
 // ##################################################
 // #                    BASIC                       #
@@ -46,6 +47,17 @@ pub struct Render2D {
 	is_visible: bool,
 	texture: &'static str,
 	scale: Vec2
+}
+
+#[derive(Component)]
+pub struct Camera2D {
+	left: f32,
+	right: f32,
+	bottom: f32,
+	top: f32,
+	near: f32,
+	far: f32,
+	zoom: f32
 }
 
 // ##################################################
@@ -89,6 +101,10 @@ pub trait Render {
 	fn set_visibility(&mut self, is_visible: bool);
 	fn get_texture(&self) -> String;
 	fn set_texture(&mut self, texture: &'static str);
+}
+
+pub trait Camera {
+	fn get_visible_entities(&self) -> Vec<Entity>;
 }
 
 // ##################################################
@@ -170,11 +186,9 @@ impl Rectangle2D {
 	pub fn position(&self) -> Position2D {
 		self.position
 	}
-
 	pub fn set_position(&mut self, position: Position2D) {
 		self.position = position;
 	}
-
 	pub fn size(&self) -> Vec2 {
 		self.size
 	}
@@ -260,5 +274,34 @@ impl Transform3D {
 
 	pub fn rotation_mut(&mut self) -> &mut Rotation3D {
 		&mut self.rotation
+	}
+}
+
+impl Camera2D {
+	pub fn new(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32, zoom: f32) -> Self {
+		Self {
+			left,
+			right,
+			bottom,
+			top,
+			near,
+			far,
+			zoom
+		}
+	}
+
+	fn in_view_frustum(&self, camera_pos: Position2D, entity: Position2D) -> bool {
+		let left = camera_pos.x() - self.zoom;
+		let right = camera_pos.x() + self.zoom;
+		let bottom = camera_pos.y() - self.zoom;
+		let top = camera_pos.y() + self.zoom;
+
+		entity.x() < right && entity.x() > left && entity.y() < top && entity.y() > bottom
+	}
+}
+
+impl Camera for Camera2D {
+	fn get_visible_entities(&self) -> Vec<Entity> {
+		unimplemented!()
 	}
 }

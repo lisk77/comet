@@ -3,7 +3,7 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 use comet_colors::LinearRgba;
 
-pub trait Renderer: Sized {
+pub trait Renderer: Sized + Send + Sync {
 	async fn new(window: Arc<Window>, clear_color: Option<LinearRgba>) -> Self;
 	fn size(&self) -> PhysicalSize<u32>;
 	fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>);
