@@ -35,9 +35,6 @@ comet = { path = "crates/comet" }
 
 ```rust
 // main.rs
-
-// This will be cleaned up in the future 
-// but for now I don't have a prelude.
 use comet::prelude::*;
 
 struct GameState {}
@@ -65,7 +62,7 @@ fn main() {
 ```
 
 ```rust
-// build.rs
+// build.rs example
 
 use anyhow::*;
 use fs_extra::copy_items;
