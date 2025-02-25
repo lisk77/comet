@@ -4,9 +4,11 @@ a free and open source games framework
 > [!WARNING]
 > This project is in early development and is not yet ready for use.
 > 
-> It could be potentially used to make something very basic in a very hacky way, but it is not a good experience 
+> It could be potentially used to make something very basic in a very hacky way, but it is not a good experience.
 > 
-> Installation is manual as of right now but if it reaches an acceptable state I will publish the crate
+> Installation is manual as of right now but if it reaches an acceptable state I will publish the crate.
+>
+> There is a plan for a project creation tool that will automate the project setup process.
 
 ## Recommended setup
 
