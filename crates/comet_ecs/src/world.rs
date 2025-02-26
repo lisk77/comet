@@ -200,7 +200,10 @@ impl World {
 
 	/// Returns a list of entities that have the given components.
 	pub fn get_entities_with(&self, components: ComponentSet) -> Vec<u32> {
-		assert!(self.archetypes.contains_archetype(&components), "The given components {:?} are not registered in the world!", components);
-		self.archetypes.get_archetype(&components).unwrap().clone()
+		//assert!(self.archetypes.contains_archetype(&components), "The given components {:?} are not registered in the world!", components);
+		if self.archetypes.contains_archetype(&components) {
+			return self.archetypes.get_archetype(&components).unwrap().clone();
+		}
+		Vec::new()
 	}
 }

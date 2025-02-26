@@ -8,12 +8,12 @@ use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 use comet_colors::LinearRgba;
-use comet_ecs::{Component, ComponentSet, Render, Render2D, Transform2D, World};
+use comet_ecs::{Camera, Camera2D, Component, ComponentSet, Render, Render2D, Transform2D, World};
 use comet_log::{debug, info};
 use comet_math::{Point3, Vec2, Vec3};
 use comet_resources::{texture, graphic_resource_manager::GraphicResorceManager, Texture, Vertex};
 use comet_resources::texture_atlas::TextureRegion;
-use crate::camera::{Camera, CameraUniform};
+use crate::camera::{Camera as OldCam, CameraUniform};
 use crate::render_pass::RenderPassInfo;
 use crate::renderer::Renderer;
 
@@ -37,7 +37,7 @@ pub struct Renderer2D<'a> {
 	diffuse_texture: texture::Texture,
 	diffuse_bind_group: wgpu::BindGroup,
 	graphic_resource_manager: GraphicResorceManager,
-	camera: Camera,
+	camera: OldCam,
 	camera_uniform: CameraUniform,
 	camera_buffer: wgpu::Buffer,
 	camera_bind_group: wgpu::BindGroup,
@@ -120,7 +120,7 @@ impl<'a> Renderer2D<'a> {
 
 		let diffuse_bytes = include_bytes!(r"../../../resources/textures/comet_icon.png");
 		let diffuse_texture =
-			texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "comet_icon.png", false).unwrap();
+			Texture::from_bytes(&device, &queue, diffuse_bytes, "comet_icon.png", false).unwrap();
 
 		let texture_bind_group_layout =
 			device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -160,7 +160,7 @@ impl<'a> Renderer2D<'a> {
 			label: Some("diffuse_bind_group"),
 		});
 
-		let camera = Camera::new(1.0, Vec2::new(2.0, 2.0), Vec3::new(0.0, 0.0, 0.0));
+		let camera = OldCam::new(1.0, Vec2::new(2.0, 2.0), Vec3::new(0.0, 0.0, 0.0));
 
 		let mut camera_uniform = CameraUniform::new();
 		camera_uniform.update_view_proj(&camera);
@@ -288,9 +288,9 @@ impl<'a> Renderer2D<'a> {
 			diffuse_bind_group,
 			graphic_resource_manager,
 			camera,
-			camera_uniform,
 			camera_buffer,
-			camera_bind_group,
+			camera_uniform,
+			camera_bind_group
 		}
 	}
 
@@ -732,7 +732,66 @@ impl<'a> Renderer2D<'a> {
 	/// A function to automatically render all the entities of the `World` struct.
 	/// The entities must have the `Render2D` and `Transform2D` components to be rendered as well as set visible.
 	pub fn render_scene_2d(&mut self, world: &World) {
-		let entities =  world.get_entities_with(ComponentSet::from_ids(vec![Render2D::type_id()]));
+		let cameras = world.get_entities_with(ComponentSet::from_ids(vec![Camera2D::type_id()]));
+
+		if cameras == vec![] {
+			info!("No camera found in the scene");
+			return;
+		}
+
+		info!("Camera found in the scene");
+
+		let entities = world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
+
+		for camera in cameras {
+			let camera_position = world.get_component::<Transform2D>(camera as usize).unwrap().position();
+			let camera_component = world.get_component::<Camera2D>(camera as usize);
+			let camera = OldCam::new(camera_component.unwrap().zoom(), camera_component.unwrap().dimensions(), Vec3::new(camera_position.as_vec().x(), camera_position.as_vec().y(), 0.0));
+			let mut camera_uniform = CameraUniform::new();
+			camera_uniform.update_view_proj(&camera);
+
+			let camera_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+				label: Some("Camera Buffer"),
+				contents: bytemuck::cast_slice(&[camera_uniform]),
+				usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+			});
+
+			let camera_bind_group_layout =
+				self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+					entries: &[wgpu::BindGroupLayoutEntry {
+						binding: 0,
+						visibility: wgpu::ShaderStages::VERTEX,
+						ty: wgpu::BindingType::Buffer {
+							ty: wgpu::BufferBindingType::Uniform,
+							has_dynamic_offset: false,
+							min_binding_size: None,
+						},
+						count: None,
+					}],
+					label: Some("camera_bind_group_layout"),
+				});
+
+			let camera_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+				layout: &camera_bind_group_layout,
+				entries: &[wgpu::BindGroupEntry {
+					binding: 0,
+					resource: camera_buffer.as_entire_binding(),
+				}],
+				label: Some("camera_bind_group"),
+			});
+
+			self.camera = camera;
+			self.camera_buffer = camera_buffer;
+			self.camera_uniform = camera_uniform;
+			self.camera_bind_group = camera_bind_group;
+
+			let visible_entities = camera_component.unwrap().get_visible_entities(*camera_position, world.clone());
+			println!("{:?}", visible_entities);
+		}
+
+
+
+		/*let entities =  world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
 		let mut vertex_buffer: Vec<Vertex> = Vec::new();
 		let mut index_buffer: Vec<u16> = Vec::new();
 
@@ -767,7 +826,7 @@ impl<'a> Renderer2D<'a> {
 			}
 		}
 
-		self.set_buffers(vertex_buffer, index_buffer);
+		self.set_buffers(vertex_buffer, index_buffer);*/
 	}
 
 	pub fn update(&mut self) -> f32 {

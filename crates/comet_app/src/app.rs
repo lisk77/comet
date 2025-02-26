@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::{Duration, Instant};
 use crossbeam_channel::bounded;
-use comet_ecs::{Component, ComponentSet, Entity, Render, Transform2D, Transform3D, World};
+use comet_ecs::{Camera2D, Component, ComponentSet, Entity, Render, Render2D, Transform2D, Transform3D, World};
 use comet_resources::{ResourceManager, Vertex};
 use comet_renderer::renderer2d::Renderer2D;
 
@@ -98,7 +98,9 @@ impl App {
 		match preset {
 			ApplicationType::App2D => {
 				info!("Creating 2D app!");
-				self.world.register_component::<Transform2D>()
+				self.world.register_component::<Transform2D>();
+				self.world.register_component::<Render2D>();
+				self.world.register_component::<Camera2D>()
 			},
 			ApplicationType::App3D => {
 				info!("Creating 3D app!");
@@ -129,8 +131,8 @@ impl App {
 		self.game_state.as_mut()?.downcast_mut::<T>()
 	}
 
-	pub fn input_manager(&self) -> &WinitInputHelper {
-		&self.input_manager
+	pub fn world(&self) -> &World {
+		&self.world
 	}
 
 	pub fn key_pressed(&self, key: Key) -> bool {

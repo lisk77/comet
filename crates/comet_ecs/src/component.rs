@@ -3,12 +3,13 @@
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2D)
 
+use comet_math::Mat4;
 use crate::math::{
 	Vec2,
 	Vec3
 };
 use component_derive::Component;
-use crate::Entity;
+use crate::{Entity, World};
 
 // ##################################################
 // #                    BASIC                       #
@@ -51,13 +52,8 @@ pub struct Render2D {
 
 #[derive(Component)]
 pub struct Camera2D {
-	left: f32,
-	right: f32,
-	bottom: f32,
-	top: f32,
-	near: f32,
-	far: f32,
-	zoom: f32
+	zoom: f32,
+	dimensions: Vec2,
 }
 
 // ##################################################
@@ -104,7 +100,8 @@ pub trait Render {
 }
 
 pub trait Camera {
-	fn get_visible_entities(&self) -> Vec<Entity>;
+	fn get_visible_entities(&self, camera_position: Position2D, world: World) -> Vec<Entity>;
+	fn get_projection_matrix(&self) -> Mat4;
 }
 
 // ##################################################
@@ -278,16 +275,27 @@ impl Transform3D {
 }
 
 impl Camera2D {
-	pub fn new(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32, zoom: f32) -> Self {
+	pub fn new(dimensions: Vec2, zoom: f32) -> Self {
 		Self {
-			left,
-			right,
-			bottom,
-			top,
-			near,
-			far,
+			dimensions,
 			zoom
 		}
+	}
+
+	pub fn zoom(&self) -> f32 {
+		self.zoom
+	}
+
+	pub fn set_zoom(&mut self, zoom: f32) {
+		self.zoom = zoom;
+	}
+
+	pub fn dimensions(&self) -> Vec2 {
+		self.dimensions
+	}
+
+	pub fn set_dimensions(&mut self, dimensions: Vec2) {
+		self.dimensions = dimensions;
 	}
 
 	fn in_view_frustum(&self, camera_pos: Position2D, entity: Position2D) -> bool {
@@ -301,7 +309,23 @@ impl Camera2D {
 }
 
 impl Camera for Camera2D {
-	fn get_visible_entities(&self) -> Vec<Entity> {
-		unimplemented!()
+	fn get_visible_entities(&self, camera_position: Position2D, world: World) -> Vec<Entity> {
+		let entities = world.entities();
+		let mut visible_entities = Vec::new();
+		for entity in entities {
+			if self.in_view_frustum(camera_position, *world.get_component::<Transform2D>(*entity.clone().unwrap().id() as usize).unwrap().position()) {
+				visible_entities.push(entity.clone().unwrap());
+			}
+		}
+		visible_entities
+	}
+
+	fn get_projection_matrix(&self) -> Mat4 {
+		let left = -self.dimensions.x() / 2.0;
+		let right = self.dimensions.x() / 2.0;
+		let bottom = -self.dimensions.y() / 2.0;
+		let top = self.dimensions.y() / 2.0;
+
+		Mat4::OPENGL * Mat4::orthographic_matrix(left, right, bottom, top, 1.0, 0.0)
 	}
 }
