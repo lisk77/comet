@@ -36,7 +36,7 @@ comet = { path = "path/of/the/comet/crate" }
 ```
 
 ```rust
-// main.rs
+// main.rs example 
 use comet::prelude::*;
 
 struct GameState {}
