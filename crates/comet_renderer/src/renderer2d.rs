@@ -624,7 +624,7 @@ impl<'a> Renderer2D<'a> {
 		let texture_path = "resources/textures/".to_string();
 		let mut paths: Vec<String> = Vec::new();
 
-		for path in std::fs::read_dir(Self::get_project_root().unwrap().as_os_str().to_str().unwrap().to_string() + "\\resources\\textures").unwrap() {
+		for path in std::fs::read_dir(Self::get_project_root().unwrap().as_os_str().to_str().unwrap().to_string() + "/resources/textures").unwrap() {
 			paths.push(texture_path.clone() + path.unwrap().file_name().to_str().unwrap());
 		}
 
@@ -735,18 +735,15 @@ impl<'a> Renderer2D<'a> {
 		let cameras = world.get_entities_with(ComponentSet::from_ids(vec![Camera2D::type_id()]));
 
 		if cameras == vec![] {
-			info!("No camera found in the scene");
 			return;
 		}
 
-		info!("Camera found in the scene");
-
-		let entities = world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
+    let entities = world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
 
 		for camera in cameras {
 			let camera_position = world.get_component::<Transform2D>(camera as usize).unwrap().position();
-			let camera_component = world.get_component::<Camera2D>(camera as usize);
-			let camera = OldCam::new(camera_component.unwrap().zoom(), camera_component.unwrap().dimensions(), Vec3::new(camera_position.as_vec().x(), camera_position.as_vec().y(), 0.0));
+			let camera_component = world.get_component::<Camera2D>(camera as usize).unwrap();
+			let camera = OldCam::new(camera_component.zoom(), camera_component.dimensions(), Vec3::new(camera_position.as_vec().x(), camera_position.as_vec().y(), 0.0));
 			let mut camera_uniform = CameraUniform::new();
 			camera_uniform.update_view_proj(&camera);
 
@@ -785,8 +782,17 @@ impl<'a> Renderer2D<'a> {
 			self.camera_uniform = camera_uniform;
 			self.camera_bind_group = camera_bind_group;
 
-			let visible_entities = camera_component.unwrap().get_visible_entities(*camera_position, world.clone());
-			println!("{:?}", visible_entities);
+      let mut visible_entities: Vec<u32> = vec![];
+      for entity in world.entities() {
+        if camera_component.in_view_frustum(*camera_position, *world.get_component::<Transform2D>(*entity.clone().unwrap().id() as usize).unwrap().position()) {
+          if let Some(render) = world.get_component::<Render2D>(*entity.clone().unwrap().id() as usize) {
+            if render.is_visible() {
+              visible_entities.push(*entity.clone().unwrap().id());
+            }
+          }
+        }
+      }
+      println!("{:?}", visible_entities);
 		}
 
 
