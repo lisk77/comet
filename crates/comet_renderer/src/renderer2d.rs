@@ -782,17 +782,17 @@ impl<'a> Renderer2D<'a> {
 			self.camera_uniform = camera_uniform;
 			self.camera_bind_group = camera_bind_group;
 
-      let mut visible_entities: Vec<u32> = vec![];
-      for entity in world.entities() {
-        if camera_component.in_view_frustum(*camera_position, *world.get_component::<Transform2D>(*entity.clone().unwrap().id() as usize).unwrap().position()) {
-          if let Some(render) = world.get_component::<Render2D>(*entity.clone().unwrap().id() as usize) {
-            if render.is_visible() {
-              visible_entities.push(*entity.clone().unwrap().id());
-            }
-          }
-        }
-      }
-      println!("{:?}", visible_entities);
+      		let mut visible_entities: Vec<u32> = vec![];
+      		for entity in world.entities() {
+				if camera_component.in_view_frustum(*camera_position, *world.get_component::<Transform2D>(*entity.clone().unwrap().id() as usize).unwrap().position()) {
+					if let Some(render) = world.get_component::<Render2D>(*entity.clone().unwrap().id() as usize) {
+						if render.is_visible() {
+							visible_entities.push(*entity.clone().unwrap().id());
+						}
+					}
+				}
+			}
+			println!("{:?}", visible_entities);
 		}
 
 
