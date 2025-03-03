@@ -1,14 +1,9 @@
-use crate::{Component};
 use std::{
 	alloc::{
 		handle_alloc_error,
 		Layout
 	},
 	any::TypeId,
-	collections::{
-		HashMap,
-		HashSet
-	},
 	hash::{
 		DefaultHasher,
 		Hash,
