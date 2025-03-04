@@ -3,6 +3,7 @@ use fs_extra::copy_items;
 use fs_extra::dir::CopyOptions;
 use std::env;
 
+
 fn main() -> Result<()> {
 	// This tells cargo to rerun this script if something in /resources/ changes.
 	println!("cargo:rerun-if-changed=resources/materials/*");

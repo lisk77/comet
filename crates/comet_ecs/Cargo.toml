@@ -8,6 +8,7 @@ component_derive = { path = "./component_derive" }
 comet_math = { path = "../comet_math" }
 comet_resources = { path = "../comet_resources" }
 comet_log = { path = "../comet_log" }
+comet_structs = { path = "../comet_structs" }
 
 chrono = "0.4"
 bit-set = "0.8.0"
