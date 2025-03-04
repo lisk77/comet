@@ -298,7 +298,7 @@ impl Camera2D {
 		self.dimensions = dimensions;
 	}
 
-	fn in_view_frustum(&self, camera_pos: Position2D, entity: Position2D) -> bool {
+	pub fn in_view_frustum(&self, camera_pos: Position2D, entity: Position2D) -> bool {
 		let left = camera_pos.x() - self.zoom;
 		let right = camera_pos.x() + self.zoom;
 		let bottom = camera_pos.y() - self.zoom;

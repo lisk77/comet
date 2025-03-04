@@ -5,13 +5,12 @@ use crate::{
 	Component,
 	Transform2D,
 	Transform3D,
-	ComponentStorage,
-	SparseSet,
 	IdQueue,
 	Archetypes,
 	ComponentSet
 };
 use comet_log::*;
+use comet_structs::*;
 
 #[derive(Clone)]
 pub struct World {
@@ -144,7 +143,7 @@ impl World {
 
 	fn get_component_set(&self, entity_id: usize) -> ComponentSet {
 		let components = self.entities.get(entity_id).unwrap().as_ref().unwrap().get_components().iter().collect::<Vec<usize>>();
-		let type_ids = components.iter().map(|index| self.components.keys[*index]).collect::<Vec<TypeId>>();
+		let type_ids = components.iter().map(|index| self.components.keys()[*index]).collect::<Vec<TypeId>>();
 		ComponentSet::from_ids(type_ids)
 	}
 
@@ -165,7 +164,7 @@ impl World {
 	pub fn add_component<C: Component + 'static>(&mut self, entity_id: usize, component: C) {
 		assert_ne!(self.entities.get(entity_id), None, "There is no entity with this ID ({}) in the world!", entity_id);
 		self.components.set_component(entity_id, component);
-		let component_index = self.components.keys.iter_mut().position(|x| *x == C::type_id()).unwrap();
+		let component_index = self.components.keys().iter_mut().position(|x| *x == *C::type_id()).unwrap();
 
 		self.get_entity_mut(entity_id).unwrap().add_component(component_index);
 
