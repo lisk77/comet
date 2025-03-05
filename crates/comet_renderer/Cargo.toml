@@ -9,6 +9,7 @@ comet_math = { path = "../comet_math" }
 comet_resources = { path = "../comet_resources" }
 comet_colors = { path = "../comet_colors" }
 comet_log = { path = "../comet_log" }
+comet_structs = { path = "../comet_structs" }
 
 cfg-if = "1"
 anyhow = "1.0"

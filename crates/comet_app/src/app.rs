@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::{Duration, Instant};
 use crossbeam_channel::bounded;
-use comet_ecs::{Camera2D, Component, ComponentSet, Entity, Render, Render2D, Transform2D, Transform3D, World};
+use comet_ecs::{Camera2D, Component, Entity, Render, Render2D, Transform2D, Transform3D, World};
 use comet_resources::{ResourceManager, Vertex};
 use comet_renderer::renderer2d::Renderer2D;
 
@@ -113,7 +113,7 @@ impl App {
 	fn load_icon(path: &std::path::Path) -> Option<Icon> {
 		let image = match image::open(path) {
 			Ok(image) => image,
-			Err(e) => {
+			Err(_) => {
 				error!("Failed loading icon {}", path.display());
 				return None;
 			}

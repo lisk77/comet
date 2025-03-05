@@ -6,11 +6,10 @@ use crate::{
 	Transform2D,
 	Transform3D,
 	IdQueue,
-	Archetypes,
-	ComponentSet
 };
 use comet_log::*;
 use comet_structs::*;
+use crate::archetypes::Archetypes;
 
 #[derive(Clone)]
 pub struct World {
@@ -206,10 +205,10 @@ impl World {
 
 	/// Returns a list of entities that have the given components.
 	pub fn get_entities_with(&self, components: ComponentSet) -> Vec<u32> {
-		error!("The given components {:?} are not registered in the world!", components);
 		if self.archetypes.contains_archetype(&components) {
 			return self.archetypes.get_archetype(&components).unwrap().clone();
 		}
+		error!("The given components {:?} are not registered in the world!", components);
 		Vec::new()
 	}
 }

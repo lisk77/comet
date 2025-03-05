@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::ComponentSet;
+use comet_structs::ComponentSet;
 
 #[derive(Debug, Clone)]
 pub struct Archetypes {
