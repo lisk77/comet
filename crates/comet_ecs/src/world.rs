@@ -83,7 +83,7 @@ impl World {
 	/// Deletes an entity by its ID.
 	pub fn delete_entity(&mut self, entity_id: usize) {
 		self.entities[entity_id] = None;
-		for (key, value) in self.components.iter_mut() {
+		for (_, value) in self.components.iter_mut() {
 			value.remove::<u8>(entity_id);
 		}
 		self.id_queue.sorted_enqueue(entity_id as u32);
@@ -164,7 +164,7 @@ impl World {
 	pub fn add_component<C: Component + 'static>(&mut self, entity_id: usize, component: C) {
 		assert_ne!(self.entities.get(entity_id), None, "There is no entity with this ID ({}) in the world!", entity_id);
 		self.components.set_component(entity_id, component);
-		let component_index = self.components.keys().iter_mut().position(|x| *x == *C::type_id()).unwrap();
+		let component_index = self.components.keys().iter_mut().position(|x| *x == C::type_id()).unwrap();
 
 		self.get_entity_mut(entity_id).unwrap().add_component(component_index);
 

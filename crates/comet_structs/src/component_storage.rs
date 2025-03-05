@@ -1,6 +1,6 @@
 use std::any::{Any, TypeId};
 use comet_log::*;
-use crate::{FlatMap, IterMut, SparseSet};
+use crate::{FlatMap, SparseSet};
 
 pub type ComponentStorage = FlatMap<TypeId, SparseSet>;
 
@@ -9,7 +9,6 @@ impl ComponentStorage {
 	pub fn register_component<T: 'static>(&mut self, capacity: usize) {
 		if !self.contains(&TypeId::of::<T>()) {
 			self.insert(TypeId::of::<T>(), SparseSet::new::<T>(capacity));
-			info!("Component {:?} has been registered", TypeId::of::<T>());
 		}
 		else {
 			error!("Component {:?} already exists", TypeId::of::<T>());
@@ -19,7 +18,6 @@ impl ComponentStorage {
 	pub fn deregister_component<T: 'static>(&mut self) {
 		if self.contains(&TypeId::of::<T>()) {
 			self.remove(&TypeId::of::<T>());
-			info!("Component {:?} has been deregistered", TypeId::of::<T>());
 		}
 		else {
 			error!("Component {:?} does not exist", TypeId::of::<T>());
@@ -62,13 +60,6 @@ impl ComponentStorage {
 		else {
 			error!("Component {:?} is not registered", TypeId::of::<T>());
 			None
-		}
-	}
-
-	pub fn iter_mut(&mut self) -> IterMut<'_, &TypeId, &SparseSet> {
-		IterMut {
-			keys_iter: self.keys_mut(),
-			values_iter: self.values_mut(),
 		}
 	}
 }
