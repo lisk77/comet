@@ -792,7 +792,7 @@ impl<'a> Renderer2D<'a> {
 					}
 				}
 			}
-			println!("{:?}", visible_entities);
+			//println!("{:?}", visible_entities);
 		}
 
 

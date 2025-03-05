@@ -82,14 +82,17 @@ impl World {
 
 	/// Deletes an entity by its ID.
 	pub fn delete_entity(&mut self, entity_id: usize) {
+		self.remove_entity_from_archetype_subsets(entity_id as u32, self.get_component_set(entity_id));
 		self.entities[entity_id] = None;
+		info!("Deleted entity! ID: {}", entity_id);
 		for (_, value) in self.components.iter_mut() {
 			value.remove::<u8>(entity_id);
+
 		}
 		self.id_queue.sorted_enqueue(entity_id as u32);
 		self.get_next_id();
-		self.remove_entity_from_archetype_subsets(entity_id as u32, self.get_component_set(entity_id));
-		info!("Deleted entity! ID: {}", entity_id);
+
+
 	}
 
 	fn create_archetype(&mut self, components: ComponentSet) {
@@ -139,10 +142,24 @@ impl World {
 				self.archetypes.remove_archetype(&key);
 			}
 		}
+		info!("Removed entity {} from all archetypes!", entity_id);
 	}
 
 	fn get_component_set(&self, entity_id: usize) -> ComponentSet {
-		let components = self.entities.get(entity_id).unwrap().as_ref().unwrap().get_components().iter().collect::<Vec<usize>>();
+		let components = match self.entities.get(entity_id) {
+			Some(cmp) => match cmp.as_ref() {
+				Some(e) => e.get_components().iter().collect::<Vec<usize>>(),
+				None => {
+					error!("This entity ({}) does not have any components!", entity_id);
+					Vec::new()
+				}
+			},
+			_ => {
+				error!("This entity ({}) does not exist!", entity_id);
+				Vec::new()
+			}
+		};
+
 		let type_ids = components.iter().map(|index| self.components.keys()[*index]).collect::<Vec<TypeId>>();
 		ComponentSet::from_ids(type_ids)
 	}
@@ -175,14 +192,14 @@ impl World {
 		if self.get_component_set(entity_id) != ComponentSet::from_ids(vec![C::type_id()]) {
 			self.add_entity_to_archetype(entity_id as u32, self.get_component_set(entity_id));
 		}
-		info!("Added component {} to entity {}", C::type_name(), entity_id);
+		info!("Added component {} to entity {}!", C::type_name(), entity_id);
 	}
 
 	/// Removes a component from an entity by its ID.
 	pub fn remove_component<C: Component + 'static>(&mut self, entity_id: usize) {
 		self.components.remove_component::<C>(entity_id);
 		self.remove_entity_from_archetype_subsets(entity_id as u32, self.get_component_set(entity_id));
-		info!("Removed component {} from entity {}", C::type_name(), entity_id);
+		info!("Removed component {} from entity {}!", C::type_name(), entity_id);
 	}
 
 	/// Returns a reference to a component of an entity by its ID.
