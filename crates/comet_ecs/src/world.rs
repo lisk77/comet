@@ -69,15 +69,12 @@ impl World {
 
 	/// Gets an immutable reference to an entity by its ID.
 	pub fn get_entity(&self, entity_id: usize) -> Option<&Entity> {
-		//assert_ne!(self.entities.get(entity_id), None, "There is no entity with this ID ({}) in the world!", entity_id);
 		self.entities.get(entity_id).unwrap().as_ref()
 	}
 
 	/// Gets a mutable reference to an entity by its ID.
 	pub fn get_entity_mut(&mut self, entity_id: usize) -> Option<&mut Entity> {
-		//assert_ne!(self.entities.get(entity_id), None, "There is no entity with this ID ({}) in the world!", entity_id);
 		self.entities.get_mut(entity_id).unwrap().as_mut()
-		//self.entities.get_mut(id).unwrap()
 	}
 
 	/// Deletes an entity by its ID.
@@ -103,15 +100,19 @@ impl World {
 		self.archetypes.remove_archetype(&components);
 	}
 
-	fn remove_archetype_subsets(&mut self, components: ComponentSet) {
+	fn get_keys(&self, components: ComponentSet) -> Vec<ComponentSet> {
 		let component_sets = self.archetypes.component_sets();
-		let keys: Vec<ComponentSet> = component_sets.iter()
+		component_sets.iter()
 			.enumerate()
 			.filter_map(|(i, &ref elem)| if elem.is_subset(&components) { Some(i) } else { None })
 			.collect::<Vec<usize>>()
 			.iter()
 			.map(|index| component_sets[*index].clone())
-			.collect::<Vec<ComponentSet>>();
+			.collect::<Vec<ComponentSet>>()
+	}
+
+	fn remove_archetype_subsets(&mut self, components: ComponentSet) {
+		let keys = self.get_keys(components);
 
 		for key in keys {
 			self.remove_archetype(key.clone());
@@ -127,14 +128,7 @@ impl World {
 	}
 
 	fn remove_entity_from_archetype_subsets(&mut self, entity_id: u32, components: ComponentSet) {
-		let component_sets = self.archetypes.component_sets();
-		let keys: Vec<ComponentSet> = component_sets.iter()
-			.enumerate()
-			.filter_map(|(i, &ref elem)| if elem.is_subset(&components) { Some(i) } else { None })
-			.collect::<Vec<usize>>()
-			.iter()
-			.map(|index| component_sets[*index].clone())
-			.collect::<Vec<ComponentSet>>();
+		let keys = self.get_keys(components);
 
 		for key in keys {
 			self.remove_entity_from_archetype(entity_id, key.clone());
@@ -179,7 +173,6 @@ impl World {
 
 	/// Adds a component to an entity by its ID and an instance of the component.
 	pub fn add_component<C: Component + 'static>(&mut self, entity_id: usize, component: C) {
-		assert_ne!(self.entities.get(entity_id), None, "There is no entity with this ID ({}) in the world!", entity_id);
 		self.components.set_component(entity_id, component);
 		let component_index = self.components.keys().iter_mut().position(|x| *x == C::type_id()).unwrap();
 
@@ -204,19 +197,16 @@ impl World {
 
 	/// Returns a reference to a component of an entity by its ID.
 	pub fn get_component<C: Component + 'static>(&self, entity_id: usize) -> Option<&C> {
-		//assert_ne!(self.entities.get(entity_id), None, "There is no entity with this ID ({}) in the world!", entity_id);
 		self.components.get_component::<C>(entity_id)
 	}
 
 	pub fn get_component_mut<C: Component + 'static>(&mut self, entity_id: usize) -> Option<&mut C> {
-		assert_ne!(self.entities.get(entity_id), None, "There is no entity with this ID ({}) in the world!", entity_id);
-		assert!(self.components.get_component::<C>(entity_id) != None, "There is no component {} bound to the entity {} in the world!", C::type_name(), entity_id);
 		self.components.get_component_mut::<C>(entity_id)
 	}
 
 	/// Returns a list of entities that have the given components.
 	pub fn get_entities_with(&self, components: ComponentSet) -> Vec<u32> {
-		//assert!(self.archetypes.contains_archetype(&components), "The given components {:?} are not registered in the world!", components);
+		error!("The given components {:?} are not registered in the world!", components);
 		if self.archetypes.contains_archetype(&components) {
 			return self.archetypes.get_archetype(&components).unwrap().clone();
 		}
