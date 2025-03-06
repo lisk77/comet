@@ -281,7 +281,7 @@ impl Column {
 		}
 	}
 
-	fn swap(&mut self, index1: usize, index2: usize) {
+	pub fn swap(&mut self, index1: usize, index2: usize) {
 		assert!(index1 < self.data.len() && index2 < self.data.len(), "Index out of bounds");
 
 		unsafe {

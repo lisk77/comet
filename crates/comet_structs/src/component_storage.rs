@@ -26,7 +26,7 @@ impl ComponentStorage {
 
 	pub fn set_component<T: 'static>(&mut self, index: usize, element: T) {
 		if let Some(sparse_set) = self.get_mut(&TypeId::of::<T>()) {
-			sparse_set.set(index, element);
+			sparse_set.insert(index, element);
 		}
 		else {
 			error!("Component {:?} is not registered", TypeId::of::<T>());

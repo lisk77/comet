@@ -147,8 +147,8 @@ impl App {
 		self.input_manager.key_released(key)
 	}
 
-	pub fn new_entity(&mut self) -> u32 {
-		self.world.new_entity()
+	pub fn new_entity(&mut self) -> usize{
+		self.world.new_entity() as usize
 	}
 
 	pub fn delete_entity(&mut self, entity_id: usize) {
