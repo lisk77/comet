@@ -5,8 +5,8 @@ use std::hash::{
 
 #[derive(Debug, Clone)]
 pub struct SparseSet {
-	pub sparse: Vec<Option<usize>>,
-	pub dense: Column,
+	sparse: Vec<Option<usize>>,
+	dense: Column,
 }
 
 impl SparseSet {
