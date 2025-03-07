@@ -24,6 +24,7 @@ use winit_input_helper::WinitInputHelper;
 use comet_input::input_handler::InputHandler;
 use comet_input::keyboard::Key;
 use comet_renderer::renderer::Renderer;
+use comet_structs::ComponentSet;
 use crate::GameState;
 
 pub enum ApplicationType {
@@ -185,6 +186,10 @@ impl App {
 
 	pub fn get_component_mut<C: Component>(&mut self, entity_id: usize) -> Option<&mut C> {
 		self.world.get_component_mut::<C>(entity_id)
+	}
+
+	pub fn get_entities_with(&self, components: ComponentSet) -> Vec<usize> {
+		self.world.get_entities_with(components)
 	}
 
 	pub fn quit(&mut self) {

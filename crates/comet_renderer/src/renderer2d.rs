@@ -739,12 +739,126 @@ impl<'a> Renderer2D<'a> {
 			return;
 		}
 
-    let entities = world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
+		let camera_component = world.get_component::<Camera2D>(cameras[0]).unwrap();
+		let camera_position = world.get_component::<Transform2D>(cameras[0]).unwrap().position();
 
-		for camera in cameras {
-			let camera_position = world.get_component::<Transform2D>(camera as usize).unwrap().position();
-			let camera_component = world.get_component::<Camera2D>(camera as usize).unwrap();
-			let camera = OldCam::new(camera_component.zoom(), camera_component.dimensions(), Vec3::new(camera_position.as_vec().x(), camera_position.as_vec().y(), 0.0));
+		let camera = OldCam::new(
+			camera_component.zoom(),
+			camera_component.dimensions(),
+			Vec3::new(camera_position.as_vec().x(),
+					  camera_position.as_vec().y(),
+					  0.0));
+		let mut camera_uniform = CameraUniform::new();
+		camera_uniform.update_view_proj(&camera);
+
+		let camera_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some("Camera Buffer"),
+			contents: bytemuck::cast_slice(&[camera_uniform]),
+			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+		});
+
+		let camera_bind_group_layout =
+			self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+				entries: &[wgpu::BindGroupLayoutEntry {
+					binding: 0,
+					visibility: wgpu::ShaderStages::VERTEX,
+					ty: wgpu::BindingType::Buffer {
+						ty: wgpu::BufferBindingType::Uniform,
+						has_dynamic_offset: false,
+						min_binding_size: None,
+					},
+					count: None,
+				}],
+				label: Some("camera_bind_group_layout"),
+			});
+
+		let camera_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &camera_bind_group_layout,
+			entries: &[wgpu::BindGroupEntry {
+				binding: 0,
+				resource: camera_buffer.as_entire_binding(),
+			}],
+			label: Some("camera_bind_group"),
+		});
+
+		self.camera = camera;
+		self.camera_buffer = camera_buffer;
+		self.camera_uniform = camera_uniform;
+		self.camera_bind_group = camera_bind_group;
+
+		let mut visible_entities: Vec<usize> = vec![];
+
+		for entity in world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()])) {
+			let entity_id = entity as usize;
+
+			/*if !camera_component
+				.in_view_frustum(*camera_position, *world.get_component::<Transform2D>(entity_id).unwrap().position())
+			{
+				continue;
+			}*/
+
+			match world.get_component::<Render2D>(entity_id) {
+				Some(render) => {
+					if !render.is_visible() {
+						continue;
+					}
+					if let Some(cam) = world.get_component::<Camera2D>(entity_id) {
+						continue;
+					}
+					visible_entities.push(entity_id);
+				}
+				None => {
+					continue;
+				}
+			}
+		}
+
+		let mut vertex_buffer: Vec<Vertex> = Vec::new();
+		let mut index_buffer: Vec<u16> = Vec::new();
+
+		for entity in visible_entities {
+			let renderer_component = world.get_component::<Render2D>(entity);
+			let transform_component = world.get_component::<Transform2D>(entity);
+
+			if renderer_component.unwrap().is_visible() {
+				//self.draw_texture_at(renderer_component.get_texture(), Point3::new(transform_component.position().x(), transform_component.position().y(), 0.0));
+				let mut position = transform_component.unwrap().position().clone();
+				position.set_x(position.x() / self.config().width as f32);
+				position.set_y(position.y() / self.config().height as f32);
+				let region = self.get_texture_region(renderer_component.unwrap().get_texture().to_string());
+				let (dim_x, dim_y) = region.dimensions();
+
+				let (bound_x, bound_y) =
+					((dim_x as f32 / self.config().width as f32) * 0.5, (dim_y as f32 / self.config().height as f32) * 0.5);
+
+				let buffer_size = vertex_buffer.len() as u16;
+
+				vertex_buffer.append(&mut vec![
+					Vertex::new([-bound_x + position.x(), bound_y + position.y(), 0.0], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0]),
+					Vertex::new([-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0]),
+					Vertex::new([bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0]),
+					Vertex::new([bound_x + position.x(), bound_y + position.y(), 0.0], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0])
+				]);
+
+				index_buffer.append(&mut vec![
+					0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
+					1 + buffer_size, 2 + buffer_size, 3 + buffer_size
+				]);
+			}
+		}
+
+		//debug!("Visible entities: {:?}", vertex_buffer);
+		self.set_buffers(vertex_buffer, index_buffer);
+
+		/*for camera in cameras {
+			let camera_position = world.get_component::<Transform2D>(camera).unwrap().position();
+			let camera_component = world.get_component::<Camera2D>(camera).unwrap();
+			let camera = OldCam::new(
+				camera_component.zoom(),
+				camera_component.dimensions(),
+				Vec3::new(camera_position.as_vec().x(),
+						  camera_position.as_vec().y(),
+						  0.0));
 			let mut camera_uniform = CameraUniform::new();
 			camera_uniform.update_view_proj(&camera);
 
@@ -783,57 +897,70 @@ impl<'a> Renderer2D<'a> {
 			self.camera_uniform = camera_uniform;
 			self.camera_bind_group = camera_bind_group;
 
-      		let mut visible_entities: Vec<u32> = vec![];
-      		for entity in world.entities() {
-				if camera_component.in_view_frustum(*camera_position, *world.get_component::<Transform2D>(*entity.clone().unwrap().id() as usize).unwrap().position()) {
-					if let Some(render) = world.get_component::<Render2D>(*entity.clone().unwrap().id() as usize) {
-						if render.is_visible() {
-							visible_entities.push(*entity.clone().unwrap().id());
+			let mut visible_entities: Vec<usize> = vec![];
+
+			for entity in world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()])) {
+				let entity_id = entity as usize;
+
+				if !camera_component
+					.in_view_frustum(*camera_position, *world.get_component::<Transform2D>(entity_id).unwrap().position())
+				{
+					continue;
+				}
+
+				match world.get_component::<Render2D>(entity_id) {
+					Some(render) => {
+						if !render.is_visible() {
+							continue;
 						}
+						if let Some(cam) = world.get_component::<Camera2D>(entity_id) {
+							continue;
+						}
+						visible_entities.push(entity_id);
+					}
+					None => {
+						continue;
 					}
 				}
 			}
-			//println!("{:?}", visible_entities);
-		}
 
+			let mut vertex_buffer: Vec<Vertex> = Vec::new();
+			let mut index_buffer: Vec<u16> = Vec::new();
 
+			for entity in visible_entities {
+				let renderer_component = world.get_component::<Render2D>(entity);
+				let transform_component = world.get_component::<Transform2D>(entity);
 
-		/*let entities =  world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
-		let mut vertex_buffer: Vec<Vertex> = Vec::new();
-		let mut index_buffer: Vec<u16> = Vec::new();
+				if renderer_component.unwrap().is_visible() {
+					//self.draw_texture_at(renderer_component.get_texture(), Point3::new(transform_component.position().x(), transform_component.position().y(), 0.0));
+					let mut position = transform_component.unwrap().position().clone();
+					position.set_x(position.x() / self.config().width as f32);
+					position.set_y(position.y() / self.config().height as f32);
+					let region = self.get_texture_region(renderer_component.unwrap().get_texture().to_string());
+					let (dim_x, dim_y) = region.dimensions();
 
-		for entity in entities {
-			let renderer_component =  world.get_component::<Render2D>(entity as usize);
-			let transform_component = world.get_component::<Transform2D>(entity as usize);
+					let (bound_x, bound_y) =
+						((dim_x as f32 / self.config().width as f32) * 0.5, (dim_y as f32 / self.config().height as f32) * 0.5);
 
-			if renderer_component.unwrap().is_visible() {
-				//renderer.draw_texture_at(renderer_component.get_texture(), Point3::new(transform_component.position().x(), transform_component.position().y(), 0.0));
-				let mut position = transform_component.unwrap().position().clone();
-				position.set_x(position.x() / self.config().width as f32);
-				position.set_y(position.y() / self.config().height as f32);
-				let region = self.get_texture_region(renderer_component.unwrap().get_texture().to_string());
-				let (dim_x, dim_y) = region.dimensions();
+					let buffer_size = vertex_buffer.len() as u16;
 
-				let (bound_x, bound_y) =
-					((dim_x as f32/ self.config().width as f32) * 0.5, (dim_y as f32/ self.config().height as f32) * 0.5);
+					vertex_buffer.append(&mut vec![
+						Vertex::new([-bound_x + position.x(), bound_y + position.y(), 0.0], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0]),
+						Vertex::new([-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0]),
+						Vertex::new([bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0]),
+						Vertex::new([bound_x + position.x(), bound_y + position.y(), 0.0], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0])
+					]);
 
-				let buffer_size = vertex_buffer.len() as u16;
-
-				vertex_buffer.append(&mut vec![
-					Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0] ),
-					Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0] ),
-					Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0] ) ,
-					Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0] )
-				]);
-
-				index_buffer.append(&mut vec![
-					0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
-					1 + buffer_size, 2 + buffer_size, 3 + buffer_size
-				]);
+					index_buffer.append(&mut vec![
+						0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
+						1 + buffer_size, 2 + buffer_size, 3 + buffer_size
+					]);
+				}
 			}
-		}
 
-		self.set_buffers(vertex_buffer, index_buffer);*/
+			debug!("Visible entities: {:?}", vertex_buffer);
+			self.set_buffers(vertex_buffer, index_buffer);
+		}*/
 	}
 
 	pub fn update(&mut self) -> f32 {

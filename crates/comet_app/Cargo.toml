@@ -10,6 +10,7 @@ comet_resources = { path = "../comet_resources" }
 comet_colors = { path = "../comet_colors" }
 comet_log = { path = "../comet_log" }
 comet_input = { path = "../comet_input" }
+comet_structs = { path = "../comet_structs" }
 
 winit = { version = "0.29", features = ["rwh_05"] }
 env_logger = "0.10"
