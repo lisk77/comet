@@ -730,6 +730,17 @@ impl<'a> Renderer2D<'a> {
 		todo!()
 	}
 
+	fn find_priority_camera(&self, cameras: Vec<Camera2D>) -> usize {
+		let mut priority = 0;
+		let mut position = 0;
+		for (i, camera) in cameras.iter().enumerate() {
+			if camera.priority() < priority {
+				position = i;
+			}
+		}
+
+		position
+	}
 	/// A function to automatically render all the entities of the `World` struct.
 	/// The entities must have the `Render2D` and `Transform2D` components to be rendered as well as set visible.
 	pub fn render_scene_2d(&mut self, world: &World) {
@@ -739,8 +750,14 @@ impl<'a> Renderer2D<'a> {
 			return;
 		}
 
-		let camera_component = world.get_component::<Camera2D>(cameras[0]).unwrap();
-		let camera_position = world.get_component::<Transform2D>(cameras[0]).unwrap().position();
+		let cam = cameras.get(
+			self.find_priority_camera(
+				cameras.iter().map(|e| *world.get_component::<Camera2D>(*e).unwrap()
+				).collect::<Vec<Camera2D>>())
+		).unwrap();
+
+		let camera_component = world.get_component::<Camera2D>(*cam).unwrap();
+		let camera_position = world.get_component::<Transform2D>(*cam).unwrap().position();
 
 		let camera = OldCam::new(
 			camera_component.zoom(),
@@ -791,11 +808,11 @@ impl<'a> Renderer2D<'a> {
 		for entity in world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()])) {
 			let entity_id = entity as usize;
 
-			/*if !camera_component
+			if !camera_component
 				.in_view_frustum(*camera_position, *world.get_component::<Transform2D>(entity_id).unwrap().position())
 			{
 				continue;
-			}*/
+			}
 
 			match world.get_component::<Render2D>(entity_id) {
 				Some(render) => {

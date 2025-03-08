@@ -54,6 +54,7 @@ pub struct Render2D {
 pub struct Camera2D {
 	zoom: f32,
 	dimensions: Vec2,
+	priority: u8
 }
 
 // ##################################################
@@ -275,10 +276,20 @@ impl Transform3D {
 }
 
 impl Camera2D {
-	pub fn new(dimensions: Vec2, zoom: f32) -> Self {
+	/// Creates a Camera2D component.
+	///
+	/// # Parameters
+	/// - `dimensions`: The dimensions of the camera as a `Vec2` (width, height).
+	/// - `zoom`: The zoom level of the camera.
+	/// - `priority`: The priority of the camera, with lower numbers indicating higher priority.
+	///
+	/// # Returns
+	/// - Returns a `Camera2D` instance.
+	pub fn new(dimensions: Vec2, zoom: f32, priority: u8) -> Self {
 		Self {
 			dimensions,
-			zoom
+			zoom,
+			priority
 		}
 	}
 
@@ -296,6 +307,14 @@ impl Camera2D {
 
 	pub fn set_dimensions(&mut self, dimensions: Vec2) {
 		self.dimensions = dimensions;
+	}
+
+	pub fn priority(&self) -> u8 {
+		self.priority
+	}
+
+	pub fn set_priority(&mut self, priority: u8) {
+		self.priority = priority;
 	}
 
 	pub fn in_view_frustum(&self, camera_pos: Position2D, entity: Position2D) -> bool {

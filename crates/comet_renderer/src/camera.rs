@@ -30,10 +30,13 @@ impl Camera {
 	}
 
 	pub fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-		OPENGL_TO_WGPU_MATRIX * cgmath::ortho(self.position.x() - self.dimension.x() / 2.0,
-											  self.position.x() + self.dimension.x() / 2.0,
-											  self.position.y() - self.dimension.y() / 2.0,
-											  self.position.y() + self.dimension.y() / 2.0,
+		let zoomed_width = self.dimension.x() / self.zoom;
+		let zoomed_height = self.dimension.y() / self.zoom;
+
+		OPENGL_TO_WGPU_MATRIX * cgmath::ortho(self.position.x() - zoomed_width / 2.0,
+											  self.position.x() + zoomed_width / 2.0,
+											  self.position.y() - zoomed_height / 2.0,
+											  self.position.y() + zoomed_height / 2.0,
 											  1.0,
 											  0.0)
 	}
