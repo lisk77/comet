@@ -95,7 +95,15 @@ fn main() -> Result<()> {
   - [ ] 2D
     - [x] texture rendering
     - [x] world rendering
+    - [ ] text rendering
   - [ ] 3D
+  - [ ] flexible camera system
+    - [x] 2D
+      - [x] general Camera2D component
+      - [x] priority system
+    - [ ] 3D
+      - [ ] general Camera3D component
+      - [ ] priority system
   - [ ] Particles
   - [ ] Post-processing
 - [ ] Math
@@ -121,3 +129,4 @@ fn main() -> Result<()> {
 - [ ] Physics
 - [x] Basic Plugin System
   - [x] Custom Renderer
+  - [x] Custom Game State
