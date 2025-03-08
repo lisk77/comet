@@ -5,7 +5,6 @@ use std::{
 	},
 	any::TypeId,
 	hash::{
-		DefaultHasher,
 		Hash,
 		Hasher
 	},
@@ -13,6 +12,9 @@ use std::{
 	ptr::NonNull
 };
 use std::ptr;
+
+// The following two structs are just blatantly stolen from Bevy - another Rust game engine.
+// I just need them for the ComponentStorage system, and I was too lazy to write them myself.
 
 #[derive(Debug, Clone)]
 pub struct BlobVec {
@@ -23,7 +25,6 @@ pub struct BlobVec {
 	swap_scratch: NonNull<u8>,
 	drop: unsafe fn(*mut u8)
 }
-
 
 impl BlobVec {
 	pub fn new(item_layout: Layout, drop: unsafe fn(*mut u8), capacity: usize) -> Self {
@@ -83,7 +84,6 @@ impl BlobVec {
 		}
 		self.capacity = new_capacity;
 	}
-
 
 	#[inline]
 	pub fn len(&self) -> usize {

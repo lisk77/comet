@@ -8,7 +8,7 @@ impl ComponentStorage {
 
 	pub fn register_component<T: 'static>(&mut self, capacity: usize) {
 		if !self.contains(&TypeId::of::<T>()) {
-			self.insert(TypeId::of::<T>(), SparseSet::new::<T>(capacity));
+			self.insert(TypeId::of::<T>(), SparseSet::new::<T>(capacity, 1000));
 		}
 		else {
 			error!("Component {:?} already exists", TypeId::of::<T>());
