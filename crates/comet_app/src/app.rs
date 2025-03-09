@@ -136,6 +136,10 @@ impl App {
 		&self.world
 	}
 
+	pub fn input_manager(&self) -> &WinitInputHelper {
+		&self.input_manager
+	}
+
 	pub fn key_pressed(&self, key: Key) -> bool {
 		self.input_manager.key_pressed(key)
 	}
