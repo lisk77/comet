@@ -16,10 +16,11 @@ macro_rules! info {
 macro_rules! debug {
     ($fmt:expr $(, $args:expr)*) => {
         eprintln!(
-            "{} [{}::{}] [{}] : {}",
+            "{} [{}::{}:{}] [{}] : {}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
             std::env::var("CARGO_PKG_NAME").unwrap(),
             module_path!(),
+            line!(),
             "\x1b[34m\x1b[1mDEBUG\x1b[0m",
             format!($fmt $(, $args)*)
         );
