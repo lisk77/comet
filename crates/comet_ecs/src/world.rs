@@ -11,7 +11,6 @@ use comet_log::*;
 use comet_structs::*;
 use crate::archetypes::Archetypes;
 
-#[derive(Clone)]
 pub struct World {
 	id_queue: IdQueue,
 	next_id: u32,

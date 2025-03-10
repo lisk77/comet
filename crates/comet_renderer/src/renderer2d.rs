@@ -14,7 +14,7 @@ use comet_math::{Point3, Vec2, Vec3};
 use comet_resources::{texture, graphic_resource_manager::GraphicResorceManager, Texture, Vertex};
 use comet_resources::texture_atlas::TextureRegion;
 use comet_structs::ComponentSet;
-use crate::camera::{Camera as OldCam, CameraUniform};
+use crate::camera::{RenderCamera, CameraUniform};
 use crate::render_pass::RenderPassInfo;
 use crate::renderer::Renderer;
 
@@ -38,7 +38,7 @@ pub struct Renderer2D<'a> {
 	diffuse_texture: Texture,
 	diffuse_bind_group: wgpu::BindGroup,
 	graphic_resource_manager: GraphicResorceManager,
-	camera: OldCam,
+	camera: RenderCamera,
 	camera_uniform: CameraUniform,
 	camera_buffer: wgpu::Buffer,
 	camera_bind_group: wgpu::BindGroup,
@@ -161,7 +161,7 @@ impl<'a> Renderer2D<'a> {
 			label: Some("diffuse_bind_group"),
 		});
 
-		let camera = OldCam::new(1.0, Vec2::new(2.0, 2.0), Vec3::new(0.0, 0.0, 0.0));
+		let camera = RenderCamera::new(1.0, Vec2::new(2.0, 2.0), Vec3::new(0.0, 0.0, 0.0));
 
 		let mut camera_uniform = CameraUniform::new();
 		camera_uniform.update_view_proj(&camera);
@@ -261,9 +261,9 @@ impl<'a> Renderer2D<'a> {
 		let clear_color = match clear_color {
 			Some(color) => color.to_wgpu(),
 			None => Color {
-				r: 0.1,
-				g: 0.2,
-				b: 0.3,
+				r: 0.0,
+				g: 0.0,
+				b: 0.0,
 				a: 1.0,
 			}
 		};
@@ -754,7 +754,7 @@ impl<'a> Renderer2D<'a> {
 		let camera_component = world.get_component::<Camera2D>(*cam).unwrap();
 		let camera_position = world.get_component::<Transform2D>(*cam).unwrap().position();
 
-		let camera = OldCam::new(
+		let camera = RenderCamera::new(
 			camera_component.zoom(),
 			camera_component.dimensions(),
 			Vec3::new(camera_position.as_vec().x(),
@@ -804,7 +804,15 @@ impl<'a> Renderer2D<'a> {
 	/// A function to automatically render all the entities of the `World` struct.
 	/// The entities must have the `Render2D` and `Transform2D` components to be rendered as well as set visible.
 	pub fn render_scene_2d(&mut self, world: &World) {
-		let entities =  world.get_entities_with(ComponentSet::from_ids(vec![Render2D::type_id()]));
+		let cameras = world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Camera2D::type_id()]));
+		let entities =  world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
+
+		if cameras.is_empty() {
+			return;
+		}
+
+		self.setup_camera(cameras, world);
+
 		let mut vertex_buffer: Vec<Vertex> = Vec::new();
 		let mut index_buffer: Vec<u16> = Vec::new();
 
@@ -813,7 +821,6 @@ impl<'a> Renderer2D<'a> {
 			let transform_component = world.get_component::<Transform2D>(entity).unwrap();
 
 			if renderer_component.is_visible() {
-				//renderer.draw_texture_at(renderer_component.get_texture(), Point3::new(transform_component.position().x(), transform_component.position().y(), 0.0));
 				let mut position = transform_component.position().clone();
 				position.set_x(position.x() / self.config().width as f32);
 				position.set_y(position.y() / self.config().height as f32);

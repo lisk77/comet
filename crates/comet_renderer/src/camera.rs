@@ -10,13 +10,13 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
 
 const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.0001;
 
-pub struct Camera {
+pub struct RenderCamera {
 	zoom: f32,
 	dimension: Vec2,
 	position: Vec3
 }
 
-impl Camera {
+impl RenderCamera {
 	pub fn new(
 		zoom: f32,
 		dimension: Vec2,
@@ -64,7 +64,7 @@ impl CameraUniform {
 		}
 	}
 
-	pub fn update_view_proj(&mut self, camera: &Camera) {
+	pub fn update_view_proj(&mut self, camera: &RenderCamera) {
 		self.view_proj = camera.build_view_projection_matrix().into();
 	}
 }
