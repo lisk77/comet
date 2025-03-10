@@ -345,6 +345,6 @@ impl Camera for Camera2D {
 		let bottom = -self.dimensions.y() / 2.0;
 		let top = self.dimensions.y() / 2.0;
 
-		Mat4::OPENGL * Mat4::orthographic_matrix(left, right, bottom, top, 1.0, 0.0)
+		Mat4::OPENGL_CONV * Mat4::orthographic_projection(left, right, bottom, top, 1.0, 0.0)
 	}
 }

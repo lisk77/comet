@@ -25,8 +25,8 @@ impl Projection {
 
     pub fn resize(&mut self, width: u32, height: u32) { self.aspect = width as f32 / height as f32; }
 
-    pub fn calc_matrix(&self) -> Mat4 {
+    /*pub fn calc_matrix(&self) -> Mat4 {
         Mat4::perspective_matrix(self.fovy, self.aspect, self.znear, self.zfar)
-    }
+    }*/
 }
 

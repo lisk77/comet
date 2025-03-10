@@ -1,4 +1,4 @@
-use comet_math::{Point3, Vec2, Vec3};
+use comet_math::{Mat4, Point3, Vec2, Vec3};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -29,16 +29,23 @@ impl Camera {
 		}
 	}
 
-	pub fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
+	pub fn build_view_projection_matrix(&self) -> Mat4 {
 		let zoomed_width = self.dimension.x() / self.zoom;
 		let zoomed_height = self.dimension.y() / self.zoom;
 
-		OPENGL_TO_WGPU_MATRIX * cgmath::ortho(self.position.x() - zoomed_width / 2.0,
+		Mat4::OPENGL_CONV * Mat4::orthographic_projection(self.position.x() - zoomed_width / 2.0,
+														   self.position.x() + zoomed_width / 2.0,
+														   self.position.y() - zoomed_height / 2.0,
+														   self.position.y() + zoomed_height / 2.0,
+														   1.0,
+														   0.0)
+
+		/*OPENGL_TO_WGPU_MATRIX * cgmath::ortho(self.position.x() - zoomed_width / 2.0,
 											  self.position.x() + zoomed_width / 2.0,
 											  self.position.y() - zoomed_height / 2.0,
 											  self.position.y() + zoomed_height / 2.0,
 											  1.0,
-											  0.0)
+											  0.0)*/
 	}
 }
 
