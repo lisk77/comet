@@ -2,7 +2,7 @@ use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use wgpu::{Color, ShaderModule};
+use wgpu::{BufferUsages, Color, ShaderModule};
 use wgpu::naga::ShaderStage;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
@@ -106,13 +106,13 @@ impl<'a> Renderer2D<'a> {
 		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Vertex Buffer"),
 			contents: bytemuck::cast_slice(&vertex_data),
-			usage: wgpu::BufferUsages::VERTEX,
+			usage: wgpu::BufferUsages::VERTEX | BufferUsages::COPY_DST,
 		});
 
 		let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Index Buffer"),
 			contents: bytemuck::cast_slice(&index_data),
-			usage: wgpu::BufferUsages::INDEX
+			usage: wgpu::BufferUsages::INDEX | BufferUsages::COPY_DST
 		});
 
 		let num_indices = index_data.len() as u32;
@@ -322,14 +322,14 @@ impl<'a> Renderer2D<'a> {
 	}
 
 	/// A function that loads a shader from the resources/shaders folder given the full name of the shader file.
-	pub fn load_shader(&mut self, shader_stage: Option<ShaderStage>, file_name: &str) {
+	pub fn load_shader(&mut self, file_name: &str, shader_stage: Option<ShaderStage>) {
 		self.graphic_resource_manager.load_shader(shader_stage, ((Self::get_project_root().unwrap().as_os_str().to_str().unwrap().to_string() + "\\resources\\shaders\\").as_str().to_string() + file_name.clone()).as_str(), &self.device).unwrap();
 		info!("Shader ({}) loaded successfully", file_name);
 	}
 
 	pub fn load_shaders(&mut self, shader_stages: Vec<Option<ShaderStage>>, file_names: Vec<&str>) {
 		for (i, file_name) in file_names.iter().enumerate() {
-			self.load_shader(shader_stages[i].clone(), file_name);
+			self.load_shader(file_name, shader_stages[i].clone());
 			info!("Shader ({}) loaded successfully", file_name);
 		}
 	}
@@ -621,7 +621,7 @@ impl<'a> Renderer2D<'a> {
 		Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Ran out of places to find Cargo.toml"))
 	}
 
-	/// A function that takes all of the textures inside of the resources/textures folder and creates a texture atlas from them.
+	/// A function that takes all the textures inside the resources/textures folder and creates a texture atlas from them.
 	pub fn initialize_atlas(&mut self) {
 		let texture_path = "resources/textures/".to_string();
 		let mut paths: Vec<String> = Vec::new();
@@ -635,28 +635,41 @@ impl<'a> Renderer2D<'a> {
 
 	/// A function that clears the buffers and sets the vertex and index buffer of the `Renderer2D` with the given data.
 	fn set_buffers(&mut self, new_vertex_buffer: Vec<Vertex>, new_index_buffer: Vec<u16>) {
+		let new_vertex_size = new_vertex_buffer.len() as u64 * size_of::<Vertex>() as u64;
+		let new_index_size = new_index_buffer.len() as u64 * size_of::<u16>() as u64;
+
 		match new_vertex_buffer == self.vertex_data {
-			true => return,
+			true => {},
 			false => {
-				self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-					label: Some("Updated Vertex Buffer"),
-					contents: bytemuck::cast_slice(&new_vertex_buffer),
-					usage: wgpu::BufferUsages::VERTEX,
-				});
+				match new_vertex_size > self.vertex_buffer.size() {
+					false => self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&new_vertex_buffer)),
+					true => {
+						self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+							label: Some("Updated Vertex Buffer"),
+							contents: bytemuck::cast_slice(&new_vertex_buffer),
+							usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+						});
+					}
+				}
 				self.vertex_data = new_vertex_buffer;
 			}
 		}
 
 		match new_index_buffer == self.index_data {
-			true => return,
+			true => {},
 			false => {
-				self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-					label: Some("Updated Index Buffer"),
-					contents: bytemuck::cast_slice(&new_index_buffer),
-					usage: wgpu::BufferUsages::INDEX,
-				});
-				self.index_data = new_index_buffer.clone();
+				match new_index_size > self.index_buffer.size() {
+					false => self.queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&new_index_buffer)),
+					true => {
+						self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+							label: Some("Updated Index Buffer"),
+							contents: bytemuck::cast_slice(&new_index_buffer),
+							usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+						});
+					}
+				}
 				self.num_indices = new_index_buffer.len() as u32;
+				self.index_data = new_index_buffer
 			}
 		}
 	}
@@ -1040,9 +1053,9 @@ impl<'a> Renderer2D<'a> {
 				label: Some("Render Encoder"),
 			});
 
-		for pipeline in &self.pipelines {
+		for (i, pipeline) in self.pipelines.iter().enumerate() {
 			let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-				label: Some("Render Pass"),
+				label: Some(format!("Render Pass {}", i).as_str()),
 				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
 					view: &view,
 					resolve_target: None,
