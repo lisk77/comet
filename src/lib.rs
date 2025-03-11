@@ -16,4 +16,5 @@ pub mod prelude {
 	pub use comet_log::*;
 	pub use comet_colors::*;
 	pub use comet_ecs::*;
+	pub use comet_math::*;
 }
