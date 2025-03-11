@@ -67,7 +67,7 @@ fn update_position(input: WinitInputHelper, transform: &mut Transform2D, dt: f32
 
 fn main() {
 	App::new()
-		.with_title("Hello world")
+		.with_title("Simple Move 2D")
 		.with_preset(App2D)
 		.run::<Renderer2D>(setup, update);
 }
