@@ -21,7 +21,7 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
 }
 
 fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
-	renderer.render_scene_2d(app.world())
+	renderer.render_scene_2d(app.scene())
 }
 
 fn main() {

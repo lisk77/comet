@@ -54,7 +54,7 @@ fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {}
 
 fn main() { 
     App::new() // Generate a basic 2D app
-        .with_preset(App2D) // Pre-registers the `Transform2D` component in the world
+        .with_preset(App2D) // Pre-registers the `Transform2D` component in the scene
         .with_title("Comet App") // Sets the window title
         .with_icon(r"resources/textures/comet_icon.png") // Sets the window icon
         .with_size(1920, 1080) // Sets the window size
@@ -94,7 +94,7 @@ fn main() -> Result<()> {
 - [ ] (out of the box) Rendering
   - [ ] 2D
     - [x] texture rendering
-    - [x] world rendering
+    - [x] scene rendering
     - [ ] text rendering
   - [ ] 3D
   - [ ] flexible camera system
@@ -120,7 +120,7 @@ fn main() -> Result<()> {
   - [x] Components
   - [x] Entities
   - [x] Archetypes
-  - [ ] World
+  - [ ] Scene
     - [x] general management
     - [ ] saving
     - [ ] loading

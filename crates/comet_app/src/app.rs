@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::{Duration, Instant};
 use crossbeam_channel::bounded;
-use comet_ecs::{Camera2D, Component, Entity, Render, Render2D, Transform2D, Transform3D, World};
+use comet_ecs::{Camera2D, Component, Entity, Render, Render2D, Scene, Transform2D, Transform3D};
 use comet_resources::{ResourceManager, Vertex};
 use comet_renderer::renderer2d::Renderer2D;
 
@@ -48,7 +48,7 @@ pub struct App {
 	delta_time: f32,
 	update_timer: f32,
 	game_state: Option<Box<dyn Any>>,
-	world: World,
+	scene: Scene,
 	fullscreen: bool,
 	should_quit: bool
 }
@@ -64,7 +64,7 @@ impl App {
 			delta_time: 0.0,
 			update_timer: 0.0166667,
 			game_state: None,
-			world: World::new(),
+			scene: Scene::new(),
 			fullscreen: false,
 			should_quit: false
 		}
@@ -99,13 +99,13 @@ impl App {
 		match preset {
 			ApplicationType::App2D => {
 				info!("Creating 2D app!");
-				self.world.register_component::<Transform2D>();
-				self.world.register_component::<Render2D>();
-				self.world.register_component::<Camera2D>()
+				self.scene.register_component::<Transform2D>();
+				self.scene.register_component::<Render2D>();
+				self.scene.register_component::<Camera2D>()
 			},
 			ApplicationType::App3D => {
 				info!("Creating 3D app!");
-				self.world.register_component::<Transform3D>()
+				self.scene.register_component::<Transform3D>()
 			}
 		};
 		self
@@ -132,8 +132,8 @@ impl App {
 		self.game_state.as_mut()?.downcast_mut::<T>()
 	}
 
-	pub fn world(&self) -> &World {
-		&self.world
+	pub fn scene(&self) -> &Scene {
+		&self.scene
 	}
 
 	pub fn input_manager(&self) -> &WinitInputHelper {
@@ -153,47 +153,47 @@ impl App {
 	}
 
 	pub fn new_entity(&mut self) -> usize{
-		self.world.new_entity() as usize
+		self.scene.new_entity() as usize
 	}
 
 	pub fn delete_entity(&mut self, entity_id: usize) {
-		self.world.delete_entity(entity_id)
+		self.scene.delete_entity(entity_id)
 	}
 
 	pub fn get_entity(&self, entity_id: usize) -> Option<&Entity> {
-		self.world.get_entity(entity_id)
+		self.scene.get_entity(entity_id)
 	}
 
 	pub fn get_entity_mut(&mut self, entity_id: usize) -> Option<&mut Entity> {
-		self.world.get_entity_mut(entity_id)
+		self.scene.get_entity_mut(entity_id)
 	}
 
 	pub fn register_component<C: Component>(&mut self) {
-		self.world.register_component::<C>()
+		self.scene.register_component::<C>()
 	}
 
 	pub fn deregister_component<C: Component>(&mut self) {
-		self.world.deregister_component::<C>()
+		self.scene.deregister_component::<C>()
 	}
 
 	pub fn add_component<C: Component>(&mut self, entity_id: usize, component: C) {
-		self.world.add_component(entity_id, component)
+		self.scene.add_component(entity_id, component)
 	}
 
 	pub fn remove_component<C: Component>(&mut self, entity_id: usize) {
-		self.world.remove_component::<C>(entity_id)
+		self.scene.remove_component::<C>(entity_id)
 	}
 
 	pub fn get_component<C: Component>(&self, entity_id: usize) -> Option<&C> {
-		self.world.get_component::<C>(entity_id)
+		self.scene.get_component::<C>(entity_id)
 	}
 
 	pub fn get_component_mut<C: Component>(&mut self, entity_id: usize) -> Option<&mut C> {
-		self.world.get_component_mut::<C>(entity_id)
+		self.scene.get_component_mut::<C>(entity_id)
 	}
 
 	pub fn get_entities_with(&self, components: ComponentSet) -> Vec<usize> {
-		self.world.get_entities_with(components)
+		self.scene.get_entities_with(components)
 	}
 
 	pub fn quit(&mut self) {

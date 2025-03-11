@@ -11,7 +11,7 @@ use comet_log::*;
 use comet_structs::*;
 use crate::archetypes::Archetypes;
 
-pub struct World {
+pub struct Scene {
 	id_queue: IdQueue,
 	next_id: u32,
 	entities: Vec<Option<Entity>>,
@@ -19,7 +19,7 @@ pub struct World {
 	archetypes: Archetypes
 }
 
-impl World {
+impl Scene {
 	pub fn new() -> Self {
 		Self {
 			id_queue: IdQueue::new(),
@@ -30,7 +30,7 @@ impl World {
 		}
 	}
 
-	/// Returns the number of how many entities exist in the current World.
+	/// Returns the number of how many entities exist in the current Scene.
 	pub fn active_entities(&self) -> u32 {
 		self.entities.len() as u32 - self.id_queue.size()
 	}
@@ -45,7 +45,7 @@ impl World {
 		}
 	}
 
-	/// Retuns the `Vec` of `Option<Entity>` which contains all the entities in the current World.
+	/// Retuns the `Vec` of `Option<Entity>` which contains all the entities in the current Scene.
 	pub fn entities(&self) -> &Vec<Option<Entity>> {
 		&self.entities
 	}
@@ -86,8 +86,6 @@ impl World {
 		}
 		self.id_queue.sorted_enqueue(entity_id as u32);
 		self.get_next_id();
-
-
 	}
 
 	fn create_archetype(&mut self, components: ComponentSet) {
@@ -156,14 +154,14 @@ impl World {
 		ComponentSet::from_ids(type_ids)
 	}
 
-	/// Registers a new component in the world.
+	/// Registers a new component in the scene.
 	pub fn register_component<C: Component + 'static>(&mut self) {
 		self.components.register_component::<C>(self.entities.len());
 		self.create_archetype(ComponentSet::from_ids(vec![C::type_id()]));
 		info!("Registered component: {}", C::type_name());
 	}
 
-	/// Deregisters a component from the world.
+	/// Deregisters a component from the scene.
 	pub fn deregister_component<C: Component + 'static>(&mut self) {
 		self.components.deregister_component::<C>();
 		info!("Deregistered component: {}", C::type_name());
@@ -207,7 +205,7 @@ impl World {
 		if self.archetypes.contains_archetype(&components) {
 			return self.archetypes.get_archetype(&components).unwrap().clone().iter().map(|x| *x as usize).collect();
 		}
-		error!("The given components {:?} are not registered in the world!", components);
+		error!("The given components {:?} are not registered in the scene!", components);
 		Vec::new()
 	}
 }

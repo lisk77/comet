@@ -9,7 +9,7 @@ use crate::math::{
 	Vec3
 };
 use component_derive::Component;
-use crate::{Entity, World};
+use crate::{Entity, Scene};
 
 // ##################################################
 // #                    BASIC                       #
@@ -101,7 +101,7 @@ pub trait Render {
 }
 
 pub trait Camera {
-	fn get_visible_entities(&self, camera_position: Position2D, world: World) -> Vec<Entity>;
+	fn get_visible_entities(&self, camera_position: Position2D, scene: Scene) -> Vec<Entity>;
 	fn get_projection_matrix(&self) -> Mat4;
 }
 
@@ -328,11 +328,11 @@ impl Camera2D {
 }
 
 impl Camera for Camera2D {
-	fn get_visible_entities(&self, camera_position: Position2D, world: World) -> Vec<Entity> {
-		let entities = world.entities();
+	fn get_visible_entities(&self, camera_position: Position2D, scene: Scene) -> Vec<Entity> {
+		let entities = scene.entities();
 		let mut visible_entities = Vec::new();
 		for entity in entities {
-			if self.in_view_frustum(camera_position, *world.get_component::<Transform2D>(*entity.clone().unwrap().id() as usize).unwrap().position()) {
+			if self.in_view_frustum(camera_position, *scene.get_component::<Transform2D>(*entity.clone().unwrap().id() as usize).unwrap().position()) {
 				visible_entities.push(entity.clone().unwrap());
 			}
 		}

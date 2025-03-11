@@ -8,7 +8,7 @@ use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 use comet_colors::LinearRgba;
-use comet_ecs::{Camera, Camera2D, Component, Position2D, Render, Render2D, Transform2D, World};
+use comet_ecs::{Camera, Camera2D, Component, Position2D, Render, Render2D, Transform2D, Scene};
 use comet_log::{debug, info};
 use comet_math::{Point3, Vec2, Vec3};
 use comet_resources::{texture, graphic_resource_manager::GraphicResorceManager, Texture, Vertex};
@@ -757,15 +757,15 @@ impl<'a> Renderer2D<'a> {
 		position
 	}
 
-	fn setup_camera<'b>(&mut self, cameras: Vec<usize>, world: &'b World) -> (&'b Position2D, &'b Camera2D){
+	fn setup_camera<'b>(&mut self, cameras: Vec<usize>, scene: &'b Scene) -> (&'b Position2D, &'b Camera2D){
 		let cam = cameras.get(
 			self.find_priority_camera(
-				cameras.iter().map(|e| *world.get_component::<Camera2D>(*e).unwrap()
+				cameras.iter().map(|e| *scene.get_component::<Camera2D>(*e).unwrap()
 				).collect::<Vec<Camera2D>>())
 		).unwrap();
 
-		let camera_component = world.get_component::<Camera2D>(*cam).unwrap();
-		let camera_position = world.get_component::<Transform2D>(*cam).unwrap().position();
+		let camera_component = scene.get_component::<Camera2D>(*cam).unwrap();
+		let camera_position = scene.get_component::<Transform2D>(*cam).unwrap().position();
 
 		let camera = RenderCamera::new(
 			camera_component.zoom(),
@@ -814,24 +814,24 @@ impl<'a> Renderer2D<'a> {
 		(camera_position, camera_component)
 	}
 
-	/// A function to automatically render all the entities of the `World` struct.
+	/// A function to automatically render all the entities of the `Scene` struct.
 	/// The entities must have the `Render2D` and `Transform2D` components to be rendered as well as set visible.
-	pub fn render_scene_2d(&mut self, world: &World) {
-		let cameras = world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Camera2D::type_id()]));
-		let entities =  world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
+	pub fn render_scene_2d(&mut self, scene: &Scene) {
+		let cameras = scene.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Camera2D::type_id()]));
+		let entities =  scene.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
 
 		if cameras.is_empty() {
 			return;
 		}
 
-		self.setup_camera(cameras, world);
+		self.setup_camera(cameras, scene);
 
 		let mut vertex_buffer: Vec<Vertex> = Vec::new();
 		let mut index_buffer: Vec<u16> = Vec::new();
 
 		for entity in entities {
-			let renderer_component =  world.get_component::<Render2D>(entity).unwrap();
-			let transform_component = world.get_component::<Transform2D>(entity).unwrap();
+			let renderer_component =  scene.get_component::<Render2D>(entity).unwrap();
+			let transform_component = scene.get_component::<Transform2D>(entity).unwrap();
 
 			if renderer_component.is_visible() {
 				let mut position = transform_component.position().clone();
@@ -952,7 +952,7 @@ impl<'a> Renderer2D<'a> {
 
 	/// A function to render the screen from top to bottom.
 	/// Generally useful in top-down games to render trees in front of players for example.
-	pub fn render_layered_scene_2d(&mut self, world: &World) {
+	pub fn render_layered_scene_2d(&mut self, world: &Scene) {
 		let cameras = world.get_entities_with(ComponentSet::from_ids(vec![Camera2D::type_id()]));
 
 		if cameras == vec![] {
