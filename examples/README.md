@@ -7,8 +7,8 @@ Simply run
 cargo run --example <example_name>
 ```
 
-| Example                                           | Description                                                                             |
-|---------------------------------------------------|-----------------------------------------------------------------------------------------|
-| [hello_world](comet/examples/hello_world)         | A simple boilerplate example to show how to properly start creating a Comet App.        |
-| [textured_entity](comet/examples/textured_entity) | This covers the basics on how to create a camera and your first entity with a texture   |
-
+| Example                            | Description                                                                            |
+|------------------------------------|----------------------------------------------------------------------------------------|
+| [hello_world](hello_world)         | A simple boilerplate example to show how to properly start creating a Comet App.       |
+| [textured_entity](textured_entity) | This covers the basics on how to create a camera and your first entity with a texture. |
+| [simple_move_2d](simple_move_2d)   | Simple demonstration of a hypothetical movement system in 2D.                          |
