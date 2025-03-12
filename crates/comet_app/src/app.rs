@@ -20,7 +20,7 @@ use comet_log::*;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event_loop::ControlFlow;
 use winit::window::Fullscreen;
-use winit_input_helper::WinitInputHelper;
+use winit_input_helper::WinitInputHelper as InputManager;
 use comet_input::input_handler::InputHandler;
 use comet_input::keyboard::Key;
 use comet_renderer::renderer::Renderer;
@@ -34,7 +34,7 @@ pub enum ApplicationType {
 
 pub enum AppMessage {
 	Resize(PhysicalSize<u32>),
-	Input(WinitInputHelper),
+	Input(InputManager),
 	UpdateCompleted(f32),
 	Quit
 }
@@ -44,7 +44,7 @@ pub struct App {
 	icon: Option<Icon>,
 	size: Option<LogicalSize<u32>>,
 	clear_color: Option<LinearRgba>,
-	input_manager: WinitInputHelper,
+	input_manager: InputManager,
 	delta_time: f32,
 	update_timer: f32,
 	game_state: Option<Box<dyn Any>>,
@@ -60,7 +60,7 @@ impl App {
 			icon: None,
 			size: None,
 			clear_color: None,
-			input_manager: WinitInputHelper::new(),
+			input_manager: InputManager::new(),
 			delta_time: 0.0,
 			update_timer: 0.0166667,
 			game_state: None,
@@ -136,7 +136,7 @@ impl App {
 		&self.scene
 	}
 
-	pub fn input_manager(&self) -> &WinitInputHelper {
+	pub fn input_manager(&self) -> &InputManager {
 		&self.input_manager
 	}
 
@@ -252,7 +252,6 @@ impl App {
 			let window = Arc::new(Self::create_window(self.title.clone(), &self.icon, &self.size ,&event_loop));
 			let mut renderer = R::new(window.clone(), self.clear_color.clone()).await;
 			info!("Renderer created! ({})", type_name::<R>());
-			//window.set_maximized(true);
 
 			info!("Setting up!");
 			setup(&mut self, &mut renderer);

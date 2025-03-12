@@ -12,7 +12,8 @@ pub mod prelude {
 	pub use comet_app::App;
 	pub use comet_app::ApplicationType::App2D;
 	pub use comet_renderer::renderer2d::Renderer2D;
-	pub use comet_input::*;
+	pub use comet_input::keyboard::Key;
+	pub use winit_input_helper::WinitInputHelper as InputManager;
 	pub use comet_log::*;
 	pub use comet_colors::*;
 	pub use comet_ecs::*;
