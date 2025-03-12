@@ -196,6 +196,18 @@ impl App {
 		self.scene.get_entities_with(components)
 	}
 
+	pub fn delete_entities_with(&mut self, components: ComponentSet) {
+		self.scene.delete_entities_with(components)
+	}
+
+	pub fn foreach<C: Component, K: Component>(&mut self, func: fn(&mut C,&mut K)) {
+		self.scene.foreach::<C,K>(func)
+	}
+
+	pub fn has<C: Component>(&self, entity_id: usize) -> bool {
+		self.scene.has::<C>(entity_id)
+	}
+
 	pub fn quit(&mut self) {
 		self.should_quit = true;
 	}
@@ -231,105 +243,6 @@ impl App {
 
 		winit_window.build(event_loop).unwrap()
 	}
-
-	/*pub fn run<R: Renderer + 'static>(mut self, setup: fn(&mut App, &mut R), update: fn(&mut App, &mut R, f32)) {
-		info!("Starting up {}!", self.title);
-
-		pollster::block_on(async {
-			let event_loop = EventLoop::new().unwrap();
-			let window = Arc::new(Self::create_window(self.title.clone(), &self.icon, &self.size, &event_loop));
-			let mut renderer = Arc::new(RwLock::new(R::new(window.clone(), self.clear_color.clone()).await));
-			info!("Renderer created! ({})", type_name::<R>());
-			window.set_maximized(true);
-
-			let app = Arc::new(RwLock::new(self.clone()));
-
-			// Run setup with locked app
-			{
-				let mut app_lock = app.write().unwrap();
-				let mut renderer_lock = renderer.write().unwrap();
-				setup(&mut *app_lock, &mut *renderer_lock);
-			}
-
-			let (game_tx, game_rx) = bounded::<AppMessage>(10);
-			let (render_tx, render_rx) = bounded::<AppMessage>(10);
-
-			// Spawn game logic thread
-			let game_thread_app = Arc::clone(&app);
-			let game_thread_renderer = Arc::clone(&renderer);
-
-			thread::spawn(move || {
-				let mut time_stack = 0.0;
-				let mut last_update = Instant::now();
-
-				while !game_thread_app.read().unwrap().should_quit {
-					let now = Instant::now();
-					let delta = now.duration_since(last_update).as_secs_f32();
-
-					// Get a single write lock and use it for the entire update
-					let mut app_lock = game_thread_app.write().unwrap();
-					app_lock.delta_time = delta;
-
-					time_stack += delta;
-					let update_timer = app_lock.update_timer; // Store the timer value
-
-					while time_stack > update_timer {
-						let mut renderer_lock = game_thread_renderer.write().unwrap();
-						update(&mut *app_lock, &mut *renderer_lock, delta);
-						drop(renderer_lock);
-						time_stack -= update_timer;
-						render_tx.send(AppMessage::UpdateCompleted(delta)).unwrap();
-					}
-
-					// Lock is automatically released here
-					drop(app_lock);
-
-					last_update = now;
-					thread::sleep(Duration::from_millis(1));
-				}
-			});
-
-			// Main thread handles events and rendering
-			info!("Starting event loop!");
-			event_loop.run(move |event, elwt| {
-				// Get a single write lock for the entire input handling
-				let mut app_lock = app.write().unwrap();
-				if app_lock.should_quit {
-					elwt.exit();
-				}
-				app_lock.input_manager.update(&event);
-				drop(app_lock); // Explicitly drop the lock before event handling
-
-				match event {
-					Event::WindowEvent { ref event, .. } => {
-						match event {
-							WindowEvent::CloseRequested => {
-								app.write().unwrap().quit();
-								elwt.exit();
-							}
-							WindowEvent::Resized(size) => {
-								let mut renderer_lock = renderer.write().unwrap();
-								renderer_lock.resize(*size);
-							}
-							WindowEvent::RedrawRequested => {
-								while let Ok(AppMessage::UpdateCompleted(_)) = render_rx.try_recv() {
-									let mut renderer_lock = renderer.write().unwrap();
-									match renderer_lock.render() {
-										Ok(_) => window.request_redraw(),
-										Err(e) => error!("Error rendering: {}", e)
-									}
-								}
-							}
-							_ => {}
-						}
-					}
-					_ => {}
-				}
-			}).unwrap();
-		});
-
-		info!("Shutting down {}!", self.title.clone());
-	}*/
 
 	pub fn run<R: Renderer>(mut self, setup: fn(&mut App, &mut R), update: fn(&mut App, &mut R, f32)) {
 		info!("Starting up {}!", self.title);

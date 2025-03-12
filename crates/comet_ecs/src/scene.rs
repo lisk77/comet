@@ -200,6 +200,10 @@ impl Scene {
 		self.components.get_component_mut::<C>(entity_id)
 	}
 
+	pub fn has<C: Component + 'static>(&self, entity_id: usize) -> bool {
+		self.components.get_component::<C>(entity_id).is_some()
+	}
+
 	/// Returns a list of entities that have the given components.
 	pub fn get_entities_with(&self, components: ComponentSet) -> Vec<usize> {
 		if self.archetypes.contains_archetype(&components) {
@@ -207,5 +211,26 @@ impl Scene {
 		}
 		error!("The given components {:?} are not registered in the scene!", components);
 		Vec::new()
+	}
+
+	/// Deletes all entities that have the given components.
+	pub fn delete_entities_with(&mut self, components: ComponentSet) {
+		let entities = self.get_entities_with(components);
+		for entity in entities {
+			self.delete_entity(entity);
+		}
+	}
+
+	/// Iterates over all entities that have the given components and calls the given function.
+	pub fn foreach<C: Component, K: Component>(&mut self, func: fn(&mut C,&mut K)) {
+		let entities = self.get_entities_with(ComponentSet::from_ids(vec![C::type_id(), K::type_id()]));
+		for entity in entities {
+			let c_ptr = self.get_component_mut::<C>(entity).unwrap() as *mut C;
+			let k_ptr = self.get_component_mut::<K>(entity).unwrap() as *mut K;
+
+			unsafe {
+				func(&mut *c_ptr, &mut *k_ptr);
+			}
+		}
 	}
 }
