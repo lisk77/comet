@@ -58,11 +58,11 @@ impl Laba {
 	}
 
 	pub fn to_lcha(&self) -> Lcha {
-		let atan: f32 = self.b.atan2(self.a);
+		let hue: f32 = self.b.atan2(self.a).to_degrees();
 		Lcha::new(
 			self.lightness,
 			(self.a*self.a + self.b*self.b).sqrt(),
-			if atan >= 0.0 { atan } else { atan + 360.0 },
+			if hue < 0.0 { hue + 360.0 } else { hue },
 			self.alpha
 		)
 	}

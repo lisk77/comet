@@ -78,10 +78,11 @@ impl Oklaba {
 	}
 
 	pub fn to_oklcha(&self) -> Oklcha {
+		let hue = self.b.atan2(self.a).to_degrees();
 		Oklcha::new(
 			self.lightness,
 			(self.a*self.a + self.b*self.b).sqrt(),
-			self.b.atan2(self.a),
+			if hue >= 0.0 { hue } else { hue + 360.0 },
 			self.alpha
 		)
 	}

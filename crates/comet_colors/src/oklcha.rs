@@ -10,6 +10,7 @@ pub struct Oklcha {
 
 impl Oklcha {
 	pub fn new(lightness: f32, chroma: f32, hue: f32, alpha: f32) -> Self {
+		println!("lightness: {}, chroma: {}, hue: {}, alpha: {}", lightness, chroma, hue, alpha);
 		assert!((0.0..=1.0).contains(&lightness) && (0.0..=1.0).contains(&chroma) && (0.0..=360.0).contains(&hue) && (0.0..=1.0).contains(&alpha), "Ligthness needs to be in range 0..1\nChroma needs to be in range 0..1\nHue needs to be in range 0..360\nAlpha needs to be in range 0..1");
 		Self {
 			lightness,
@@ -36,10 +37,11 @@ impl Oklcha {
 	}
 
 	pub fn from_oklaba(oklaba: Oklaba) -> Self {
+		let hue = oklaba.b().atan2(oklaba.a()).to_degrees();
 		Self {
 			lightness: oklaba.lightness(),
-			chroma: (oklaba.a()*oklaba.a() + oklaba.b()*oklaba.b()).sqrt(),
-			hue: oklaba.b().atan2(oklaba.a()),
+			chroma: (oklaba.a() * oklaba.a() + oklaba.b() * oklaba.b()).sqrt(),
+			hue: if hue >= 0.0 { hue } else { hue + 360.0 },
 			alpha: oklaba.alpha()
 		}
 	}
