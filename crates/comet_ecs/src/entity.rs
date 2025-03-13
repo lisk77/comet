@@ -7,7 +7,7 @@ pub struct Entity {
 }
 
 impl Entity {
-	pub fn new(id: u32) -> Self {
+	pub(crate) fn new(id: u32) -> Self {
 		let mut components = BitSet::new();
 		components.insert(0);
 		Self {

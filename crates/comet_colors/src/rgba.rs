@@ -151,7 +151,7 @@ impl sRgba<u8> {
 
 impl sRgba<f32> {
 	pub fn new(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
-		assert!((0.0..1.0).contains(&red) && (0.0..1.0).contains(&green) && (0.0..1.0).contains(&blue) && (0.0..1.0).contains(&alpha), "Red needs to be in range 0..1\nGreen needs to be in range 0..1\nBlue needs to be in range 0..1\nAlpha needs to be in range 0..1");
+		assert!((0.0..=1.0).contains(&red) && (0.0..=1.0).contains(&green) && (0.0..=1.0).contains(&blue) && (0.0..=1.0).contains(&alpha), "Red needs to be in range 0..=1\nGreen needs to be in range 0..=1\nBlue needs to be in range 0..=1\nAlpha needs to be in range 0..=1");
 		Self {
 			red,
 			green,
@@ -300,43 +300,29 @@ impl sRgba<f32> {
 	}
 
 	pub fn to_hwba(&self) -> Hwba {
-		let w = self.red.min(self.green).min(self.blue);
-		let v = self.red.max(self.green).max(self.blue);
-		let b = 1.0 - v;
+		let (r,g,b) = (self.red, self.green, self.blue);
 
-		if v == w {
-			return Hwba::new(
-				0.0,
-				w,
-				b,
-				self.alpha()
-			)
-		}
+		let c_max = r.max(g).max(b);
+		let c_min = r.min(g).min(b);
+		let delta = c_max - c_min;
 
-		let f = if self.red == v {
-			(self.green - self.blue) / (v - w)
-		} else if self.green == v {
-			(self.blue - self.red) / (v - w)
+		let mut hue = if c_max == self.red {
+			60.0 * (((self.green - self.blue) / delta) % 6.0)
+		} else if c_max == self.green {
+			60.0 * (((self.blue - self.red) / delta) + 2.0)
+		} else if c_max == self.blue {
+			60.0 * (((self.red - self.green) / delta) + 4.0)
 		} else {
-			(self.red - self.green) / (v - w)
+			0.0
 		};
 
-		let h = if self.red == v {
-			(f / 6.0) % 1.0
-		} else if self.green == v {
-			(f + 2.0) / 6.0
-		} else {
-			(f + 4.0) / 6.0
-		};
-
-		let mut h = if h < 0.0 { h + 1.0 } else { h };
-		h *= 360.0;
+		hue = if hue < 0.0 { hue + 360.0 } else { hue };
 
 		Hwba::new(
-			h,
-			w,
-			b,
-			self.alpha() as f32 / 255.0
+			hue,
+			c_min,
+			1.0 - c_max,
+			self.alpha
 		)
 	}
 

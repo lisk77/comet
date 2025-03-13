@@ -94,12 +94,12 @@ impl Hwba {
 		let w = self.whiteness.min(1.0 - self.blackness);
 		let c = 1.0 - self.whiteness - self.blackness;
 
-		let hue = self.hue % 360.0;
+		let hue = (self.hue % 360.0 + 360.0) % 360.0;
 		let h_prime = hue / 60.0;
 
 		let x = c * (1.0 - (h_prime % 2.0 - 1.0).abs());
 
-		let (r1, g1, b1) = match h_prime as u32 {
+		let (r1, g1, b1) = match h_prime.floor() as u32 {
 			0 => (c, x, 0.0),
 			1 => (x, c, 0.0),
 			2 => (0.0, c, x),
@@ -110,20 +110,25 @@ impl Hwba {
 		};
 
 		sRgba::<f32>::new(
-			r1 + w,
-			g1 + w,
-			b1 + w,
+			(r1 + w).min(1.0),
+			(g1 + w).min(1.0),
+			(b1 + w).min(1.0),
 			self.alpha()
 		)
+
 	}
 
 	pub fn to_hsva(&self) -> Hsva {
+		let value = 1.0 - self.blackness;
+		let saturation = 1.0 - (self.whiteness / value);
+
 		Hsva::new(
 			self.hue,
-			1.0 - self.hue / (1.0 - self.blackness),
-			1.0 - self.blackness,
+			saturation,
+			value,
 			self.alpha
 		)
+
 	}
 
 	pub fn to_hsla(&self) -> Hsla {

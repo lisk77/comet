@@ -48,8 +48,8 @@ impl Lcha {
 	pub fn to_laba(&self) -> Laba {
 		Laba::new(
 			self.lightness,
-			self.chroma * self.hue.cos().to_radians(),
-			self.chroma * self.hue.sin().to_radians(),
+			self.chroma * self.hue.to_radians().cos(),
+			self.chroma * self.hue.to_radians().sin(),
 			self.alpha
 		)
 	}
