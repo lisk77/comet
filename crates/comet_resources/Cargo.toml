@@ -12,6 +12,7 @@ anyhow = "1.0"
 tobj = { version = "3.2", default-features = false, features = ["async"]}
 bytemuck = { version = "1.16", features = [ "derive" ] }
 log = "0.4.22"
+ab_glyph = "0.2.29"
 
 [dependencies.image]
 version = "0.24"

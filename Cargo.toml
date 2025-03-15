@@ -49,7 +49,6 @@ members = [
     "./crates/comet_input",
     "./crates/comet_log",
     "./crates/comet_ui",
-    "./crates/comet_fonts",
     "./crates/comet_sound",
     "./crates/comet_structs"
 ]

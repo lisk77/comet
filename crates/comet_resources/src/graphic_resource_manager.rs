@@ -4,19 +4,21 @@ use std::{
 
 use wgpu::{naga, Device, FilterMode, Queue, ShaderModule, TextureFormat, TextureUsages};
 use wgpu::naga::ShaderStage;
-use crate::{texture, Texture};
+use crate::{font, texture, Texture};
 use crate::texture_atlas::{TextureAtlas, TextureRegion};
 
-pub struct GraphicResorceManager {
+pub struct GraphicResourceManager {
 	texture_atlas: TextureAtlas,
+	fonts: HashMap<String, TextureAtlas>,
 	data_files: HashMap<String, String>,
 	shaders: HashMap<String, ShaderModule>
 }
 
-impl GraphicResorceManager {
+impl GraphicResourceManager {
 	pub fn new() -> Self {
 		Self {
 			texture_atlas: TextureAtlas::empty(),
+			fonts: HashMap::new(),
 			data_files: HashMap::new(),
 			shaders: HashMap::new()
 		}
@@ -117,6 +119,12 @@ impl GraphicResorceManager {
 
 	pub fn get_shader(&self, shader: &str) -> Option<&ShaderModule> {
 		self.shaders.get(shader)
+	}
+
+	pub fn load_font(&mut self, path: &str, size: f32) {
+		let font = font::Font::new(path, size);
+		let atlas = TextureAtlas::from_textures(font.glyphs(), font.names());
+		self.fonts.insert(font.name().to_string(), atlas);
 	}
 
 	/*pub async fn load_model(

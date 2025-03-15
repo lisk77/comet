@@ -112,8 +112,6 @@ impl TextureAtlas {
 	pub fn from_texture_paths(
 		paths: Vec<String>,
 	) -> Self {
-		//let t0 = Instant::now();
-
 		let mut textures: Vec<DynamicImage> = Vec::new();
 		let mut regions: HashMap<String, TextureRegion> = HashMap::new();
 
@@ -147,7 +145,7 @@ impl TextureAtlas {
 				x_offset = 0;
 				previous = texture.height();
 			}
-			//base.copy_from(texture, x_offset, y_offset).expect("Nope, you propably failed the offets");
+
 			Self::insert_texture_at(&mut base, &texture, x_offset, y_offset);
 			regions.insert(path.to_string(), TextureRegion::new(
 				x_offset as f32 / width as f32,
@@ -159,16 +157,56 @@ impl TextureAtlas {
 			x_offset += texture.width();
 		}
 
-		// Save the image to disk as a PNG
-		//let output_path = Path::new(r"C:\Users\lisk77\Code Sharing\comet-engine\resources\textures\atlas.png");
-		//base.save_with_format(output_path, ImageFormat::Png).expect("Failed to save texture atlas");
+		info!("Texture atlas created!");
+
+		TextureAtlas {
+			atlas: base,
+			textures: regions
+		}
+	}
+
+	pub fn from_textures(
+		textures: Vec<DynamicImage>,
+		names: Vec<String>,
+	) -> Self {
+		let mut regions: HashMap<String, TextureRegion> = HashMap::new();
+
+		info!("Sorting textures by height...");
+
+		let mut texture_path_pairs: Vec<(&DynamicImage, &String)> = textures.iter().zip(names.iter()).collect();
+		texture_path_pairs.sort_by(|a, b| b.0.height().cmp(&a.0.height()));
+		let (sorted_textures, sorted_paths): (Vec<&DynamicImage>, Vec<&String>) = texture_path_pairs.into_iter().unzip();
+		let sorted_textures: Vec<DynamicImage> = sorted_textures.into_iter().map(|t| t.clone()).collect();
+		let sorted_paths: Vec<String> = sorted_paths.into_iter().map(|s| s.to_string()).collect();
+
+		let (height, width) = (Self::calculate_atlas_height(&sorted_textures), Self::calculate_atlas_width(&sorted_textures));
+		let mut base = DynamicImage::new_rgba8(width,height);
+
+		let mut previous = sorted_textures.get(0).unwrap().height();
+		let mut x_offset: u32 = 0;
+		let mut y_offset: u32 = 0;
+
+		info!("Creating texture atlas...");
+
+		for (texture, name) in sorted_textures.iter().zip(sorted_paths.iter()) {
+			if texture.height() != previous {
+				y_offset += previous;
+				x_offset = 0;
+				previous = texture.height();
+			}
+
+			Self::insert_texture_at(&mut base, &texture, x_offset, y_offset);
+			regions.insert(name.to_string(), TextureRegion::new(
+				x_offset as f32 / width as f32,
+				y_offset as f32 / height as f32,
+				(x_offset + texture.width()) as f32 / width as f32,
+				(y_offset + texture.height()) as f32 / height as f32,
+				texture.dimensions()
+			));
+			x_offset += texture.width();
+		}
 
 		info!("Texture atlas created!");
-		//debug!(format!("{:?}", regions));
-
-		/*let t1 = Instant::now();
-		let delta = t1.duration_since(t0);
-		println!("{:?}", delta);*/
 
 		TextureAtlas {
 			atlas: base,

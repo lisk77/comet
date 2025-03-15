@@ -11,7 +11,7 @@ use comet_colors::LinearRgba;
 use comet_ecs::{Camera, Camera2D, Component, Position2D, Render, Render2D, Transform2D, Scene};
 use comet_log::{debug, info};
 use comet_math::{Point3, Vec2, Vec3};
-use comet_resources::{texture, graphic_resource_manager::GraphicResorceManager, Texture, Vertex};
+use comet_resources::{texture, graphic_resource_manager::GraphicResourceManager, Texture, Vertex};
 use comet_resources::texture_atlas::TextureRegion;
 use comet_structs::ComponentSet;
 use crate::camera::{RenderCamera, CameraUniform};
@@ -37,7 +37,7 @@ pub struct Renderer2D<'a> {
 	clear_color: Color,
 	diffuse_texture: Texture,
 	diffuse_bind_group: wgpu::BindGroup,
-	graphic_resource_manager: GraphicResorceManager,
+	graphic_resource_manager: GraphicResourceManager,
 	camera: RenderCamera,
 	camera_uniform: CameraUniform,
 	camera_buffer: wgpu::Buffer,
@@ -117,7 +117,7 @@ impl<'a> Renderer2D<'a> {
 
 		let num_indices = index_data.len() as u32;
 
-		let graphic_resource_manager = GraphicResorceManager::new();
+		let graphic_resource_manager = GraphicResourceManager::new();
 
 		let diffuse_bytes = include_bytes!(r"../../../resources/textures/comet_icon.png");
 		let diffuse_texture =
@@ -540,6 +540,10 @@ impl<'a> Renderer2D<'a> {
 		info!("Applied base shader!");
 	}
 
+	pub fn load_font(&mut self, path: &str, size: f32) {
+		self.graphic_resource_manager.load_font(path, size);
+	}
+
 	/// An interface for getting the location of the texture in the texture atlas.
 	pub fn get_texture_region(&self, texture_path: String) -> &TextureRegion {
 		assert!(self.graphic_resource_manager.texture_atlas().textures().contains_key(&texture_path), "Texture not found in atlas");
@@ -741,7 +745,34 @@ impl<'a> Renderer2D<'a> {
 
 	/// A function to draw text at a given position.
 	pub fn draw_text_at(&mut self, text: &str, position: Point3) {
-		todo!()
+		let mut x = position.x();
+		let mut y = position.y();
+
+		for c in text.chars() {
+			let region = self.get_texture_region(c.to_string());
+			let (dim_x, dim_y) = region.dimensions();
+
+			let (bound_x, bound_y) =
+				((dim_x as f32/ self.config.width as f32) * 0.5, (dim_y as f32/ self.config.height as f32) * 0.5);
+
+			let vertices: &mut Vec<Vertex> = &mut vec![
+				Vertex :: new ( [-bound_x + x,  bound_y + y, 0.0], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0] ),
+				Vertex :: new ( [-bound_x + x, -bound_y + y, 0.0], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0] ),
+				Vertex :: new ( [ bound_x + x, -bound_y + y, 0.0], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0] ) ,
+				Vertex :: new ( [ bound_x + x,  bound_y + y, 0.0], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0] )
+			];
+
+			let buffer_size = self.vertex_data.len() as u16;
+
+			let indices: &mut Vec<u16> = &mut vec![
+				0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
+				1 + buffer_size, 2 + buffer_size, 3 + buffer_size
+			];
+
+			self.push_to_buffers(vertices, indices);
+
+			x += dim_x as f32;
+		}
 	}
 
 	fn find_priority_camera(&self, cameras: Vec<Camera2D>) -> usize {
@@ -779,7 +810,7 @@ impl<'a> Renderer2D<'a> {
 		let camera_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Camera Buffer"),
 			contents: bytemuck::cast_slice(&[camera_uniform]),
-			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+			usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
 		});
 
 		let camera_bind_group_layout =

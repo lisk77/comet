@@ -57,6 +57,13 @@ pub struct Camera2D {
 	priority: u8
 }
 
+#[derive(Component)]
+pub struct Text {
+	content: &'static str,
+	font: &'static str,
+	font_size: f32,
+}
+
 // ##################################################
 // #                   BUNDLES                      #
 // ##################################################
