@@ -550,6 +550,11 @@ impl<'a> Renderer2D<'a> {
 		self.graphic_resource_manager.texture_atlas().textures().get(&texture_path).unwrap()
 	}
 
+	pub fn get_glyph_region(&self, glyph: char, font: String) -> &TextureRegion {
+		let font_atlas = self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap();
+		font_atlas.get_glyph(glyph).unwrap()
+	}
+
 	fn create_rectangle(&self, width: f32, height: f32) -> Vec<Vertex> {
 		let (bound_x, bound_y) =
 			((width/ self.config.width as f32) * 0.5, (height/ self.config.height as f32) * 0.5);
@@ -564,9 +569,98 @@ impl<'a> Renderer2D<'a> {
 
 	/// A function that allows you to set the texture atlas with a list of paths to the textures.
 	/// The old texture atlas will be replaced with the new one.
-	pub fn set_texture_atlas(&mut self, paths: Vec<String>) {
+	pub fn set_texture_atlas_by_paths(&mut self, paths: Vec<String>) {
 		self.graphic_resource_manager.create_texture_atlas(paths);
 		self.diffuse_texture = Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap();
+
+		let texture_bind_group_layout =
+			self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+				entries: &[
+					wgpu::BindGroupLayoutEntry {
+						binding: 0,
+						visibility: wgpu::ShaderStages::FRAGMENT,
+						ty: wgpu::BindingType::Texture {
+							multisampled: false,
+							view_dimension: wgpu::TextureViewDimension::D2,
+							sample_type: wgpu::TextureSampleType::Float { filterable: true },
+						},
+						count: None,
+					},
+					wgpu::BindGroupLayoutEntry {
+						binding: 1,
+						visibility: wgpu::ShaderStages::FRAGMENT,
+						ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+						count: None,
+					},
+				],
+				label: Some("texture_bind_group_layout"),
+			});
+
+		let diffuse_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &texture_bind_group_layout,
+			entries: &[
+				wgpu::BindGroupEntry {
+					binding: 0,
+					resource: wgpu::BindingResource::TextureView(&self.diffuse_texture.view),
+				},
+				wgpu::BindGroupEntry {
+					binding: 1,
+					resource: wgpu::BindingResource::Sampler(&self.diffuse_texture.sampler),
+				},
+			],
+			label: Some("diffuse_bind_group"),
+		});
+
+		self.diffuse_bind_group = diffuse_bind_group;
+	}
+
+	fn set_texture_atlas(&mut self) {
+		self.diffuse_texture = Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap();
+
+		let texture_bind_group_layout =
+			self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+				entries: &[
+					wgpu::BindGroupLayoutEntry {
+						binding: 0,
+						visibility: wgpu::ShaderStages::FRAGMENT,
+						ty: wgpu::BindingType::Texture {
+							multisampled: false,
+							view_dimension: wgpu::TextureViewDimension::D2,
+							sample_type: wgpu::TextureSampleType::Float { filterable: true },
+						},
+						count: None,
+					},
+					wgpu::BindGroupLayoutEntry {
+						binding: 1,
+						visibility: wgpu::ShaderStages::FRAGMENT,
+						ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+						count: None,
+					},
+				],
+				label: Some("texture_bind_group_layout"),
+			});
+
+		let diffuse_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &texture_bind_group_layout,
+			entries: &[
+				wgpu::BindGroupEntry {
+					binding: 0,
+					resource: wgpu::BindingResource::TextureView(&self.diffuse_texture.view),
+				},
+				wgpu::BindGroupEntry {
+					binding: 1,
+					resource: wgpu::BindingResource::Sampler(&self.diffuse_texture.sampler),
+				},
+			],
+			label: Some("diffuse_bind_group"),
+		});
+
+		self.diffuse_bind_group = diffuse_bind_group;
+	}
+
+	fn set_font_atlas(&mut self, font: String) {
+		let font_atlas = self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap();
+		self.diffuse_texture = Texture::from_image(&self.device, &self.queue, font_atlas.glyphs().atlas(), None, false).unwrap();
 
 		let texture_bind_group_layout =
 			self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -634,7 +728,7 @@ impl<'a> Renderer2D<'a> {
 			paths.push(texture_path.clone() + path.unwrap().file_name().to_str().unwrap());
 		}
 
-		self.set_texture_atlas(paths);
+		self.set_texture_atlas_by_paths(paths);
 	}
 
 	/// A function that clears the buffers and sets the vertex and index buffer of the `Renderer2D` with the given data.
@@ -686,13 +780,13 @@ impl<'a> Renderer2D<'a> {
 		self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Updated Vertex Buffer"),
 			contents: bytemuck::cast_slice(&self.vertex_data),
-			usage: wgpu::BufferUsages::VERTEX,
+			usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
 		});
 
 		self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Updated Index Buffer"),
 			contents: bytemuck::cast_slice(&self.index_data),
-			usage: wgpu::BufferUsages::INDEX,
+			usage: wgpu::BufferUsages::INDEX | BufferUsages::COPY_DST,
 		});
 
 		self.num_indices = self.index_data.len() as u32;
@@ -706,13 +800,13 @@ impl<'a> Renderer2D<'a> {
 		self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Updated Vertex Buffer"),
 			contents: bytemuck::cast_slice(&self.vertex_data),
-			usage: wgpu::BufferUsages::VERTEX,
+			usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
 		});
 
 		self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Updated Index Buffer"),
 			contents: bytemuck::cast_slice(&self.index_data),
-			usage: wgpu::BufferUsages::INDEX,
+			usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
 		});
 
 		self.num_indices = self.index_data.len() as u32;
@@ -744,35 +838,17 @@ impl<'a> Renderer2D<'a> {
 	}
 
 	/// A function to draw text at a given position.
-	pub fn draw_text_at(&mut self, text: &str, position: Point3) {
+	pub fn draw_text_at(&mut self, text: &str, font: String, position: Point3) {
+		self.set_font_atlas(font.clone());
+
 		let mut x = position.x();
 		let mut y = position.y();
 
 		for c in text.chars() {
-			let region = self.get_texture_region(c.to_string());
-			let (dim_x, dim_y) = region.dimensions();
-
-			let (bound_x, bound_y) =
-				((dim_x as f32/ self.config.width as f32) * 0.5, (dim_y as f32/ self.config.height as f32) * 0.5);
-
-			let vertices: &mut Vec<Vertex> = &mut vec![
-				Vertex :: new ( [-bound_x + x,  bound_y + y, 0.0], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0] ),
-				Vertex :: new ( [-bound_x + x, -bound_y + y, 0.0], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0] ),
-				Vertex :: new ( [ bound_x + x, -bound_y + y, 0.0], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0] ) ,
-				Vertex :: new ( [ bound_x + x,  bound_y + y, 0.0], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0] )
-			];
-
-			let buffer_size = self.vertex_data.len() as u16;
-
-			let indices: &mut Vec<u16> = &mut vec![
-				0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
-				1 + buffer_size, 2 + buffer_size, 3 + buffer_size
-			];
-
-			self.push_to_buffers(vertices, indices);
-
-			x += dim_x as f32;
+			self.draw_texture_at(font.clone() + &c.to_string(), Point3::new(x, y, position.z()));
 		}
+
+		self.set_texture_atlas();
 	}
 
 	fn find_priority_camera(&self, cameras: Vec<Camera2D>) -> usize {

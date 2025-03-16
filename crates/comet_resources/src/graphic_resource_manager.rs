@@ -4,12 +4,14 @@ use std::{
 
 use wgpu::{naga, Device, FilterMode, Queue, ShaderModule, TextureFormat, TextureUsages};
 use wgpu::naga::ShaderStage;
+use comet_log::info;
 use crate::{font, texture, Texture};
+use crate::font::Font;
 use crate::texture_atlas::{TextureAtlas, TextureRegion};
 
 pub struct GraphicResourceManager {
 	texture_atlas: TextureAtlas,
-	fonts: HashMap<String, TextureAtlas>,
+	fonts: Vec<Font>,
 	data_files: HashMap<String, String>,
 	shaders: HashMap<String, ShaderModule>
 }
@@ -18,7 +20,7 @@ impl GraphicResourceManager {
 	pub fn new() -> Self {
 		Self {
 			texture_atlas: TextureAtlas::empty(),
-			fonts: HashMap::new(),
+			fonts: Vec::new(),
 			data_files: HashMap::new(),
 			shaders: HashMap::new()
 		}
@@ -34,6 +36,14 @@ impl GraphicResourceManager {
 
 	pub fn data_files(&self) -> &HashMap<String, String> {
 		&self.data_files
+	}
+
+	pub fn fonts(&self) -> &Vec<Font> {
+		&self.fonts
+	}
+
+	pub fn get_glyph(&self, font: &str, ch: char) -> Option<&TextureRegion> {
+		self.fonts.iter().find(|f| f.name() == font).and_then(|f| f.get_glyph(ch))
 	}
 
 	pub fn set_texture_atlas(&mut self, texture_atlas: TextureAtlas) {
@@ -122,9 +132,10 @@ impl GraphicResourceManager {
 	}
 
 	pub fn load_font(&mut self, path: &str, size: f32) {
-		let font = font::Font::new(path, size);
-		let atlas = TextureAtlas::from_textures(font.glyphs(), font.names());
-		self.fonts.insert(font.name().to_string(), atlas);
+		info!("Loading font: {}", path);
+		let font = Font::new(path, size);
+		info!("Font {} loaded!", font.name());
+		self.fonts.push(font);
 	}
 
 	/*pub async fn load_model(

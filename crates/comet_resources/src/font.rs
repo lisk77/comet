@@ -1,16 +1,17 @@
 use image::{DynamicImage, Rgba, RgbaImage};
 use ab_glyph::{FontArc, PxScale, ScaleFont, Glyph, point, Font as AbFont};
+use crate::texture_atlas::{TextureAtlas, TextureRegion};
 
 pub struct Font {
 	name: String,
-	glyphs: Vec<DynamicImage>,
+	glyphs: TextureAtlas,
 }
 
 impl Font {
 	pub fn new(path: &str, size: f32) -> Self {
 		Font {
 			name: path.to_string(),
-			glyphs: Self::generate_images(path, size),
+			glyphs: Self::generate_atlas(path, size)
 		}
 	}
 
@@ -18,31 +19,22 @@ impl Font {
 		&self.name
 	}
 
-	pub fn names(&self) -> Vec<String> {
-		let mut names = Vec::new();
-		for code_point in 0x0020..=0x007E {
-			if let Some(ch) = std::char::from_u32(code_point) {
-				names.push(ch.to_string());
-			}
-		}
-		names
+	pub fn glyphs(&self) -> &TextureAtlas {
+		&self.glyphs
 	}
 
-	pub fn glyph(&self, index: usize) -> &DynamicImage {
-		&self.glyphs[index]
+	pub fn get_glyph(&self, ch: char) -> Option<&TextureRegion> {
+		self.glyphs.textures().get(&ch.to_string())
 	}
 
-	pub fn glyphs(&self) -> Vec<DynamicImage> {
-		self.glyphs.clone()
-	}
-
-	fn generate_images(path: &str, size: f32) -> Vec<DynamicImage> {
+	fn generate_atlas(path: &str, size: f32) -> TextureAtlas {
 		let font_data = std::fs::read(path).expect("Failed to read font file");
 		let font = FontArc::try_from_vec(font_data).expect("Failed to load font");
 
 		let scale = PxScale::from(size);
 		let scaled_font = font.as_scaled(scale);
 
+		let mut names = Vec::new();
 		let mut images = Vec::new();
 
 		for code_point in 0x0020..=0x007E {
@@ -50,6 +42,8 @@ impl Font {
 				if font.glyph_id(ch).0 == 0 {
 					continue;
 				}
+
+				names.push(ch.to_string());
 
 				let glyph = Glyph {
 					id: font.glyph_id(ch),
@@ -80,6 +74,7 @@ impl Font {
 				}
 			}
 		}
-		images
+
+		TextureAtlas::from_textures(names, images)
 	}
 }

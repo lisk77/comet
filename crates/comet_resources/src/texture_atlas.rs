@@ -166,8 +166,8 @@ impl TextureAtlas {
 	}
 
 	pub fn from_textures(
-		textures: Vec<DynamicImage>,
 		names: Vec<String>,
+		textures: Vec<DynamicImage>,
 	) -> Self {
 		let mut regions: HashMap<String, TextureRegion> = HashMap::new();
 
