@@ -4,46 +4,65 @@ use std::time::Instant;
 use image::{DynamicImage, GenericImage, GenericImageView, ImageFormat};
 use comet_log::*;
 use wgpu::{Device, FilterMode, TextureFormat, TextureUsages};
+use crate::font::GlyphData;
 use crate::Texture;
 
 #[derive(Debug)]
 pub struct TextureRegion {
-	x0: f32,
-	y0: f32,
-	x1: f32,
-	y1: f32,
-	dimensions: (u32, u32)
+	u0: f32,
+	v0: f32,
+	u1: f32,
+	v1: f32,
+	dimensions: (u32, u32),
+	advance: f32,
+	offset_x: f32,
+	offset_y: f32,
 }
 
 impl TextureRegion {
-	pub fn new(x0: f32, y0: f32, x1: f32, y1: f32, dimensions: (u32, u32)) -> Self {
+	pub fn new(u0: f32, v0: f32, u1: f32, v1: f32, dimensions: (u32, u32), advance: f32, offset_x: f32, offset_y: f32) -> Self {
 		Self {
-			x0,
-			y0,
-			x1,
-			y1,
-			dimensions
+			u0,
+			v0,
+			u1,
+			v1,
+			dimensions,
+			advance,
+			offset_x,
+			offset_y,
 		}
 	}
 
-	pub fn x0(&self) -> f32 {
-		self.x0
+	pub fn u0(&self) -> f32 {
+		self.u0
 	}
 
-	pub fn x1(&self) -> f32 {
-		self.x1
+	pub fn u1(&self) -> f32 {
+		self.u1
 	}
 
-	pub fn y0(&self) -> f32 {
-		self.y0
+	pub fn v0(&self) -> f32 {
+		self.v0
 	}
 
-	pub fn y1(&self) -> f32 {
-		self.y1
+	pub fn v1(&self) -> f32 {
+		self.v1
 	}
 
 	pub fn dimensions(&self) -> (u32, u32) {
 		self.dimensions
+	}
+
+	pub fn advance(&self) -> f32 {
+		self.advance
+	}
+
+	pub fn offset_x(&self) -> f32 {
+		self.offset_x
+	}
+
+	pub fn offset_y(&self) -> f32 {
+		self.offset_y
 	}
 }
 
@@ -152,7 +171,10 @@ impl TextureAtlas {
 				y_offset as f32 / height as f32,
 				(x_offset + texture.width()) as f32 / width as f32,
 				(y_offset + texture.height()) as f32 / height as f32,
-				texture.dimensions()
+				texture.dimensions(),
+				0.0,
+				0.0,
+				0.0
 			));
 			x_offset += texture.width();
 		}
@@ -201,7 +223,10 @@ impl TextureAtlas {
 				y_offset as f32 / height as f32,
 				(x_offset + texture.width()) as f32 / width as f32,
 				(y_offset + texture.height()) as f32 / height as f32,
-				texture.dimensions()
+				texture.dimensions(),
+				0.0,
+				0.0,
+				0.0
 			));
 			x_offset += texture.width();
 		}
@@ -211,6 +236,58 @@ impl TextureAtlas {
 		TextureAtlas {
 			atlas: base,
 			textures: regions
+		}
+	}
+
+	pub fn from_glyphs(mut glyphs: Vec<GlyphData>) -> Self {
+		glyphs.sort_by(|a, b| b.render.height().cmp(&a.render.height()));
+
+		let height = Self::calculate_atlas_height(
+			&glyphs.iter().map(|g| g.render.clone()).collect::<Vec<_>>()
+		);
+		let width = Self::calculate_atlas_width(
+			&glyphs.iter().map(|g| g.render.clone()).collect::<Vec<_>>()
+		);
+
+		let mut base = DynamicImage::new_rgba8(width, height);
+		let mut regions = HashMap::new();
+		let mut current_row_height = glyphs[0].render.height();
+		let mut x_offset: u32 = 0;
+		let mut y_offset: u32 = 0;
+
+		for g in glyphs.iter() {
+			let glyph_w = g.render.width();
+			let glyph_h = g.render.height();
+
+			if glyph_h != current_row_height {
+				y_offset += current_row_height;
+				x_offset = 0;
+				current_row_height = glyph_h;
+			}
+
+			Self::insert_texture_at(&mut base, &g.render, x_offset, y_offset);
+
+			let u0 = x_offset as f32 / width as f32;
+			let v0 = y_offset as f32 / height as f32;
+			let u1 = (x_offset + glyph_w) as f32 / width as f32;
+			let v1 = (y_offset + glyph_h) as f32 / height as f32;
+
+			let region = TextureRegion::new(
+				u0, v0, u1, v1,
+				(glyph_w, glyph_h),
+				g.advance,
+				g.offset_x,
+				g.offset_y,
+			);
+
+			regions.insert(g.name.clone(), region);
+
+			x_offset += glyph_w;
+		}
+
+		TextureAtlas {
+			atlas: base,
+			textures: regions,
 		}
 	}
 

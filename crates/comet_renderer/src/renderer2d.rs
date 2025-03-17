@@ -36,6 +36,7 @@ pub struct Renderer2D<'a> {
 	num_indices: u32,
 	clear_color: Color,
 	diffuse_texture: Texture,
+	diffuse_bind_group_layout: wgpu::BindGroupLayout,
 	diffuse_bind_group: wgpu::BindGroup,
 	graphic_resource_manager: GraphicResourceManager,
 	camera: RenderCamera,
@@ -286,6 +287,7 @@ impl<'a> Renderer2D<'a> {
 			num_indices,
 			clear_color,
 			diffuse_texture,
+			diffuse_bind_group_layout: texture_bind_group_layout,
 			diffuse_bind_group,
 			graphic_resource_manager,
 			camera,
@@ -614,34 +616,10 @@ impl<'a> Renderer2D<'a> {
 		self.diffuse_bind_group = diffuse_bind_group;
 	}
 
-	fn set_texture_atlas(&mut self) {
-		self.diffuse_texture = Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap();
-
-		let texture_bind_group_layout =
-			self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-				entries: &[
-					wgpu::BindGroupLayoutEntry {
-						binding: 0,
-						visibility: wgpu::ShaderStages::FRAGMENT,
-						ty: wgpu::BindingType::Texture {
-							multisampled: false,
-							view_dimension: wgpu::TextureViewDimension::D2,
-							sample_type: wgpu::TextureSampleType::Float { filterable: true },
-						},
-						count: None,
-					},
-					wgpu::BindGroupLayoutEntry {
-						binding: 1,
-						visibility: wgpu::ShaderStages::FRAGMENT,
-						ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-						count: None,
-					},
-				],
-				label: Some("texture_bind_group_layout"),
-			});
-
+	fn switch_texture(&mut self, to: Texture) {
+		self.diffuse_texture = to;
 		let diffuse_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &texture_bind_group_layout,
+			layout: &self.diffuse_bind_group_layout,
 			entries: &[
 				wgpu::BindGroupEntry {
 					binding: 0,
@@ -658,49 +636,13 @@ impl<'a> Renderer2D<'a> {
 		self.diffuse_bind_group = diffuse_bind_group;
 	}
 
+	fn set_texture_atlas(&mut self) {
+		self.switch_texture(Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap());
+	}
+
 	fn set_font_atlas(&mut self, font: String) {
 		let font_atlas = self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap();
-		self.diffuse_texture = Texture::from_image(&self.device, &self.queue, font_atlas.glyphs().atlas(), None, false).unwrap();
-
-		let texture_bind_group_layout =
-			self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-				entries: &[
-					wgpu::BindGroupLayoutEntry {
-						binding: 0,
-						visibility: wgpu::ShaderStages::FRAGMENT,
-						ty: wgpu::BindingType::Texture {
-							multisampled: false,
-							view_dimension: wgpu::TextureViewDimension::D2,
-							sample_type: wgpu::TextureSampleType::Float { filterable: true },
-						},
-						count: None,
-					},
-					wgpu::BindGroupLayoutEntry {
-						binding: 1,
-						visibility: wgpu::ShaderStages::FRAGMENT,
-						ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-						count: None,
-					},
-				],
-				label: Some("texture_bind_group_layout"),
-			});
-
-		let diffuse_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &texture_bind_group_layout,
-			entries: &[
-				wgpu::BindGroupEntry {
-					binding: 0,
-					resource: wgpu::BindingResource::TextureView(&self.diffuse_texture.view),
-				},
-				wgpu::BindGroupEntry {
-					binding: 1,
-					resource: wgpu::BindingResource::Sampler(&self.diffuse_texture.sampler),
-				},
-			],
-			label: Some("diffuse_bind_group"),
-		});
-
-		self.diffuse_bind_group = diffuse_bind_group;
+		self.switch_texture(Texture::from_image(&self.device, &self.queue, font_atlas.glyphs().atlas(), None, false).unwrap());
 	}
 
 	fn get_project_root() -> std::io::Result<PathBuf> {
@@ -821,10 +763,10 @@ impl<'a> Renderer2D<'a> {
 			((dim_x as f32/ self.config.width as f32) * 0.5, (dim_y as f32/ self.config.height as f32) * 0.5);
 
 		let vertices: &mut Vec<Vertex> = &mut vec![
-			Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0] ),
-			Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0] ),
-			Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0] ) ,
-			Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0] )
+			Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.u0(), region.v0()], [0.0, 0.0, 0.0, 0.0] ),
+			Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.u0(), region.v1()], [0.0, 0.0, 0.0, 0.0] ),
+			Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.u1(), region.v1()], [0.0, 0.0, 0.0, 0.0] ) ,
+			Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.u1(), region.v0()], [0.0, 0.0, 0.0, 0.0] )
 		];
 
 		let buffer_size = self.vertex_data.len() as u16;
@@ -838,17 +780,56 @@ impl<'a> Renderer2D<'a> {
 	}
 
 	/// A function to draw text at a given position.
-	pub fn draw_text_at(&mut self, text: &str, font: String, position: Point3) {
+	pub fn draw_text_at(&mut self, text: &str, font: String, size: f32, position: Point3) {
 		self.set_font_atlas(font.clone());
 
-		let mut x = position.x();
-		let mut y = position.y();
+		let screen_position = Point3::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32, position.z());
+		let scale_factor = size / self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().size();
 
-		for c in text.chars() {
-			self.draw_texture_at(font.clone() + &c.to_string(), Point3::new(x, y, position.z()));
+		let line_height = (self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().line_height() / self.config.height as f32) * scale_factor;
+		let lines = text.split("\n").collect::<Vec<&str>>();
+
+		let mut x_offset = 0.0;
+		let mut y_offset = 0.0;
+
+		for line in lines {
+			for c in line.chars() {
+				let region = self.get_glyph_region(c, font.clone());
+				let (dim_x, dim_y) = region.dimensions();
+
+				let w = (dim_x as f32 / self.config.width as f32) * scale_factor;
+				let h = (dim_y as f32 / self.config.height as f32) * scale_factor;
+
+				let offset_x_px = (region.offset_x() / self.config.width as f32) * scale_factor;
+				let offset_y_px = (region.offset_y() / self.config.height as f32) * scale_factor;
+
+				let glyph_left   = screen_position.x() + x_offset + offset_x_px;
+				let glyph_top    = screen_position.y() - offset_y_px - y_offset;
+				let glyph_right  = glyph_left + w;
+				let glyph_bottom = glyph_top - h;
+
+				let vertices: &mut Vec<Vertex> = &mut vec![
+					Vertex::new([ glyph_left,  glyph_top,    screen_position.z() ], [region.u0(), region.v0()], [0.0; 4]),
+					Vertex::new([ glyph_left,  glyph_bottom, screen_position.z() ], [region.u0(), region.v1()], [0.0; 4]),
+					Vertex::new([ glyph_right, glyph_bottom, screen_position.z() ], [region.u1(), region.v1()], [0.0; 4]),
+					Vertex::new([ glyph_right, glyph_top,    screen_position.z() ], [region.u1(), region.v0()], [0.0; 4]),
+				];
+
+				let buffer_size = self.vertex_data.len() as u16;
+				let indices: &mut Vec<u16> = &mut vec![
+					buffer_size,     buffer_size + 1, buffer_size + 3,
+					buffer_size + 1, buffer_size + 2, buffer_size + 3,
+				];
+
+				x_offset += (region.advance() / self.config.width as f32) * scale_factor;
+
+				self.push_to_buffers(vertices, indices);
+			}
+
+			y_offset += line_height;
+			x_offset = 0.0;
 		}
 
-		self.set_texture_atlas();
 	}
 
 	fn find_priority_camera(&self, cameras: Vec<Camera2D>) -> usize {
@@ -953,10 +934,10 @@ impl<'a> Renderer2D<'a> {
 				let buffer_size = vertex_buffer.len() as u16;
 
 				vertex_buffer.append(&mut vec![
-					Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0] ),
-					Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0] ),
-					Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0] ) ,
-					Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0] )
+					Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0], [region.u0(), region.v0()], [0.0, 0.0, 0.0, 0.0] ),
+					Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u0(), region.v1()], [0.0, 0.0, 0.0, 0.0] ),
+					Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u1(), region.v1()], [0.0, 0.0, 0.0, 0.0] ) ,
+					Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0], [region.u1(), region.v0()], [0.0, 0.0, 0.0, 0.0] )
 				]);
 
 				index_buffer.append(&mut vec![
@@ -1125,10 +1106,10 @@ impl<'a> Renderer2D<'a> {
 				let buffer_size = vertex_buffer.len() as u16;
 
 				vertex_buffer.append(&mut vec![
-					Vertex::new([-bound_x + position.x(), bound_y + position.y(), 0.0], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0]),
-					Vertex::new([-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0]),
-					Vertex::new([bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0]),
-					Vertex::new([bound_x + position.x(), bound_y + position.y(), 0.0], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0])
+					Vertex::new([-bound_x + position.x(), bound_y + position.y(), 0.0], [region.u0(), region.v0()], [0.0, 0.0, 0.0, 0.0]),
+					Vertex::new([-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u0(), region.v1()], [0.0, 0.0, 0.0, 0.0]),
+					Vertex::new([bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u1(), region.v1()], [0.0, 0.0, 0.0, 0.0]),
+					Vertex::new([bound_x + position.x(), bound_y + position.y(), 0.0], [region.u1(), region.v0()], [0.0, 0.0, 0.0, 0.0])
 				]);
 
 				index_buffer.append(&mut vec![
