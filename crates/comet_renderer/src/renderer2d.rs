@@ -10,7 +10,7 @@ use winit::window::Window;
 use comet_colors::{ Color, LinearRgba };
 use comet_ecs::{Camera, Camera2D, Component, Position2D, Render, Render2D, Transform2D, Scene};
 use comet_log::{debug, info};
-use comet_math::{Point3, Vec2, Vec3};
+use comet_math::{Point2, Point3, Vec2, Vec3};
 use comet_resources::{texture, graphic_resource_manager::GraphicResourceManager, Texture, Vertex};
 use comet_resources::texture_atlas::TextureRegion;
 use comet_structs::ComponentSet;
@@ -758,10 +758,13 @@ impl<'a> Renderer2D<'a> {
 	}
 
 	/// A function to draw text at a given position.
-	pub fn draw_text_at(&mut self, text: &str, font: String, size: f32, position: Point3, color: impl Color) {
+	pub fn draw_text_at(&mut self, text: &str, font: String, size: f32, position: Point2, color: impl Color) {
 		self.set_font_atlas(font.clone());
 
-		let screen_position = Point3::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32, position.z());
+		let wgpu_color = color.to_wgpu();
+		let vert_color = [wgpu_color.r as f32, wgpu_color.g as f32, wgpu_color.b as f32, wgpu_color.a as f32];
+
+		let screen_position = Point2::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32);
 		let scale_factor = size / self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().size();
 
 		let line_height = (self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().line_height() / self.config.height as f32) * scale_factor;
@@ -787,10 +790,10 @@ impl<'a> Renderer2D<'a> {
 				let glyph_bottom = glyph_top - h;
 
 				let vertices: &mut Vec<Vertex> = &mut vec![
-					Vertex::new([ glyph_left,  glyph_top,    screen_position.z() ], [region.u0(), region.v0()], [0.0; 4]),
-					Vertex::new([ glyph_left,  glyph_bottom, screen_position.z() ], [region.u0(), region.v1()], [0.0; 4]),
-					Vertex::new([ glyph_right, glyph_bottom, screen_position.z() ], [region.u1(), region.v1()], [0.0; 4]),
-					Vertex::new([ glyph_right, glyph_top,    screen_position.z() ], [region.u1(), region.v0()], [0.0; 4]),
+					Vertex::new([ glyph_left,  glyph_top,    0.0 ], [region.u0(), region.v0()], vert_color),
+					Vertex::new([ glyph_left,  glyph_bottom, 0.0 ], [region.u0(), region.v1()], vert_color),
+					Vertex::new([ glyph_right, glyph_bottom, 0.0 ], [region.u1(), region.v1()], vert_color),
+					Vertex::new([ glyph_right, glyph_top,    0.0 ], [region.u1(), region.v0()], vert_color),
 				];
 
 				let buffer_size = self.vertex_data.len() as u16;
