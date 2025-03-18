@@ -2,12 +2,12 @@ use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use wgpu::{BufferUsages, Color, ShaderModule};
+use wgpu::{BufferUsages, ShaderModule};
 use wgpu::naga::ShaderStage;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
-use comet_colors::LinearRgba;
+use comet_colors::{ Color, LinearRgba };
 use comet_ecs::{Camera, Camera2D, Component, Position2D, Render, Render2D, Transform2D, Scene};
 use comet_log::{debug, info};
 use comet_math::{Point3, Vec2, Vec3};
@@ -28,13 +28,13 @@ pub struct Renderer2D<'a> {
 	pipelines: Vec<wgpu::RenderPipeline>,
 	render_pass: Vec<RenderPassInfo>,
 	last_frame_time: Instant,
-	deltatime: f32,
+	delta_time: f32,
 	vertex_buffer: wgpu::Buffer,
 	vertex_data: Vec<Vertex>,
 	index_buffer: wgpu::Buffer,
 	index_data: Vec<u16>,
 	num_indices: u32,
-	clear_color: Color,
+	clear_color: wgpu::Color,
 	diffuse_texture: Texture,
 	diffuse_bind_group_layout: wgpu::BindGroupLayout,
 	diffuse_bind_group: wgpu::BindGroup,
@@ -46,7 +46,7 @@ pub struct Renderer2D<'a> {
 }
 
 impl<'a> Renderer2D<'a> {
-	pub async fn new(window: Arc<Window>, clear_color: Option<LinearRgba>) -> Renderer2D<'a> {
+	pub async fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
 		let vertex_data: Vec<Vertex> = vec![];
 		let index_data: Vec<u16> = vec![];
 
@@ -107,13 +107,13 @@ impl<'a> Renderer2D<'a> {
 		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Vertex Buffer"),
 			contents: bytemuck::cast_slice(&vertex_data),
-			usage: wgpu::BufferUsages::VERTEX | BufferUsages::COPY_DST,
+			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
 		});
 
 		let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Index Buffer"),
 			contents: bytemuck::cast_slice(&index_data),
-			usage: wgpu::BufferUsages::INDEX | BufferUsages::COPY_DST
+			usage:  BufferUsages::INDEX | BufferUsages::COPY_DST
 		});
 
 		let num_indices = index_data.len() as u32;
@@ -170,7 +170,7 @@ impl<'a> Renderer2D<'a> {
 		let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Camera Buffer"),
 			contents: bytemuck::cast_slice(&[camera_uniform]),
-			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+			usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
 		});
 
 		let camera_bind_group_layout =
@@ -261,7 +261,7 @@ impl<'a> Renderer2D<'a> {
 
 		let clear_color = match clear_color {
 			Some(color) => color.to_wgpu(),
-			None => Color {
+			None => wgpu::Color {
 				r: 0.0,
 				g: 0.0,
 				b: 0.0,
@@ -279,7 +279,7 @@ impl<'a> Renderer2D<'a> {
 			pipelines,
 			render_pass: vec![],
 			last_frame_time: Instant::now(),
-			deltatime: 0.0,
+			delta_time: 0.0,
 			vertex_buffer,
 			vertex_data,
 			index_buffer,
@@ -298,7 +298,7 @@ impl<'a> Renderer2D<'a> {
 	}
 
 	pub fn dt(&self) -> f32 {
-		self.deltatime
+		self.delta_time
 	}
 
 	pub fn config(&self) -> &wgpu::SurfaceConfiguration {
@@ -340,28 +340,6 @@ impl<'a> Renderer2D<'a> {
 	pub fn apply_shader(&mut self, shader: &str) {
 		let shader_module = self.graphic_resource_manager.get_shader(
 			((Self::get_project_root().unwrap().as_os_str().to_str().unwrap().to_string() + "\\resources\\shaders\\").as_str().to_string() + shader).as_str()).unwrap();
-		let texture_bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[
-				wgpu::BindGroupLayoutEntry {
-					binding: 0,
-					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Texture {
-						multisampled: false,
-						view_dimension: wgpu::TextureViewDimension::D2,
-						sample_type: wgpu::TextureSampleType::Float { filterable: true },
-					},
-					count: None,
-				},
-				wgpu::BindGroupLayoutEntry {
-					binding: 1,
-					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-					count: None,
-				},
-			],
-			label: Some("texture_bind_group_layout"),
-		});
-
 		let camera_bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
 			entries: &[wgpu::BindGroupLayoutEntry {
 				binding: 0,
@@ -380,7 +358,7 @@ impl<'a> Renderer2D<'a> {
 			self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 				label: Some("Render Pipeline Layout"),
 				bind_group_layouts: &[
-					&texture_bind_group_layout,
+					&self.diffuse_bind_group_layout,
 					&camera_bind_group_layout,
 				],
 				push_constant_ranges: &[],
@@ -742,13 +720,13 @@ impl<'a> Renderer2D<'a> {
 		self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Updated Vertex Buffer"),
 			contents: bytemuck::cast_slice(&self.vertex_data),
-			usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
 		});
 
 		self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Updated Index Buffer"),
 			contents: bytemuck::cast_slice(&self.index_data),
-			usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+			usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
 		});
 
 		self.num_indices = self.index_data.len() as u32;
@@ -780,7 +758,7 @@ impl<'a> Renderer2D<'a> {
 	}
 
 	/// A function to draw text at a given position.
-	pub fn draw_text_at(&mut self, text: &str, font: String, size: f32, position: Point3) {
+	pub fn draw_text_at(&mut self, text: &str, font: String, size: f32, position: Point3, color: impl Color) {
 		self.set_font_atlas(font.clone());
 
 		let screen_position = Point3::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32, position.z());
@@ -841,7 +819,6 @@ impl<'a> Renderer2D<'a> {
 				position = i;
 			}
 		}
-
 		position
 	}
 
@@ -949,81 +926,6 @@ impl<'a> Renderer2D<'a> {
 
 		self.set_buffers(vertex_buffer, index_buffer);
 	}
-	/*pub fn render_scene_2d(&mut self, world: &World) {
-		let cameras = world.get_entities_with(ComponentSet::from_ids(vec![Camera2D::type_id()]));
-
-		if cameras == vec![] {
-			return;
-		}
-
-		let (camera_position, camera_component) = self.setup_camera(cameras, world);
-
-		let mut visible_entities: Vec<usize> = vec![];
-
-		for entity in world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()])) {
-			let entity_id = entity as usize;
-
-			if !camera_component
-				.in_view_frustum(*camera_position, *world.get_component::<Transform2D>(entity_id).unwrap().position())
-			{
-				continue;
-			}
-
-			match world.get_component::<Render2D>(entity_id) {
-				Some(render) => {
-					if !render.is_visible() {
-						continue;
-					}
-					if let Some(cam) = world.get_component::<Camera2D>(entity_id) {
-						continue;
-					}
-					visible_entities.push(entity_id);
-				}
-				None => {
-					continue;
-				}
-			}
-		}
-
-		let mut vertex_buffer: Vec<Vertex> = Vec::new();
-		let mut index_buffer: Vec<u16> = Vec::new();
-
-		//debug!("Visible entities: {:?}", visible_entities);
-
-		for entity in visible_entities {
-			let renderer_component = world.get_component::<Render2D>(entity);
-			let transform_component = world.get_component::<Transform2D>(entity);
-
-			if renderer_component.unwrap().is_visible() {
-				let mut position = transform_component.unwrap().position().clone();
-				position.set_x(position.x() / self.config().width as f32);
-				position.set_y(position.y() / self.config().height as f32);
-				let region = self.get_texture_region(renderer_component.unwrap().get_texture().to_string());
-				let (dim_x, dim_y) = region.dimensions();
-
-				let (bound_x, bound_y) =
-					((dim_x as f32 / self.config().width as f32) * 0.5, (dim_y as f32 / self.config().height as f32) * 0.5);
-
-				let buffer_size = vertex_buffer.len() as u16;
-
-				vertex_buffer.append(&mut vec![
-					Vertex::new([-bound_x + position.x(), bound_y + position.y(), 0.0], [region.x0(), region.y0()], [0.0, 0.0, 0.0, 0.0]),
-					Vertex::new([-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x0(), region.y1()], [0.0, 0.0, 0.0, 0.0]),
-					Vertex::new([bound_x + position.x(), -bound_y + position.y(), 0.0], [region.x1(), region.y1()], [0.0, 0.0, 0.0, 0.0]),
-					Vertex::new([bound_x + position.x(), bound_y + position.y(), 0.0], [region.x1(), region.y0()], [0.0, 0.0, 0.0, 0.0])
-				]);
-
-				index_buffer.append(&mut vec![
-					0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
-					1 + buffer_size, 2 + buffer_size, 3 + buffer_size
-				]);
-			}
-		}
-
-		self.set_buffers(vertex_buffer, index_buffer);
-	}*/
-
-
 
 	fn sort_entities_by_position(&self, entity_data: Vec<(usize, Position2D)>) -> Vec<usize> {
 		let mut sorted_entities: Vec<usize> = vec![];
@@ -1124,9 +1026,9 @@ impl<'a> Renderer2D<'a> {
 
 	pub fn update(&mut self) -> f32 {
 		let now = Instant::now();
-		self.deltatime = now.duration_since(self.last_frame_time).as_secs_f32();  // Time delta in seconds
+		self.delta_time = now.duration_since(self.last_frame_time).as_secs_f32();  // Time delta in seconds
 		self.last_frame_time = now;
-		self.deltatime
+		self.delta_time
 	}
 
 	pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -1174,7 +1076,7 @@ impl<'a> Renderer2D<'a> {
 
 impl<'a> Renderer for Renderer2D<'a> {
 
-	async fn new(window: Arc<Window>, clear_color: Option<LinearRgba>) -> Renderer2D<'a> {
+	async fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
 		Self::new(window, clear_color).await
 	}
 

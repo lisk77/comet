@@ -20,3 +20,7 @@ mod laba;
 mod lcha;
 mod oklaba;
 mod oklcha;
+
+pub trait Color {
+	fn to_wgpu(&self) -> wgpu::Color;
+}

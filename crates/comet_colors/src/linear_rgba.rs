@@ -1,5 +1,5 @@
-use wgpu::Color;
-use crate::{sRgba, Hsla, Hsva, Hwba, Laba, Lcha, Oklaba, Oklcha, Xyza};
+use wgpu;
+use crate::{sRgba, Color, Hsla, Hsva, Hwba, Laba, Lcha, Oklaba, Oklcha, Xyza};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinearRgba {
@@ -123,9 +123,11 @@ impl LinearRgba {
 	pub fn to_hsla(&self) -> Hsla {
 		self.to_hsva().to_hsla()
 	}
+}
 
-	pub fn to_wgpu(&self) -> Color {
-		Color {
+impl Color for LinearRgba {
+	fn to_wgpu(&self) -> wgpu::Color {
+		wgpu::Color {
 			r: self.red as f64,
 			g: self.green as f64,
 			b: self.blue as f64,

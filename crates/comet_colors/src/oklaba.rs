@@ -1,4 +1,4 @@
-use crate::{sRgba, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklcha, Xyza};
+use crate::{sRgba, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklcha, Xyza};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Oklaba {
@@ -109,5 +109,11 @@ impl Oklaba {
 
 	pub fn to_hsla(&self) -> Hsla {
 		self.to_hsva().to_hsla()
+	}
+}
+
+impl Color for Oklaba {
+	fn to_wgpu(&self) -> wgpu::Color {
+		self.to_linear().to_wgpu()
 	}
 }

@@ -1,4 +1,4 @@
-use crate::{math::Vec4, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
+use crate::{math::Vec4, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
 
 /// sRGB representation of color
 /// There are two variants: `sRgba<u8>` and `sRgba<f32>`
@@ -341,5 +341,17 @@ impl sRgba<f32> {
 			self.blue,
 			self.alpha
 		)
+	}
+}
+
+impl Color for sRgba<f32> {
+	fn to_wgpu(&self) -> wgpu::Color {
+		self.to_linear().to_wgpu()
+	}
+}
+
+impl Color for sRgba<u8> {
+	fn to_wgpu(&self) -> wgpu::Color {
+		self.to_linear().to_wgpu()
 	}
 }
