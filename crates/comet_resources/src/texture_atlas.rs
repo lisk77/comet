@@ -13,10 +13,10 @@ pub struct TextureRegion {
 	v0: f32,
 	u1: f32,
 	v1: f32,
-	dimensions: (u32, u32),
 	advance: f32,
 	offset_x: f32,
 	offset_y: f32,
+	dimensions: (u32, u32),
 }
 
 impl TextureRegion {
@@ -26,10 +26,10 @@ impl TextureRegion {
 			v0,
 			u1,
 			v1,
-			dimensions,
 			advance,
 			offset_x,
 			offset_y,
+			dimensions
 		}
 	}
 

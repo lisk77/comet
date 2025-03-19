@@ -25,29 +25,21 @@ pub struct Renderer2D<'a> {
 	config: wgpu::SurfaceConfiguration,
 	size: PhysicalSize<u32>,
 	render_pipeline_layout: wgpu::PipelineLayout,
-	pipelines: Vec<wgpu::RenderPipeline>,
-	render_pass: Vec<RenderPassInfo>,
-	last_frame_time: Instant,
-	delta_time: f32,
-	vertex_buffer: wgpu::Buffer,
-	vertex_data: Vec<Vertex>,
-	index_buffer: wgpu::Buffer,
-	index_data: Vec<u16>,
-	num_indices: u32,
-	clear_color: wgpu::Color,
-	diffuse_texture: Texture,
 	diffuse_bind_group_layout: wgpu::BindGroupLayout,
-	diffuse_bind_group: wgpu::BindGroup,
-	graphic_resource_manager: GraphicResourceManager,
 	camera: RenderCamera,
 	camera_uniform: CameraUniform,
 	camera_buffer: wgpu::Buffer,
 	camera_bind_group: wgpu::BindGroup,
+	render_pass: Vec<RenderPassInfo>,
+	graphic_resource_manager: GraphicResourceManager,
+	delta_time: f32,
+	last_frame_time: Instant,
+	clear_color: wgpu::Color,
 }
 
 impl<'a> Renderer2D<'a> {
 	pub async fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
-		let vertex_data: Vec<Vertex> = vec![];
+		let geometry_data: Vec<Vertex> = vec![];
 		let index_data: Vec<u16> = vec![];
 
 		let size = PhysicalSize::<u32>::new(1920, 1080);
@@ -104,9 +96,9 @@ impl<'a> Renderer2D<'a> {
 			source: wgpu::ShaderSource::Wgsl(include_str!("base2d.wgsl").into()),
 		});
 
-		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+		let geometry_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("Vertex Buffer"),
-			contents: bytemuck::cast_slice(&vertex_data),
+			contents: bytemuck::cast_slice(&geometry_data),
 			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
 		});
 
@@ -259,6 +251,19 @@ impl<'a> Renderer2D<'a> {
 		let mut pipelines = Vec::new();
 		pipelines.push(render_pipeline);
 
+		let mut render_pass = Vec::new();
+		render_pass.push(RenderPassInfo::new(
+			&device,
+			"Render Pass".to_string(),
+			&texture_bind_group_layout,
+			&diffuse_texture,
+			shader,
+			geometry_data.clone(),
+			index_data.clone(),
+			&render_pipeline_layout,
+			&config
+		));
+
 		let clear_color = match clear_color {
 			Some(color) => color.to_wgpu(),
 			None => wgpu::Color {
@@ -276,24 +281,16 @@ impl<'a> Renderer2D<'a> {
 			config,
 			size,
 			render_pipeline_layout,
-			pipelines,
-			render_pass: vec![],
-			last_frame_time: Instant::now(),
-			delta_time: 0.0,
-			vertex_buffer,
-			vertex_data,
-			index_buffer,
-			index_data,
-			num_indices,
-			clear_color,
-			diffuse_texture,
 			diffuse_bind_group_layout: texture_bind_group_layout,
-			diffuse_bind_group,
-			graphic_resource_manager,
-			camera,
+			camera: camera,
+			camera_uniform: camera_uniform,
 			camera_buffer,
-			camera_uniform,
-			camera_bind_group
+			camera_bind_group,
+			render_pass,
+			graphic_resource_manager,
+			delta_time: 0.0,
+			last_frame_time: Instant::now(),
+			clear_color,
 		}
 	}
 
@@ -338,186 +335,12 @@ impl<'a> Renderer2D<'a> {
 
 	/// A function that applies a shader to the entire surface of the `Renderer2D` if the shader is loaded.
 	pub fn apply_shader(&mut self, shader: &str) {
-		let shader_module = self.graphic_resource_manager.get_shader(
-			((Self::get_project_root().unwrap().as_os_str().to_str().unwrap().to_string() + "\\resources\\shaders\\").as_str().to_string() + shader).as_str()).unwrap();
-		let camera_bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[wgpu::BindGroupLayoutEntry {
-				binding: 0,
-				visibility: wgpu::ShaderStages::VERTEX,
-				ty: wgpu::BindingType::Buffer {
-					ty: wgpu::BufferBindingType::Uniform,
-					has_dynamic_offset: false,
-					min_binding_size: None,
-				},
-				count: None,
-			}],
-			label: Some("camera_bind_group_layout"),
-		});
-
-		let render_pipeline_layout =
-			self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-				label: Some("Render Pipeline Layout"),
-				bind_group_layouts: &[
-					&self.diffuse_bind_group_layout,
-					&camera_bind_group_layout,
-				],
-				push_constant_ranges: &[],
-			});
-
-		self.pipelines[0] = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-			label: Some("Render Pipeline"),
-			layout: Some(&render_pipeline_layout),
-			vertex: wgpu::VertexState {
-				module: &shader_module,
-				entry_point: "vs_main",
-				buffers: &[Vertex::desc()],
-				compilation_options: Default::default(),
-			},
-			fragment: Some(wgpu::FragmentState {
-				module: &shader_module,
-				entry_point: "fs_main",
-				targets: &[Some(wgpu::ColorTargetState {
-					format: self.config.format,
-					blend: Some(wgpu::BlendState {
-						color: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::SrcAlpha,
-							dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-							operation: wgpu::BlendOperation::Add,
-						},
-						alpha: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::One,
-							dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-							operation: wgpu::BlendOperation::Add,
-						},
-					}),
-					write_mask: wgpu::ColorWrites::ALL,
-				})],
-				compilation_options: Default::default(),
-			}),
-			primitive: wgpu::PrimitiveState {
-				topology: wgpu::PrimitiveTopology::TriangleList,
-				strip_index_format: None,
-				front_face: wgpu::FrontFace::Ccw,
-				cull_mode: Some(wgpu::Face::Back),
-				polygon_mode: wgpu::PolygonMode::Fill,
-				unclipped_depth: false,
-				conservative: false,
-			},
-			depth_stencil: None,
-			multisample: wgpu::MultisampleState {
-				count: 1,
-				mask: !0,
-				alpha_to_coverage_enabled: false,
-			},
-			multiview: None,
-			cache: None,
-		});
-
-		info!("Applied shader ({})!", shader);
+		todo!()
 	}
 
 	/// A function to revert back to the base shader of the `Renderer2D`
 	pub fn apply_base_shader(&mut self) {
-		let shader = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-			label: Some("Shader"),
-			source: wgpu::ShaderSource::Wgsl(include_str!("base2d.wgsl").into()),
-		});
-
-		let texture_bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[
-				wgpu::BindGroupLayoutEntry {
-					binding: 0,
-					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Texture {
-						multisampled: false,
-						view_dimension: wgpu::TextureViewDimension::D2,
-						sample_type: wgpu::TextureSampleType::Float { filterable: true },
-					},
-					count: None,
-				},
-				wgpu::BindGroupLayoutEntry {
-					binding: 1,
-					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-					count: None,
-				},
-			],
-			label: Some("texture_bind_group_layout"),
-		});
-
-		let camera_bind_group_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[wgpu::BindGroupLayoutEntry {
-				binding: 0,
-				visibility: wgpu::ShaderStages::VERTEX,
-				ty: wgpu::BindingType::Buffer {
-					ty: wgpu::BufferBindingType::Uniform,
-					has_dynamic_offset: false,
-					min_binding_size: None,
-				},
-				count: None,
-			}],
-			label: Some("camera_bind_group_layout"),
-		});
-
-		let render_pipeline_layout =
-			self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-				label: Some("Render Pipeline Layout"),
-				bind_group_layouts: &[
-					&texture_bind_group_layout,
-					&camera_bind_group_layout,
-				],
-				push_constant_ranges: &[],
-			});
-
-		self.pipelines[0] = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-			label: Some("Render Pipeline"),
-			layout: Some(&render_pipeline_layout),
-			vertex: wgpu::VertexState {
-				module: &shader,
-				entry_point: "vs_main",
-				buffers: &[Vertex::desc()],
-				compilation_options: Default::default(),
-			},
-			fragment: Some(wgpu::FragmentState {
-				module: &shader,
-				entry_point: "fs_main",
-				targets: &[Some(wgpu::ColorTargetState {
-					format: self.config.format,
-					blend: Some(wgpu::BlendState {
-						color: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::SrcAlpha,
-							dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-							operation: wgpu::BlendOperation::Add,
-						},
-						alpha: wgpu::BlendComponent {
-							src_factor: wgpu::BlendFactor::One,
-							dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-							operation: wgpu::BlendOperation::Add,
-						},
-					}),
-					write_mask: wgpu::ColorWrites::ALL,
-				})],
-				compilation_options: Default::default(),
-			}),
-			primitive: wgpu::PrimitiveState {
-				topology: wgpu::PrimitiveTopology::TriangleList,
-				strip_index_format: None,
-				front_face: wgpu::FrontFace::Ccw,
-				cull_mode: Some(wgpu::Face::Back),
-				polygon_mode: wgpu::PolygonMode::Fill,
-				unclipped_depth: false,
-				conservative: false,
-			},
-			depth_stencil: None,
-			multisample: wgpu::MultisampleState {
-				count: 1,
-				mask: !0,
-				alpha_to_coverage_enabled: false,
-			},
-			multiview: None,
-			cache: None,
-		});
-		info!("Applied base shader!");
+		todo!()
 	}
 
 	pub fn load_font(&mut self, path: &str, size: f32) {
@@ -551,67 +374,11 @@ impl<'a> Renderer2D<'a> {
 	/// The old texture atlas will be replaced with the new one.
 	pub fn set_texture_atlas_by_paths(&mut self, paths: Vec<String>) {
 		self.graphic_resource_manager.create_texture_atlas(paths);
-		self.diffuse_texture = Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap();
-
-		let texture_bind_group_layout =
-			self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-				entries: &[
-					wgpu::BindGroupLayoutEntry {
-						binding: 0,
-						visibility: wgpu::ShaderStages::FRAGMENT,
-						ty: wgpu::BindingType::Texture {
-							multisampled: false,
-							view_dimension: wgpu::TextureViewDimension::D2,
-							sample_type: wgpu::TextureSampleType::Float { filterable: true },
-						},
-						count: None,
-					},
-					wgpu::BindGroupLayoutEntry {
-						binding: 1,
-						visibility: wgpu::ShaderStages::FRAGMENT,
-						ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-						count: None,
-					},
-				],
-				label: Some("texture_bind_group_layout"),
-			});
-
-		let diffuse_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &texture_bind_group_layout,
-			entries: &[
-				wgpu::BindGroupEntry {
-					binding: 0,
-					resource: wgpu::BindingResource::TextureView(&self.diffuse_texture.view),
-				},
-				wgpu::BindGroupEntry {
-					binding: 1,
-					resource: wgpu::BindingResource::Sampler(&self.diffuse_texture.sampler),
-				},
-			],
-			label: Some("diffuse_bind_group"),
-		});
-
-		self.diffuse_bind_group = diffuse_bind_group;
+		self.render_pass[0].set_texture(&self.device, &self.diffuse_bind_group_layout, &Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap());
 	}
 
 	fn switch_texture(&mut self, to: Texture) {
-		self.diffuse_texture = to;
-		let diffuse_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &self.diffuse_bind_group_layout,
-			entries: &[
-				wgpu::BindGroupEntry {
-					binding: 0,
-					resource: wgpu::BindingResource::TextureView(&self.diffuse_texture.view),
-				},
-				wgpu::BindGroupEntry {
-					binding: 1,
-					resource: wgpu::BindingResource::Sampler(&self.diffuse_texture.sampler),
-				},
-			],
-			label: Some("diffuse_bind_group"),
-		});
-
-		self.diffuse_bind_group = diffuse_bind_group;
+		todo!()
 	}
 
 	fn set_texture_atlas(&mut self) {
@@ -651,85 +418,21 @@ impl<'a> Renderer2D<'a> {
 		self.set_texture_atlas_by_paths(paths);
 	}
 
-	/// A function that clears the buffers and sets the vertex and index buffer of the `Renderer2D` with the given data.
-	fn set_buffers(&mut self, new_vertex_buffer: Vec<Vertex>, new_index_buffer: Vec<u16>) {
-		let new_vertex_size = new_vertex_buffer.len() as u64 * size_of::<Vertex>() as u64;
-		let new_index_size = new_index_buffer.len() as u64 * size_of::<u16>() as u64;
-
-		match new_vertex_buffer == self.vertex_data {
-			true => {},
-			false => {
-				match new_vertex_size > self.vertex_buffer.size() {
-					false => self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&new_vertex_buffer)),
-					true => {
-						self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-							label: Some("Updated Vertex Buffer"),
-							contents: bytemuck::cast_slice(&new_vertex_buffer),
-							usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-						});
-					}
-				}
-				self.vertex_data = new_vertex_buffer;
-			}
-		}
-
-		match new_index_buffer == self.index_data {
-			true => {},
-			false => {
-				match new_index_size > self.index_buffer.size() {
-					false => self.queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&new_index_buffer)),
-					true => {
-						self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-							label: Some("Updated Index Buffer"),
-							contents: bytemuck::cast_slice(&new_index_buffer),
-							usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
-						});
-					}
-				}
-				self.num_indices = new_index_buffer.len() as u32;
-				self.index_data = new_index_buffer
-			}
-		}
+	/// A function that writes on the buffers and sets the geometry and index buffer of the `Renderer2D` with the given data.
+	fn set_buffers(&mut self, new_geometry_buffer: Vec<Vertex>, new_index_buffer: Vec<u16>) {
+		self.render_pass[0].set_vertex_buffer(&self.device, &self.queue, new_geometry_buffer);
+		self.render_pass[0].set_index_buffer(&self.device, &self.queue, new_index_buffer);
 	}
 
-	/// A function that adds data to the already existing vertex and index buffers of the `Renderer2D`.
-	fn push_to_buffers(&mut self, new_vertex_buffer: &mut Vec<Vertex>, new_index_buffer: &mut Vec<u16>) {
-		self.vertex_data.append(new_vertex_buffer);
-		self.index_data.append(new_index_buffer);
-
-		self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Updated Vertex Buffer"),
-			contents: bytemuck::cast_slice(&self.vertex_data),
-			usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-		});
-
-		self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Updated Index Buffer"),
-			contents: bytemuck::cast_slice(&self.index_data),
-			usage: wgpu::BufferUsages::INDEX | BufferUsages::COPY_DST,
-		});
-
-		self.num_indices = self.index_data.len() as u32;
+	/// A function that adds data to the already existing geometry and index buffers of the `Renderer2D`.
+	fn push_to_buffers(&mut self, new_geometry_data: &mut Vec<Vertex>, new_index_buffer: &mut Vec<u16>) {
+		self.render_pass[0].push_to_vertex_buffer(&self.device, new_geometry_data);
+		self.render_pass[0].push_to_index_buffer(&self.device, new_index_buffer);
 	}
 
-	/// A function that clears the vertex and index buffers of the `Renderer2D`.
+	/// A function that clears the geometry and index buffers of the `Renderer2D`.
 	fn clear_buffers(&mut self) {
-		self.vertex_data = vec![];
-		self.index_data = vec![];
-
-		self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Updated Vertex Buffer"),
-			contents: bytemuck::cast_slice(&self.vertex_data),
-			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-		});
-
-		self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Updated Index Buffer"),
-			contents: bytemuck::cast_slice(&self.index_data),
-			usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
-		});
-
-		self.num_indices = self.index_data.len() as u32;
+		todo!()
 	}
 
 	/// A function to just draw a textured quad at a given position.
@@ -747,7 +450,7 @@ impl<'a> Renderer2D<'a> {
 			Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.u1(), region.v0()], [0.0, 0.0, 0.0, 0.0] )
 		];
 
-		let buffer_size = self.vertex_data.len() as u16;
+		let buffer_size = self.render_pass[0].vertex_data().len() as u16;
 
 		let indices: &mut Vec<u16> = &mut vec![
 			0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
@@ -796,7 +499,7 @@ impl<'a> Renderer2D<'a> {
 					Vertex::new([ glyph_right, glyph_top,    0.0 ], [region.u1(), region.v0()], vert_color),
 				];
 
-				let buffer_size = self.vertex_data.len() as u16;
+				let buffer_size = self.render_pass[1].vertex_data().len() as u16;
 				let indices: &mut Vec<u16> = &mut vec![
 					buffer_size,     buffer_size + 1, buffer_size + 3,
 					buffer_size + 1, buffer_size + 2, buffer_size + 3,
@@ -810,7 +513,6 @@ impl<'a> Renderer2D<'a> {
 			y_offset += line_height;
 			x_offset = 0.0;
 		}
-
 	}
 
 	fn find_priority_camera(&self, cameras: Vec<Camera2D>) -> usize {
@@ -914,10 +616,10 @@ impl<'a> Renderer2D<'a> {
 				let buffer_size = vertex_buffer.len() as u16;
 
 				vertex_buffer.append(&mut vec![
-					Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0], [region.u0(), region.v0()], [0.0, 0.0, 0.0, 0.0] ),
-					Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u0(), region.v1()], [0.0, 0.0, 0.0, 0.0] ),
-					Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u1(), region.v1()], [0.0, 0.0, 0.0, 0.0] ) ,
-					Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0], [region.u1(), region.v0()], [0.0, 0.0, 0.0, 0.0] )
+					Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0], [region.u0(), region.v0()], [1.0, 1.0, 1.0, 1.0] ),
+					Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u0(), region.v1()], [1.0, 1.0, 1.0, 1.0] ),
+					Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u1(), region.v1()], [1.0, 1.0, 1.0, 1.0] ) ,
+					Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0], [region.u1(), region.v0()], [1.0, 1.0, 1.0, 1.0] )
 				]);
 
 				index_buffer.append(&mut vec![
@@ -981,7 +683,7 @@ impl<'a> Renderer2D<'a> {
 			}
 		}
 
-		let mut entity_data = {
+		let entity_data = {
 			let mut data: Vec<(usize, Position2D)> = vec![];
 			for entity in visible_entities {
 				data.push((entity, *world.get_component::<Transform2D>(entity).unwrap().position()));
@@ -1046,9 +748,9 @@ impl<'a> Renderer2D<'a> {
 				label: Some("Render Encoder"),
 			});
 
-		for (i, pipeline) in self.pipelines.iter().enumerate() {
+		for pass in self.render_pass.iter() {
 			let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-				label: Some(format!("Render Pass {}", i).as_str()),
+				label: Some(pass.pass_name()),
 				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
 					view: &view,
 					resolve_target: None,
@@ -1062,12 +764,12 @@ impl<'a> Renderer2D<'a> {
 				timestamp_writes: None,
 			});
 
-			render_pass.set_pipeline(pipeline);
-			render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+			render_pass.set_pipeline(pass.pipeline());
+			render_pass.set_bind_group(0, pass.texture_bind_group(), &[]);
 			render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-			render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+			render_pass.set_vertex_buffer(0, pass.vertex_buffer().slice(..));
+			render_pass.set_index_buffer(pass.index_buffer().slice(..), wgpu::IndexFormat::Uint16);
+			render_pass.draw_indexed(0..pass.num_indices(), 0, 0..1);
 		}
 
 		self.queue.submit(iter::once(encoder.finish()));
@@ -1078,7 +780,6 @@ impl<'a> Renderer2D<'a> {
 }
 
 impl<'a> Renderer for Renderer2D<'a> {
-
 	async fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
 		Self::new(window, clear_color).await
 	}
