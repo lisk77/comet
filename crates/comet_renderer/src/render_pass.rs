@@ -2,20 +2,36 @@ use wgpu::{ShaderModule, BindGroup, BindGroupLayout, BufferUsages, Device, Queue
 use wgpu::util::DeviceExt;
 use comet_resources::{Vertex, Texture};
 
+#[derive(Debug, Clone)]
+pub enum RenderPassType {
+	Engine,
+	User
+}
+
 pub struct RenderPassInfo {
 	pass_name: String,
+	pass_type: RenderPassType,
 	texture_bind_group: BindGroup,
-	shader: ShaderModule,
 	vertex_buffer: wgpu::Buffer,
 	index_buffer: wgpu::Buffer,
 	vertex_data: Vec<Vertex>,
 	index_data: Vec<u16>,
 	num_indices: u32,
-	pipeline: RenderPipeline
+	pipeline: Option<RenderPipeline>
 }
 
 impl RenderPassInfo {
-	pub fn new(device: &Device, pass_name: String, texture_group_layout: &BindGroupLayout, texture: &Texture, shader: ShaderModule, vertex_data: Vec<Vertex>, index_data: Vec<u16>, pipeline_layout: &PipelineLayout, config: &SurfaceConfiguration) -> Self {
+	pub fn new_user_pass(
+		device: &Device,
+		pass_name: String,
+		texture_group_layout: &BindGroupLayout,
+		texture: &Texture,
+		shader: ShaderModule,
+		vertex_data: Vec<Vertex>,
+		index_data: Vec<u16>,
+		pipeline_layout: &PipelineLayout,
+		config: &SurfaceConfiguration
+	) -> Self {
 		let num_indices = index_data.len() as u32;
 		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some(format!("{} Vertex Buffer", pass_name).as_str()),
@@ -95,14 +111,62 @@ impl RenderPassInfo {
 
 		Self {
 			pass_name,
+			pass_type: RenderPassType::User,
 			texture_bind_group,
-			shader,
 			vertex_buffer,
 			index_buffer,
 			vertex_data,
 			index_data,
 			num_indices,
-			pipeline
+			pipeline: Some(pipeline)
+		}
+	}
+
+	pub fn new_engine_pass(
+		device: &Device,
+		pass_name: String,
+		texture_group_layout: &BindGroupLayout,
+		texture: &Texture,
+		vertex_data: Vec<Vertex>,
+		index_data: Vec<u16>,
+	) -> Self {
+		let num_indices = index_data.len() as u32;
+		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some(format!("{} Vertex Buffer", pass_name).as_str()),
+			contents: bytemuck::cast_slice(&vertex_data),
+			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+		});
+
+		let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some(format!("{} Index Buffer", pass_name).as_str()),
+			contents: bytemuck::cast_slice(&index_data),
+			usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+		});
+
+		let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &texture_group_layout,
+			entries: &[
+				wgpu::BindGroupEntry {
+					binding: 0,
+					resource: wgpu::BindingResource::TextureView(&texture.view),
+				},
+				wgpu::BindGroupEntry {
+					binding: 1,
+					resource: wgpu::BindingResource::Sampler(&texture.sampler),
+				},
+			],
+			label: Some(format!("{} Texture Bind Group", pass_name).as_str()),
+		});
+		Self {
+			pass_name,
+			pass_type: RenderPassType::Engine,
+			texture_bind_group,
+			vertex_buffer,
+			index_buffer,
+			vertex_data,
+			index_data,
+			num_indices,
+			pipeline: None
 		}
 	}
 
@@ -110,8 +174,59 @@ impl RenderPassInfo {
 		&self.pass_name
 	}
 
-	pub fn shader(&self) -> &ShaderModule {
-		&self.shader
+	pub fn pass_type(&self) -> RenderPassType {
+		self.pass_type.clone()
+	}
+
+	pub fn set_shader(&mut self, device: &Device, config: &SurfaceConfiguration, pipeline_layout: &PipelineLayout, shader: &ShaderModule) {
+		self.pipeline = Some(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+			label: Some("Render Pipeline"),
+			layout: Some(&pipeline_layout),
+			vertex: wgpu::VertexState {
+				module: &shader,
+				entry_point: "vs_main",
+				buffers: &[Vertex::desc()],
+				compilation_options: Default::default(),
+			},
+			fragment: Some(wgpu::FragmentState {
+				module: &shader,
+				entry_point: "fs_main",
+				targets: &[Some(wgpu::ColorTargetState {
+					format: config.format,
+					blend: Some(wgpu::BlendState {
+						color: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::SrcAlpha,
+							dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+							operation: wgpu::BlendOperation::Add,
+						},
+						alpha: wgpu::BlendComponent {
+							src_factor: wgpu::BlendFactor::One,
+							dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+							operation: wgpu::BlendOperation::Add,
+						},
+					}),
+					write_mask: wgpu::ColorWrites::ALL,
+				})],
+				compilation_options: Default::default(),
+			}),
+			primitive: wgpu::PrimitiveState {
+				topology: wgpu::PrimitiveTopology::TriangleList,
+				strip_index_format: None,
+				front_face: wgpu::FrontFace::Ccw,
+				cull_mode: Some(wgpu::Face::Back),
+				polygon_mode: wgpu::PolygonMode::Fill,
+				unclipped_depth: false,
+				conservative: false,
+			},
+			depth_stencil: None,
+			multisample: wgpu::MultisampleState {
+				count: 1,
+				mask: !0,
+				alpha_to_coverage_enabled: false,
+			},
+			multiview: None,
+			cache: None,
+		}));
 	}
 
 	pub fn texture_bind_group(&self) -> &BindGroup {
@@ -216,7 +331,7 @@ impl RenderPassInfo {
 		self.num_indices = self.index_data.len() as u32;
 	}
 
-	pub fn pipeline(&self) -> &RenderPipeline {
-		&self.pipeline
+	pub fn pipeline(&self) -> Option<&RenderPipeline> {
+		self.pipeline.as_ref()
 	}
 }

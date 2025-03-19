@@ -9,13 +9,13 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 use comet_colors::{ Color, LinearRgba };
 use comet_ecs::{Camera, Camera2D, Component, Position2D, Render, Render2D, Transform2D, Scene};
-use comet_log::{debug, info};
+use comet_log::{debug, error, info};
 use comet_math::{Point2, Point3, Vec2, Vec3};
 use comet_resources::{texture, graphic_resource_manager::GraphicResourceManager, Texture, Vertex};
 use comet_resources::texture_atlas::TextureRegion;
 use comet_structs::ComponentSet;
 use crate::camera::{RenderCamera, CameraUniform};
-use crate::render_pass::RenderPassInfo;
+use crate::render_pass::{RenderPassInfo, RenderPassType};
 use crate::renderer::Renderer;
 
 pub struct Renderer2D<'a> {
@@ -25,7 +25,8 @@ pub struct Renderer2D<'a> {
 	config: wgpu::SurfaceConfiguration,
 	size: PhysicalSize<u32>,
 	render_pipeline_layout: wgpu::PipelineLayout,
-	diffuse_bind_group_layout: wgpu::BindGroupLayout,
+	universal_render_pipeline: wgpu::RenderPipeline,
+	texture_bind_group_layout: wgpu::BindGroupLayout,
 	camera: RenderCamera,
 	camera_uniform: CameraUniform,
 	camera_buffer: wgpu::Buffer,
@@ -96,20 +97,6 @@ impl<'a> Renderer2D<'a> {
 			source: wgpu::ShaderSource::Wgsl(include_str!("base2d.wgsl").into()),
 		});
 
-		let geometry_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Vertex Buffer"),
-			contents: bytemuck::cast_slice(&geometry_data),
-			usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-		});
-
-		let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Index Buffer"),
-			contents: bytemuck::cast_slice(&index_data),
-			usage:  BufferUsages::INDEX | BufferUsages::COPY_DST
-		});
-
-		let num_indices = index_data.len() as u32;
-
 		let graphic_resource_manager = GraphicResourceManager::new();
 
 		let diffuse_bytes = include_bytes!(r"../../../resources/textures/comet_icon.png");
@@ -138,21 +125,6 @@ impl<'a> Renderer2D<'a> {
 				],
 				label: Some("texture_bind_group_layout"),
 			});
-
-		let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &texture_bind_group_layout,
-			entries: &[
-				wgpu::BindGroupEntry {
-					binding: 0,
-					resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-				},
-				wgpu::BindGroupEntry {
-					binding: 1,
-					resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-				},
-			],
-			label: Some("diffuse_bind_group"),
-		});
 
 		let camera = RenderCamera::new(1.0, Vec2::new(2.0, 2.0), Vec3::new(0.0, 0.0, 0.0));
 
@@ -199,7 +171,7 @@ impl<'a> Renderer2D<'a> {
 				push_constant_ranges: &[],
 			});
 
-		let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+		let universal_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
 			label: Some("Render Pipeline"),
 			layout: Some(&render_pipeline_layout),
 			vertex: wgpu::VertexState {
@@ -248,20 +220,14 @@ impl<'a> Renderer2D<'a> {
 			cache: None,
 		});
 
-		let mut pipelines = Vec::new();
-		pipelines.push(render_pipeline);
-
 		let mut render_pass = Vec::new();
-		render_pass.push(RenderPassInfo::new(
+		render_pass.push(RenderPassInfo::new_engine_pass(
 			&device,
-			"Render Pass".to_string(),
+			"Standard Render Pass".to_string(),
 			&texture_bind_group_layout,
 			&diffuse_texture,
-			shader,
 			geometry_data.clone(),
 			index_data.clone(),
-			&render_pipeline_layout,
-			&config
 		));
 
 		let clear_color = match clear_color {
@@ -281,9 +247,10 @@ impl<'a> Renderer2D<'a> {
 			config,
 			size,
 			render_pipeline_layout,
-			diffuse_bind_group_layout: texture_bind_group_layout,
-			camera: camera,
-			camera_uniform: camera_uniform,
+			universal_render_pipeline,
+			texture_bind_group_layout,
+			camera,
+			camera_uniform,
 			camera_buffer,
 			camera_bind_group,
 			render_pass,
@@ -335,7 +302,15 @@ impl<'a> Renderer2D<'a> {
 
 	/// A function that applies a shader to the entire surface of the `Renderer2D` if the shader is loaded.
 	pub fn apply_shader(&mut self, shader: &str) {
-		todo!()
+		let module = match self.graphic_resource_manager.get_shader(shader) {
+			Some(module) => module,
+			None => {
+				error!("Shader not found");
+				return;
+			}
+		};
+
+		self.render_pass[0].set_shader(&self.device, &self.config, &self.render_pipeline_layout, module);
 	}
 
 	/// A function to revert back to the base shader of the `Renderer2D`
@@ -374,7 +349,7 @@ impl<'a> Renderer2D<'a> {
 	/// The old texture atlas will be replaced with the new one.
 	pub fn set_texture_atlas_by_paths(&mut self, paths: Vec<String>) {
 		self.graphic_resource_manager.create_texture_atlas(paths);
-		self.render_pass[0].set_texture(&self.device, &self.diffuse_bind_group_layout, &Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap());
+		self.render_pass[0].set_texture(&self.device, &self.texture_bind_group_layout, &Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap());
 	}
 
 	fn switch_texture(&mut self, to: Texture) {
@@ -764,7 +739,11 @@ impl<'a> Renderer2D<'a> {
 				timestamp_writes: None,
 			});
 
-			render_pass.set_pipeline(pass.pipeline());
+			match pass.pass_type() {
+				RenderPassType::Engine => render_pass.set_pipeline(&self.universal_render_pipeline),
+				RenderPassType::User => render_pass.set_pipeline(pass.pipeline().unwrap()),
+			}
+
 			render_pass.set_bind_group(0, pass.texture_bind_group(), &[]);
 			render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
 			render_pass.set_vertex_buffer(0, pass.vertex_buffer().slice(..));
