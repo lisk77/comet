@@ -21,6 +21,6 @@ mod lcha;
 mod oklaba;
 mod oklcha;
 
-pub trait Color {
+pub trait Color: Copy {
 	fn to_wgpu(&self) -> wgpu::Color;
 }

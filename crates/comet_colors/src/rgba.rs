@@ -4,7 +4,7 @@ use crate::{math::Vec4, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba,
 /// There are two variants: `sRgba<u8>` and `sRgba<f32>`
 /// The first one is your standard 0..255 RGB and the second is the normalized version with range 0..1
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub struct sRgba<T> {
 	red: T,
 	green: T,

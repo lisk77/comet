@@ -8,6 +8,7 @@ use crate::math::{
 	Vec2,
 	Vec3
 };
+use comet_colors::Color as ColorTrait;
 use component_derive::Component;
 use crate::{Entity, Scene};
 
@@ -46,7 +47,7 @@ pub struct Rectangle2D{
 #[derive(Component)]
 pub struct Render2D {
 	is_visible: bool,
-	texture: &'static str,
+	texture_name: &'static str,
 	scale: Vec2
 }
 
@@ -62,6 +63,16 @@ pub struct Text {
 	content: &'static str,
 	font: &'static str,
 	font_size: f32,
+	color: Color,
+	is_visible: bool
+}
+
+#[derive(Component)]
+pub struct Color {
+	r: f32,
+	g: f32,
+	b: f32,
+	a: f32
 }
 
 // ##################################################
@@ -228,14 +239,14 @@ impl Render for Render2D {
 	}
 
 	fn get_texture(&self) -> String {
-		self.texture.clone().parse().unwrap()
+		self.texture_name.clone().parse().unwrap()
 	}
 
 	/// Use the actual file name of the texture instead of the path
 	/// e.g. "comet_icon.png" instead of "resources/textures/comet_icon.png"
 	/// The resource manager will already look in the resources/textures folder
 	fn set_texture(&mut self, texture: &'static str) {
-		self.texture = texture;
+		self.texture_name = texture;
 	}
 }
 
@@ -283,15 +294,6 @@ impl Transform3D {
 }
 
 impl Camera2D {
-	/// Creates a Camera2D component.
-	///
-	/// # Parameters
-	/// - `dimensions`: The dimensions of the camera as a `Vec2` (width, height).
-	/// - `zoom`: The zoom level of the camera.
-	/// - `priority`: The priority of the camera, with lower numbers indicating higher priority.
-	///
-	/// # Returns
-	/// - Returns a `Camera2D` instance.
 	pub fn new(dimensions: Vec2, zoom: f32, priority: u8) -> Self {
 		Self {
 			dimensions,
@@ -353,5 +355,110 @@ impl Camera for Camera2D {
 		let top = self.dimensions.y() / 2.0;
 
 		Mat4::OPENGL_CONV * Mat4::orthographic_projection(left, right, bottom, top, 1.0, 0.0)
+	}
+}
+
+impl Text {
+	pub fn new(content: &'static str, font: &'static str, font_size: f32, is_visible: bool, color: impl ColorTrait) -> Self {
+		Self {
+			content,
+			font,
+			font_size,
+			color: Color::from_wgpu_color(color.to_wgpu()),
+			is_visible
+		}
+	}
+
+	pub fn content(&self) -> &'static str {
+		self.content
+	}
+
+	pub fn set_content(&mut self, content: &'static str) {
+		self.content = content;
+	}
+
+	pub fn font(&self) -> &'static str {
+		self.font
+	}
+
+	pub fn set_font(&mut self, font: &'static str) {
+		self.font = font;
+	}
+
+	pub fn font_size(&self) -> f32 {
+		self.font_size
+	}
+
+	pub fn set_font_size(&mut self, font_size: f32) {
+		self.font_size = font_size;
+	}
+
+	pub fn color(&self) -> Color {
+		self.color
+	}
+
+	pub fn is_visible(&self) -> bool {
+		self.is_visible
+	}
+}
+
+impl Color {
+	pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+		Self {
+			r,
+			g,
+			b,
+			a
+		}
+	}
+
+	pub fn r(&self) -> f32 {
+		self.r
+	}
+
+	pub fn set_r(&mut self, r: f32) {
+		self.r = r;
+	}
+
+	pub fn g(&self) -> f32 {
+		self.g
+	}
+
+	pub fn set_g(&mut self, g: f32) {
+		self.g = g;
+	}
+
+	pub fn b(&self) -> f32 {
+		self.b
+	}
+
+	pub fn set_b(&mut self, b: f32) {
+		self.b = b;
+	}
+
+	pub fn a(&self) -> f32 {
+		self.a
+	}
+
+	pub fn set_a(&mut self, a: f32) {
+		self.a = a;
+	}
+
+	pub fn from_wgpu_color(color: wgpu::Color) -> Self {
+		Self {
+			r: color.r as f32,
+			g: color.g as f32,
+			b: color.b as f32,
+			a: color.a as f32
+		}
+	}
+
+	pub fn to_wgpu(&self) -> wgpu::Color {
+		wgpu::Color {
+			r: self.r as f64,
+			g: self.g as f64,
+			b: self.b as f64,
+			a: self.a as f64
+		}
 	}
 }

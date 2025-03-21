@@ -1,6 +1,6 @@
 use crate::{sRgba, Color, Hsla, Hsva, Hwba, Laba, LinearRgba, Oklaba, Oklcha, Xyza};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Lcha {
 	lightness: f32,
 	chroma: f32,

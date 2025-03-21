@@ -23,6 +23,10 @@ impl ComponentSet {
 	pub fn is_subset(&self, other: &ComponentSet) -> bool {
 		self.set.is_subset(&other.set)
 	}
+
+	pub fn to_vec(&self) -> Vec<TypeId> {
+		self.set.iter().cloned().collect()
+	}
 }
 
 impl Hash for ComponentSet {

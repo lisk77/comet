@@ -1,6 +1,6 @@
 use crate::{sRgba, Color, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Hsla {
 	hue: f32,
 	saturation: f32,

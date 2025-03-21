@@ -1,7 +1,7 @@
 use wgpu;
 use crate::{sRgba, Color, Hsla, Hsva, Hwba, Laba, Lcha, Oklaba, Oklcha, Xyza};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub struct LinearRgba {
 	red: f32,
 	green: f32,
