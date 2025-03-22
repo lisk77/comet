@@ -8,6 +8,7 @@ pub enum RenderPassType {
 	User
 }
 
+
 pub struct RenderPassInfo {
 	pass_name: String,
 	pass_type: RenderPassType,
@@ -26,7 +27,7 @@ impl RenderPassInfo {
 		pass_name: String,
 		texture_group_layout: &BindGroupLayout,
 		texture: &Texture,
-		shader: ShaderModule,
+		shader: &ShaderModule,
 		vertex_data: Vec<Vertex>,
 		index_data: Vec<u16>,
 		pipeline_layout: &PipelineLayout,
