@@ -4,7 +4,7 @@ macro_rules! info {
         eprintln!(
             "{} [{}::{}] [{}] : {}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            std::env::var("CARGO_PKG_NAME").unwrap(),
+            env!("CARGO_PKG_NAME"),
             module_path!(),
             "\x1b[32m\x1b[1mINFO\x1b[0m",
             format!($fmt $(, $args)*)
@@ -18,7 +18,7 @@ macro_rules! debug {
         eprintln!(
             "{} [{}::{}:{}] [{}] : {}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            std::env::var("CARGO_PKG_NAME").unwrap(),
+            env!("CARGO_PKG_NAME"),
             module_path!(),
             line!(),
             "\x1b[34m\x1b[1mDEBUG\x1b[0m",
@@ -33,7 +33,7 @@ macro_rules! warn {
         eprintln!(
             "{} [{}::{}] [{}] : {}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            std::env::var("CARGO_PKG_NAME").unwrap(),
+            env!("CARGO_PKG_NAME"),
             module_path!(),
             "\x1b[33m\x1b[1mWARNING\x1b[0m",
             format!($fmt $(, $args)*)
@@ -47,7 +47,7 @@ macro_rules! error {
         eprintln!(
             "{} [{}::{}] [{}] : {}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            std::env::var("CARGO_PKG_NAME").unwrap(),
+            env!("CARGO_PKG_NAME"),
             module_path!(),
             "\x1b[31m\x1b[1mERROR\x1b[0m",
             format!($fmt $(, $args)*)
@@ -61,7 +61,7 @@ macro_rules! fatal {
         eprintln!(
             "{} [{}::{}] [{}] : {}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            std::env::var("CARGO_PKG_NAME").unwrap(),
+            env!("CARGO_PKG_NAME"),
             module_path!(),
             "\x1b[41mFATAL\x1b[0m",
             format!($fmt $(, $args)*)
@@ -75,7 +75,7 @@ macro_rules! trace {
         eprintln!(
             "{} [{}::{}] [{}] : {}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            std::env::var("CARGO_PKG_NAME").unwrap(),
+            env!("CARGO_PKG_NAME"),
             module_path!(),
             "\x1b[35m\x1b[1mTRACE\x1b[0m",
             format!($fmt $(, $args)*)
