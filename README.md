@@ -70,22 +70,50 @@ use anyhow::*;
 use fs_extra::copy_items;
 use fs_extra::dir::CopyOptions;
 use std::env;
+use std::path::PathBuf;
 
 fn main() -> Result<()> {
-    println!("cargo:rerun-if-changed=resources/textures/*");
-    println!("cargo:rerun-if-changed=resources/shaders/*");
+  // Watch resource directories for changes
+  println!("cargo:rerun-if-changed=resources/materials/*");
+  println!("cargo:rerun-if-changed=resources/objects/*");
+  println!("cargo:rerun-if-changed=resources/textures/*");
+  println!("cargo:rerun-if-changed=resources/shaders/*");
+  println!("cargo:rerun-if-changed=resources/data/*");
+  println!("cargo:rerun-if-changed=resources/sounds/*");
+  println!("cargo:rerun-if-changed=resources/fonts/*");
+  
+  let profile = env::var("PROFILE")?;
+  let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
+  let target_dir = manifest_dir.join("target").join(&profile);
+  
+  let dest_resources_dir = target_dir.join("resources");
+  
+  std::fs::create_dir_all(&dest_resources_dir)?;
+  
+  let mut copy_options = CopyOptions::new();
+  copy_options.overwrite = true;
+  copy_options.copy_inside = true;
+  
+  let resource_folders = vec![
+    "resources/materials/",
+    "resources/objects/",
+    "resources/textures/",
+    "resources/shaders/",
+    "resources/data/",
+    "resources/sounds/",
+    "resources/fonts/",
+  ];
+  
+  let resource_paths: Vec<PathBuf> = resource_folders
+          .iter()
+          .map(|p| manifest_dir.join(p))
+          .collect();
+  
+  copy_items(&resource_paths, &dest_resources_dir, &copy_options)?;
 
-    let out_dir = env::var("OUT_DIR")?;
-    let mut copy_options = CopyOptions::new();
-    copy_options.overwrite = true;
-    let mut paths_to_copy = Vec::new();
-    paths_to_copy.push("resources/textures/");
-    paths_to_copy.push("resources/shaders/");
-
-    copy_items(&paths_to_copy, out_dir, &copy_options)?;
-
-    Ok(())
+  Ok(())
 }
+
 ```
 
 ## Todo
