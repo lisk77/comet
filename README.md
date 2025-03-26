@@ -6,7 +6,7 @@ a free and open source games framework
 > 
 > It could be potentially used to make something very basic in a very hacky way, but it is not a good experience.
 > 
-> Installation is manual as of right now but if it reaches an acceptable state I will publish the crate.
+> Installation is manual as of right now but if it reaches an acceptable state I will publish the crate on crates.
 >
 > There is a plan for a project creation tool that will automate the project setup process.
 
@@ -157,3 +157,4 @@ fn main() -> Result<()> {
 - [x] Basic Plugin System
   - [x] Custom Renderer
   - [x] Custom Game State
+```
