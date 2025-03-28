@@ -80,11 +80,11 @@ impl GraphicResourceManager {
 		&self,
 		file_name: &str,
 		is_normal_map: bool,
-		device: &wgpu::Device,
-		queue: &wgpu::Queue,
-	) -> anyhow::Result<texture::Texture> {
+		device: &Device,
+		queue: &Queue,
+	) -> anyhow::Result<Texture> {
 		let data = self.load_binary(file_name)?;
-		texture::Texture::from_bytes(device, queue, &data, file_name, is_normal_map)
+		Texture::from_bytes(device, queue, &data, file_name, is_normal_map)
 	}
 
 	/// `file_name` is the full name, so with the extension
