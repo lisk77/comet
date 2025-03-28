@@ -12,7 +12,7 @@ static FAC: [i64; 21] = [
 	121645100408832000,2432902008176640000
 ];
 
-static iFAC: [f32; 6] = [
+static INV_FAC: [f32; 6] = [
 	1.0,1.0,0.5,0.1666666666666666667,0.04166666666666666667,0.00833333333333333334
 ];
 
@@ -38,11 +38,11 @@ pub fn ln(x: f32) -> f32 {
 }
 
 pub fn log(x: f32) -> f32 {
-	ln(x)/2.30258509299
+	ln(x)/ std::f32::consts::LN_10
 }
 
 pub fn log2(x: f32) -> f32 {
-	ln(x)/0.69314718056
+	ln(x)/ std::f32::consts::LN_2
 }
 
 pub fn sin(x: f32) -> f32 {
@@ -93,7 +93,8 @@ pub fn clamp(start: f32, end: f32, value: f32) -> f32 {
 	}
 }
 
-pub fn pointDerivative(func: fn(f32) -> f32, x: f32, h: f32) -> f32 {
+// Getting the derivative of a function at a point with a given h vaLue for
+pub fn point_derivative(func: fn(f32) -> f32, x: f32, h: f32) -> f32 {
 	(func(x+h) - func(x-h))/(2.0 * h)
 }
 
@@ -174,32 +175,32 @@ fn cubic_interpolation(a: f32, b: f32, t: f32) -> f32 {
 
 /// Cubic Bézier Curve in R²
 pub fn bezier2(p0: Point2, p1: Point2, p2: Point2, p3: Point2, t: f32) -> Point2 {
-	let tSquared = t * t;
-	let tCubed = tSquared * t;
-	let vP0 = Vec2::from_point(p0);
-	let vP1 = Vec2::from_point(p1);
-	let vP2 = Vec2::from_point(p2);
-	let vP3 = Vec2::from_point(p3);
+	let t_squared = t * t;
+	let t_cubed = t_squared * t;
+	let v_p0 = Vec2::from_point(p0);
+	let v_p1 = Vec2::from_point(p1);
+	let v_p2 = Vec2::from_point(p2);
+	let v_p3 = Vec2::from_point(p3);
 
-	Point2::from_vec(vP0 * (-tCubed + 3.0 * tSquared - 3.0 * t + 1.0 ) +
-		vP1 * (3.0 * tCubed - 6.0 * tSquared + 3.0 * t ) +
-		vP2 * (-3.0 * tCubed + 3.0 * tSquared ) +
-		vP3 * tCubed)
+	Point2::from_vec(v_p0 * (-t_cubed + 3.0 * t_squared - 3.0 * t + 1.0 ) +
+		v_p1 * (3.0 * t_cubed - 6.0 * t_squared + 3.0 * t ) +
+		v_p2 * (-3.0 * t_cubed + 3.0 * t_squared ) +
+		v_p3 * t_cubed)
 }
 
 /// Cubic Bézier Curve in R³
 pub fn bezier3(p0: Point3, p1: Point3, p2: Point3, p3: Point3, t: f32) -> Point3 {
-	let tSquared = t * t;
-	let tCubed = tSquared * t;
-	let vP0 = Vec3::from_point(p0);
-	let vP1 = Vec3::from_point(p1);
-	let vP2 = Vec3::from_point(p2);
-	let vP3 = Vec3::from_point(p3);
+	let t_squared = t * t;
+	let t_cubed = t_squared * t;
+	let v_p0 = Vec3::from_point(p0);
+	let v_p1 = Vec3::from_point(p1);
+	let v_p2 = Vec3::from_point(p2);
+	let v_p3 = Vec3::from_point(p3);
 
-	Point3::from_vec(vP0 * (-tCubed + 3.0 * tSquared - 3.0 * t + 1.0 ) +
-		vP1 * (3.0 * tCubed - 6.0 * tSquared + 3.0 * t ) +
-		vP2 * (-3.0 * tCubed + 3.0 * tSquared ) +
-		vP3 * tCubed)
+	Point3::from_vec(v_p0 * (-t_cubed + 3.0 * t_squared - 3.0 * t + 1.0 ) +
+		v_p1 * (3.0 * t_cubed - 6.0 * t_squared + 3.0 * t ) +
+		v_p2 * (-3.0 * t_cubed + 3.0 * t_squared ) +
+		v_p3 * t_cubed)
 }
 
 // ##################################################

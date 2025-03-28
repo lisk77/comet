@@ -1,8 +1,9 @@
+use std::ops::*;
 use std::ops::Mul;
-
 use crate::vector::Vec3;
 
 /// Representation of a quaternion in scalar/vector form
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Quat {
 	pub s: f32,
 	pub v: Vec3,
@@ -44,6 +45,72 @@ impl Quat {
 	}
 }
 
+impl Add<Quat> for Quat {
+	type Output = Quat;
+
+	fn add(self, other: Quat) -> Quat {
+		Quat {
+			s: self.s + other.s,
+			v: self.v + other.v,
+		}
+	}
+}
+
+impl Sub<Quat> for Quat {
+	type Output = Quat;
+
+	fn sub(self, other: Quat) -> Quat {
+		Quat {
+			s: self.s - other.s,
+			v: self.v - other.v,
+		}
+	}
+}
+
+impl Neg for Quat {
+	type Output = Quat;
+
+	fn neg(self) -> Quat {
+		Quat {
+			s: -self.s,
+			v: -self.v,
+		}
+	}
+}
+
+impl Add<f32> for Quat {
+	type Output = Quat;
+
+	fn add(self, scalar: f32) -> Quat {
+		Quat {
+			s: self.s + scalar,
+			v: self.v,
+		}
+	}
+}
+
+impl Sub<f32> for Quat {
+	type Output = Quat;
+
+	fn sub(self, scalar: f32) -> Quat {
+		Quat {
+			s: self.s - scalar,
+			v: self.v,
+		}
+	}
+}
+
+impl Mul<Quat> for f32 {
+	type Output = Quat;
+
+	fn mul(self, quat: Quat) -> Quat {
+		Quat {
+			s: self*quat.s,
+			v: self*quat.v,
+		}
+	}
+}
+
 impl Mul<Quat> for Quat {
 	type Output = Quat;
 
@@ -55,6 +122,28 @@ impl Mul<Quat> for Quat {
 				y: self.s*other.v.y + self.v.y*other.s + self.v.z*other.v.x - self.v.x*other.v.z,
 				z: self.s*other.v.z + self.v.z*other.s + self.v.x*other.v.y - self.v.y*other.v.x,
 			}
+		}
+	}
+}
+
+impl Mul<f32> for Quat {
+	type Output = Quat;
+
+	fn mul(self, scalar: f32) -> Quat {
+		Quat {
+			s: self.s*scalar,
+			v: self.v*scalar,
+		}
+	}
+}
+
+impl Div<f32> for Quat {
+	type Output = Quat;
+
+	fn div(self, scalar: f32) -> Quat {
+		Quat {
+			s: self.s/scalar,
+			v: self.v/scalar,
 		}
 	}
 }

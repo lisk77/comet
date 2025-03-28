@@ -1,8 +1,7 @@
 use crate::point::{Point2, Point3};
 use crate::quaternion::Quat;
 use crate::utilities::acos;
-use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
-use comet_log::*;
+use std::ops::*;
 
 pub trait InnerSpace {
 	fn dot(&self, other: &Self) -> f32;
@@ -136,6 +135,28 @@ impl Mul<f32> for Vec2 {
 		Vec2 {
 			x: self.x * other,
 			y: self.y * other,
+		}
+	}
+}
+
+impl Mul<Vec2> for f32 {
+	type Output = Vec2;
+
+	fn mul(self, other: Vec2) -> Vec2 {
+		Vec2 {
+			x: self * other.x,
+			y: self * other.y,
+		}
+	}
+}
+
+impl Div<f32> for Vec2 {
+	type Output = Vec2;
+
+	fn div(self, other: f32) -> Vec2 {
+		Vec2 {
+			x: self.x / other,
+			y: self.y / other,
 		}
 	}
 }
@@ -670,6 +691,30 @@ impl Mul<f32> for Vec3 {
 			x: self.x * other,
 			y: self.y * other,
 			z: self.z * other,
+		}
+	}
+}
+
+impl Mul<Vec3> for f32 {
+	type Output = Vec3;
+
+	fn mul(self, other: Vec3) -> Vec3 {
+		Vec3 {
+			x: self * other.x,
+			y: self * other.y,
+			z: self * other.z,
+		}
+	}
+}
+
+impl Div<f32> for Vec3 {
+	type Output = Vec3;
+
+	fn div(self, other: f32) -> Vec3 {
+		Vec3 {
+			x: self.x / other,
+			y: self.y / other,
+			z: self.z / other,
 		}
 	}
 }
@@ -3047,6 +3092,28 @@ impl Mul<f32> for Vec4 {
 			z: self.z * other,
 			w: self.w * other,
 		}
+	}
+}
+
+impl Mul<Vec4> for f32 {
+	type Output = Vec4;
+
+	fn mul(self, other: Vec4) -> Vec4 {
+		Vec4 {
+			x: self * other.x,
+			y: self * other.y,
+			z: self * other.z,
+			w: self * other.w,
+		}
+	}
+}
+
+impl MulAssign<f32> for Vec4 {
+	fn mul_assign(&mut self, other: f32) {
+		self.x *= other;
+		self.y *= other;
+		self.z *= other;
+		self.w *= other;
 	}
 }
 
