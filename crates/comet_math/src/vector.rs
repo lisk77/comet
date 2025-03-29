@@ -6,7 +6,13 @@ use std::ops::*;
 pub trait InnerSpace {
 	fn dot(&self, other: &Self) -> f32;
 	fn dist(&self, other: &Self) -> f32;
-	fn v_angle(&self, other: &Self) -> f32;
+	fn angle(&self, other: &Self) -> f32;
+	fn length(&self) -> f32;
+	fn normalize(&self) -> Self;
+	fn normalize_mut(&mut self);
+	fn project_onto(&self, other: &Self) -> Self;
+	fn reflect(&self, normal: &Self) -> Self;
+	fn lerp(&self, other: &Self, t: f32) -> Self;
 }
 
 // ##################################################
@@ -49,18 +55,6 @@ impl Vec2 {
 
 	pub fn set_y(&mut self, new_y: f32) {
 		self.y = new_y;
-	}
-
-	pub fn length(&self) -> f32 {
-		(self.x * self.x + self.y * self.y).sqrt()
-	}
-
-	pub fn normalize(&self) -> Self {
-		let factor = 1.0 / self.length();
-		Vec2 {
-			x: factor * self.x,
-			y: factor * self.y,
-		}
 	}
 }
 
@@ -410,19 +404,6 @@ impl Vec3 {
 	pub fn set_z(&mut self, new_z: f32) {
 		self.z = new_z;
 	}
-
-	pub fn length(&self) -> f32 {
-		(self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
-	}
-
-	pub fn normalize(&self) -> Self {
-		let factor = 1.0 / self.length();
-		Vec3 {
-			x: factor * self.x,
-			y: factor * self.y,
-			z: factor * self.z,
-		}
-	}
 }
 
 impl Add<Vec3> for Vec3 {
@@ -736,20 +717,6 @@ impl Vec4 {
 		Vec4 { x, y, z, w }
 	}
 
-	pub fn length(&self) -> f32 {
-		(self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w).sqrt()
-	}
-
-	pub fn normalize(&self) -> Self {
-		let factor = 1.0 / self.length();
-		Vec4 {
-			x: factor * self.x,
-			y: factor * self.y,
-			z: factor * self.z,
-			w: factor * self.w,
-		}
-	}
-
 	pub fn x(&self) -> f32 {
 		self.x
 	}
@@ -881,9 +848,39 @@ impl InnerSpace for Vec2 {
 			.length()
 	}
 
-	fn v_angle(&self, other: &Self) -> f32 {
-		//debug!("{:?}", dot(self,other)/(self.length()*other.length()));
+	fn angle(&self, other: &Self) -> f32 {
 		acos(self.dot(other) / (self.length() * other.length()))
+	}
+
+	fn length(&self) -> f32 {
+		(self.x * self.x + self.y * self.y).sqrt()
+	}
+
+	fn normalize(&self) -> Self {
+		let factor = 1.0 / self.length();
+		Vec2 {
+			x: factor * self.x,
+			y: factor * self.y,
+		}
+	}
+
+	fn normalize_mut(&mut self) {
+		let factor = 1.0 / self.length();
+		self.x *= factor;
+		self.y *= factor;
+	}
+
+	fn project_onto(&self, other: &Self) -> Self {
+		let factor = self.dot(other) / other.dot(other);
+		*other * factor
+	}
+
+	fn reflect(&self, normal: &Self) -> Self {
+		*self - *normal * 2.0 * self.dot(normal)
+	}
+
+	fn lerp(&self, other: &Self, t: f32) -> Self {
+		*self * (1.0 - t) + *other * t
 	}
 }
 
@@ -901,8 +898,41 @@ impl InnerSpace for Vec3 {
 			.length()
 	}
 
-	fn v_angle(&self, other: &Self) -> f32 {
+	fn angle(&self, other: &Self) -> f32 {
 		acos(self.dot(other) / (self.length() * other.length()))
+	}
+
+	fn length(&self) -> f32 {
+		(self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
+	}
+
+	fn normalize(&self) -> Self {
+		let factor = 1.0 / self.length();
+		Vec3 {
+			x: factor * self.x,
+			y: factor * self.y,
+			z: factor * self.z,
+		}
+	}
+
+	fn normalize_mut(&mut self) {
+		let factor = 1.0 / self.length();
+		self.x *= factor;
+		self.y *= factor;
+		self.z *= factor;
+	}
+
+	fn project_onto(&self, other: &Self) -> Self {
+		let factor = self.dot(other) / other.dot(other);
+		*other * factor
+	}
+
+	fn reflect(&self, normal: &Self) -> Self {
+		*self - *normal * 2.0 * self.dot(normal)
+	}
+
+	fn lerp(&self, other: &Self, t: f32) -> Self {
+		*self * (1.0 - t) + *other * t
 	}
 }
 
@@ -921,8 +951,43 @@ impl InnerSpace for Vec4 {
 			.length()
 	}
 
-	fn v_angle(&self, other: &Self) -> f32 {
+	fn angle(&self, other: &Self) -> f32 {
 		acos(self.dot(other) / (self.length() * other.length()))
+	}
+
+	fn length(&self) -> f32 {
+		(self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w).sqrt()
+	}
+
+	fn normalize(&self) -> Self {
+		let factor = 1.0 / self.length();
+		Vec4 {
+			x: factor * self.x,
+			y: factor * self.y,
+			z: factor * self.z,
+			w: factor * self.w,
+		}
+	}
+
+	fn normalize_mut(&mut self) {
+		let factor = 1.0 / self.length();
+		self.x *= factor;
+		self.y *= factor;
+		self.z *= factor;
+		self.w *= factor;
+	}
+
+	fn project_onto(&self, other: &Self) -> Self {
+		let factor = self.dot(other) / other.dot(other);
+		*other * factor
+	}
+
+	fn reflect(&self, normal: &Self) -> Self {
+		*self - *normal * 2.0 * self.dot(normal)
+	}
+
+	fn lerp(&self, other: &Self, t: f32) -> Self {
+		*self * (1.0 - t) + *other * t
 	}
 }
 
@@ -973,7 +1038,6 @@ macro_rules! generate_swizzles4 {
         }
     };
 }
-
 
 generate_swizzles2!(Vec2,
     xx => (x, x), xy => (x, y),
