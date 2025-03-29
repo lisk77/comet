@@ -1,4 +1,5 @@
 pub use comet_math as math;
+use comet_math::Vec4;
 pub use linear_rgba::*;
 pub use rgba::*;
 pub use hwba::*;
@@ -23,4 +24,5 @@ mod oklcha;
 
 pub trait Color: Copy {
 	fn to_wgpu(&self) -> wgpu::Color;
+	fn to_vec(&self) -> Vec4;
 }

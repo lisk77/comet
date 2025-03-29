@@ -1,5 +1,4 @@
-use std::ops::{Add, Sub, Mul, Div};
-use crate::{cross, dot, Point3};
+use std::ops::*;
 use crate::vector::{Vec2, Vec3, Vec4};
 
 trait LinearTransformation {

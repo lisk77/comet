@@ -1,3 +1,4 @@
+use comet_math::Vec4;
 use crate::{sRgba, Color, Hsla, Hsva, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
 
 #[derive(Debug, Clone, PartialEq, Copy)]
@@ -164,5 +165,9 @@ impl Hwba {
 impl Color for Hwba {
 	fn to_wgpu(&self) -> wgpu::Color {
 		self.to_linear().to_wgpu()
+	}
+
+	fn to_vec(&self) -> Vec4 {
+		Vec4::new(self.hue, self.whiteness, self.blackness, self.alpha)
 	}
 }

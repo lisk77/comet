@@ -1,7 +1,7 @@
 use rand::{Rng, SeedableRng};
 use comet_log::debug;
 use crate::utilities::{lerp, lerp2, PI};
-use crate::{dot, InnerSpace, Vec2};
+use crate::{InnerSpace, Vec2};
 
 // TODO
 // Make noise struct keep their generated noise
@@ -94,7 +94,7 @@ impl PerlinNoise {
 				let nx = x as f64 / self.size.0 as f64;
 				let ny = y as f64 / self.size.1 as f64;
 				let value = self.perlin(nx * self.frequency, ny * self.frequency);
-				noise.push(((value+1.0) * 0.5));
+				noise.push((value+1.0) * 0.5);
 			}
 		}
 
