@@ -170,4 +170,8 @@ impl Color for Hwba {
 	fn to_vec(&self) -> Vec4 {
 		Vec4::new(self.hue, self.whiteness, self.blackness, self.alpha)
 	}
+
+	fn from_vec(color: Vec4) -> Self {
+		Self::new(color.x(), color.y(), color.z(), color.w())
+	}
 }

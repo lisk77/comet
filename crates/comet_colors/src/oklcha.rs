@@ -100,4 +100,8 @@ impl Color for Oklcha {
 	fn to_vec(&self) -> Vec4 {
 		Vec4::new(self.lightness, self.chroma, self.hue, self.alpha)
 	}
+
+	fn from_vec(color: Vec4) -> Self {
+		Self::new(color.x(), color.y(), color.z(), color.w())
+	}
 }

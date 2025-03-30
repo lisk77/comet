@@ -352,6 +352,10 @@ impl Color for sRgba<f32> {
 	fn to_vec(&self) -> Vec4 {
 		Vec4::new(self.red, self.green, self.blue, self.alpha)
 	}
+
+	fn from_vec(color: Vec4) -> Self {
+		Self::new(color.x(), color.y(), color.z(), color.w())
+	}
 }
 
 impl Color for sRgba<u8> {
@@ -366,5 +370,9 @@ impl Color for sRgba<u8> {
 			self.blue as f32,
 			self.alpha as f32
 		)
+	}
+
+	fn from_vec(color: Vec4) -> Self {
+		Self::new(color.x() as u8, color.y() as u8, color.z() as u8, color.w() as u8)
 	}
 }

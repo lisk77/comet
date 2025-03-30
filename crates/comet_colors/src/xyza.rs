@@ -117,4 +117,8 @@ impl Color for Xyza {
 	fn to_vec(&self) -> Vec4 {
 		Vec4::new(self.x, self.y, self.z, self.alpha)
 	}
+
+	fn from_vec(color: Vec4) -> Self {
+		Self::new(color.x(), color.y(), color.z(), color.w())
+	}
 }

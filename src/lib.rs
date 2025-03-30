@@ -16,6 +16,7 @@ pub mod prelude {
 	pub use winit_input_helper::WinitInputHelper as InputManager;
 	pub use comet_log::*;
 	pub use comet_colors::*;
+	pub use comet_colors::Color;
 	pub use comet_ecs::*;
 	pub use comet_math::*;
 }

@@ -139,4 +139,8 @@ impl Color for LinearRgba {
 	fn to_vec(&self) -> Vec4 {
 		Vec4::new(self.red, self.green, self.blue, self.alpha)
 	}
+
+	fn from_vec(color: Vec4) -> Self {
+		Self::new(color.x(), color.y(), color.z(), color.w())
+	}
 }

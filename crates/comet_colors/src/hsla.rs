@@ -109,4 +109,8 @@ impl Color for Hsla {
 	fn to_vec(&self) -> Vec4 {
 		Vec4::new(self.hue, self.saturation, self.lightness, self.alpha)
 	}
+
+	fn from_vec(color: Vec4) -> Self {
+		Self::new(color.x(), color.y(), color.z(), color.w())
+	}
 }
