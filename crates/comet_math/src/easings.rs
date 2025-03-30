@@ -1,15 +1,15 @@
-use crate::utilities::{PI, sin, cos, sqrt};
+use num_traits::FloatConst;
 
 pub fn ease_in_sine(x: f32) -> f32 {
-	1.0 - cos((x * PI) / 2.0)
+	1.0 - ((x * f32::PI) / 2.0).cos()
 }
 
 pub fn ease_out_sine(x: f32) -> f32 {
-	sin((x * PI) / 2.0)
+	((x * f32::PI) / 2.0).sin()
 }
 
 pub fn ease_in_out_sine(x: f32) -> f32 {
-	-(cos(PI * x) - 1.0) / 2.0
+	-((f32::PI * x).cos() - 1.0) / 2.0
 }
 
 pub fn ease_in_quad(x: f32) -> f32 {
@@ -73,15 +73,15 @@ pub fn ease_in_out_expo(x: f32) -> f32 {
 }
 
 pub fn ease_in_circ(x: f32) -> f32 {
-	1.0 - sqrt(1.0 - x * x)
+	1.0 - (1.0 - x * x).sqrt()
 }
 
 pub fn ease_out_circ(x: f32) -> f32 {
-	sqrt(1.0 - (x - 1.0).powf(2.0))
+	(1.0 - (x - 1.0).powf(2.0)).sqrt()
 }
 
 pub fn ease_in_out_circ(x: f32) -> f32 {
-	if x < 0.5 { sqrt(1.0 - (1.0 - 2.0 * x).powf(2.0)) / 2.0 } else { (sqrt(1.0 - (-2.0 * x + 2.0).powf(2.0)) + 1.0) / 2.0 }
+	if x < 0.5 { (1.0 - (1.0 - 2.0 * x).powf(2.0)).sqrt() / 2.0 } else { ((1.0 - (-2.0 * x + 2.0).powf(2.0)).sqrt() + 1.0) / 2.0 }
 }
 
 pub fn ease_in_back(x: f32) -> f32 {
@@ -103,18 +103,18 @@ pub fn ease_in_out_back(x: f32) -> f32 {
 }
 
 pub fn ease_in_elastic(x: f32) -> f32 {
-	let c4 = (2.0 * PI) / 3.0;
-	if x == 0.0 { 0.0 } else if x == 1.0 { 1.0 } else { -2.0_f32.powf(10.0 * x - 10.0) * sin((x * 10.0 - 10.75) * c4) }
+	let c4 = (2.0 * f32::PI) / 3.0;
+	if x == 0.0 { 0.0 } else if x == 1.0 { 1.0 } else { -2.0_f32.powf(10.0 * x - 10.0) * ((x * 10.0 - 10.75) * c4).sin() }
 }
 
 pub fn ease_out_elastic(x: f32) -> f32 {
-	let c4 = (2.0 * PI) / 3.0;
-	if x == 0.0 { 0.0 } else if x == 1.0 { 1.0 } else { 2.0_f32.powf(-10.0 * x) * sin((x * 10.0 - 0.75) * c4) + 1.0 }
+	let c4 = (2.0 * f32::PI) / 3.0;
+	if x == 0.0 { 0.0 } else if x == 1.0 { 1.0 } else { 2.0_f32.powf(-10.0 * x) * ((x * 10.0 - 0.75) * c4).sin() + 1.0 }
 }
 
 pub fn ease_in_out_elastic(x: f32) -> f32 {
-	let c5 = (2.0 * PI) / 4.5;
-	if x == 0.0 { 0.0 } else if x == 1.0 { 1.0 } else if x < 0.5 { -(2.0_f32.powf(20.0 * x - 10.0) * sin((20.0 * x - 11.125) * c5)) / 2.0 } else { (2.0_f32.powf(-20.0 * x + 10.0) * sin((20.0 * x - 11.125) * c5)) / 2.0 + 1.0 }
+	let c5 = (2.0 * f32::PI) / 4.5;
+	if x == 0.0 { 0.0 } else if x == 1.0 { 1.0 } else if x < 0.5 { -(2.0_f32.powf(20.0 * x - 10.0) * ((20.0 * x - 11.125) * c5).sin()) / 2.0 } else { (2.0_f32.powf(-20.0 * x + 10.0) * ((20.0 * x - 11.125) * c5).sin()) / 2.0 + 1.0 }
 }
 
 pub fn ease_in_bounce(x: f32) -> f32 {
