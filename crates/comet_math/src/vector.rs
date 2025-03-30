@@ -1,6 +1,5 @@
 use crate::point::{Point2, Point3};
 use crate::quaternion::Quat;
-use crate::utilities::acos;
 use std::ops::*;
 
 pub trait InnerSpace {
@@ -849,7 +848,7 @@ impl InnerSpace for Vec2 {
 	}
 
 	fn angle(&self, other: &Self) -> f32 {
-		acos(self.dot(other) / (self.length() * other.length()))
+		(self.dot(other) / (self.length() * other.length())).acos()
 	}
 
 	fn length(&self) -> f32 {
@@ -899,7 +898,7 @@ impl InnerSpace for Vec3 {
 	}
 
 	fn angle(&self, other: &Self) -> f32 {
-		acos(self.dot(other) / (self.length() * other.length()))
+		(self.dot(other) / (self.length() * other.length())).acos()
 	}
 
 	fn length(&self) -> f32 {
@@ -952,7 +951,7 @@ impl InnerSpace for Vec4 {
 	}
 
 	fn angle(&self, other: &Self) -> f32 {
-		acos(self.dot(other) / (self.length() * other.length()))
+		(self.dot(other) / (self.length() * other.length())).acos()
 	}
 
 	fn length(&self) -> f32 {
