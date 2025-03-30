@@ -2,7 +2,16 @@ use crate::point::{Point2, Point3};
 use crate::quaternion::Quat;
 use std::ops::*;
 
-pub trait InnerSpace {
+pub trait InnerSpace:
+	std::fmt::Debug +
+	Copy +
+	Clone +
+	Neg<Output = Self> +
+	Mul<f32, Output = Self> +
+	Div<f32, Output = Self> +
+	Add<Self, Output = Self> +
+	Sub<Self, Output = Self>
+{
 	fn dot(&self, other: &Self) -> f32;
 	fn dist(&self, other: &Self) -> f32;
 	fn angle(&self, other: &Self) -> f32;
@@ -90,6 +99,17 @@ impl SubAssign for Vec2 {
 	fn sub_assign(&mut self, other: Vec2) {
 		self.x -= other.x;
 		self.y -= other.y;
+	}
+}
+
+impl Neg for Vec2 {
+	type Output = Self;
+
+	fn neg(self) -> Self::Output {
+		Self {
+			x: -self.x,
+			y: -self.y,
+		}
 	}
 }
 
@@ -505,6 +525,17 @@ impl Into<[f32;3]> for Vec3 {
 	}
 }
 
+impl Into<Vec3> for [f32;3] {
+	fn into(self) -> Vec3 {
+		Vec3 {
+			x: self[0],
+			y: self[1],
+			z: self[2],
+		}
+	}
+}
+
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -793,6 +824,19 @@ impl SubAssign for Vec4 {
 	}
 }
 
+impl Neg for Vec4 {
+	type Output = Self;
+
+	fn neg(self) -> Self::Output {
+		Self {
+			x: -self.x,
+			y: -self.y,
+			z: -self.z,
+			w: -self.w,
+		}
+	}
+}
+
 impl Mul<f32> for Vec4 {
 	type Output = Vec4;
 
@@ -825,6 +869,19 @@ impl MulAssign<f32> for Vec4 {
 		self.y *= other;
 		self.z *= other;
 		self.w *= other;
+	}
+}
+
+impl Div<f32> for Vec4 {
+	type Output = Vec4;
+
+	fn div(self, other: f32) -> Vec4 {
+		Vec4 {
+			x: self.x / other,
+			y: self.y / other,
+			z: self.z / other,
+			w: self.w / other,
+		}
 	}
 }
 
