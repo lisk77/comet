@@ -1,21 +1,25 @@
-use rand::{Rng, SeedableRng};
+use image::{DynamicImage, GenericImage, GenericImageView, Rgba};
+use rand::Rng;
 use comet_log::debug;
-use crate::utilities::{lerp, lerp2, PI};
-use crate::{InnerSpace, Vec2};
+use crate::Vec2;
+use crate::lerp;
 
 // TODO
 // Make noise struct keep their generated noise
 // Create noise trait as a common interface for all noise types
 // Use noise trait to let the generated noise be outputed in different ways like images or Vec<f32>
 
+pub trait NoiseGenerator {
+	fn generate(&self) -> Vec<f32>;
+	fn generate_image(&self) -> DynamicImage;
+}
 
-
-/// The WhiteNoise struct works a factory for generating white noise, given the size of the texture.
 pub struct WhiteNoise {
-	size: (usize, usize)
+	size: (usize, usize),
 }
 
 impl WhiteNoise {
+	/// Creates a white noise generator ideal for multiple uses.
 	pub fn new(width: usize, height: usize) -> Self {
 		Self {
 			size: (width, height)
@@ -35,18 +39,59 @@ impl WhiteNoise {
 	}
 
 	/// Generates white noise as a `Vec<f32>`. Size of the vector is `width * height`.
-	pub fn generate(&self) -> Vec<f32> {
+	pub fn generate(size: (usize, usize)) -> Vec<f32> {
 		let mut rng = rand::rng();
-		let mut noise = Vec::with_capacity(self.size.0 * self.size.1);
+		let mut noise = Vec::with_capacity(size.0 * size.1);
 
-		let dot_vec2 = Vec2::new(12.9898, 78.233);
-
-		for i in 0..self.size.0 * self.size.1 {
+		for _ in 0..size.0 * size.1 {
 			noise.push(rng.random_range(0.0..1.0));
-			//noise.push(((dot(&Vec2::new(x,y), &dot_vec2)).sin() * 43758.5453).fract());
 		}
 
 		noise
+	}
+
+	/// Generates white noise as a `DynamicImage`.
+	pub fn generate_image(size: (usize, usize)) -> DynamicImage {
+		let mut rng = rand::rng();
+		let mut image = DynamicImage::new_rgb8(size.0 as u32, size.1 as u32);
+
+		for y in 0..size.1 {
+			for x in 0..size.0 {
+				let value = (rng.random_range(0.0..1.0) * 255.0) as u8;
+				image.put_pixel(x as u32, y as u32, Rgba([value, value, value, 255]));
+			}
+		}
+
+		image
+	}
+}
+
+impl NoiseGenerator for WhiteNoise {
+	/// Generates white noise as a `Vec<f32>`. Size of the vector is `width * height`.
+	fn generate(&self) -> Vec<f32> {
+		let mut rng = rand::rng();
+		let mut noise = Vec::with_capacity(self.size.0 * self.size.1);
+
+		for _ in 0..self.size.0 * self.size.1 {
+			noise.push(rng.random_range(0.0..1.0));
+		}
+
+		noise
+	}
+
+	/// Generates white noise as a `DynamicImage`.
+	fn generate_image(&self) -> DynamicImage {
+		let mut rng = rand::rng();
+		let mut image = DynamicImage::new_rgb8(self.size.0 as u32, self.size.1 as u32);
+
+		for y in 0..self.size.1 {
+			for x in 0..self.size.0 {
+				let value = (rng.random_range(0.0..1.0) * 255.0) as u8;
+				image.put_pixel(x as u32, y as u32, Rgba([value, value, value, 255]));
+			}
+		}
+
+		image
 	}
 }
 
