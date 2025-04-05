@@ -12,7 +12,7 @@ a free and open source games framework
 
 ## Recommended setup
 
-The project structure should look like this:
+The project structure as of right now should look like this:
 
 ```
 project
