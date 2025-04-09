@@ -157,4 +157,3 @@ fn main() -> Result<()> {
 - [x] Basic Plugin System
   - [x] Custom Renderer
   - [x] Custom Game State
-```
