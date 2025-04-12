@@ -5,4 +5,3 @@ edition = "2021"
 
 [dependencies]
 comet_log = { path = "../comet_log" }
-chrono = "0.4"

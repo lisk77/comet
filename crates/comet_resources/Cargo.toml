@@ -5,13 +5,9 @@ edition = "2021"
 
 [dependencies]
 comet_log = { path = "../comet_log" }
-chrono = "0.4.38"
-
 wgpu = { version = "22.0", features = ["spirv"] }
 anyhow = "1.0"
-tobj = { version = "3.2", default-features = false, features = ["async"]}
 bytemuck = { version = "1.16", features = [ "derive" ] }
-log = "0.4.22"
 ab_glyph = "0.2.29"
 
 [dependencies.image]

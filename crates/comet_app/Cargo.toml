@@ -13,15 +13,8 @@ comet_input = { path = "../comet_input" }
 comet_structs = { path = "../comet_structs" }
 
 winit = { version = "0.29", features = ["rwh_05"] }
-env_logger = "0.10"
 pollster = "0.3"
-wgpu = { version = "22.0"}
-log = "0.4.22"
-anyhow = "1.0.89"
-bytemuck = "1.18.0"
-chrono = "0.4.0"
 winit_input_helper = "0.16.0"
-spin_sleep = "1.2.1"
 crossbeam-channel = "0.5.14"
 
 [dependencies.image]
