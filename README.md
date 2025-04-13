@@ -23,6 +23,7 @@ project
 │   resources
 │   └── shaders
 │   └── textures
+│   └── sounds
 │   src
 │   └── main.rs
 ```
