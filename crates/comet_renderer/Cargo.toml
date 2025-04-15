@@ -14,3 +14,4 @@ bytemuck = { version = "1.16", features = [ "derive" ] }
 cgmath = "0.18"
 wgpu = { version = "22.0", features = ["glsl", "wgsl", "naga-ir"]}
 winit = { version = "0.29", features = ["rwh_05"] }
+chrono = "0.4.40"

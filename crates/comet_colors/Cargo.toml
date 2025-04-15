@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 comet_math = { path = "../comet_math" }
 wgpu = { version = "22.0" }
+chrono = "0.4.40"
