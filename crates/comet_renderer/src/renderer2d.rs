@@ -12,7 +12,7 @@ use winit::window::Window;
 use comet_colors::{ Color, LinearRgba };
 use comet_ecs::{Camera, Camera2D, Component, Position2D, Render, Render2D, Transform2D, Scene};
 use comet_log::{debug, error, info};
-use comet_math::{Point2, Point3, Vec2, Vec3};
+use comet_math::{p2, p3, v2, v3};
 use comet_resources::{texture, graphic_resource_manager::GraphicResourceManager, Texture, Vertex};
 use comet_resources::texture_atlas::TextureRegion;
 use comet_structs::ComponentSet;
@@ -127,7 +127,7 @@ impl<'a> Renderer2D<'a> {
 				label: Some("texture_bind_group_layout"),
 			});
 
-		let camera = RenderCamera::new(1.0, Vec2::new(2.0, 2.0), Vec3::new(0.0, 0.0, 0.0));
+		let camera = RenderCamera::new(1.0, v2::new(2.0, 2.0), v3::new(0.0, 0.0, 0.0));
 
 		let mut camera_uniform = CameraUniform::new();
 		camera_uniform.update_view_proj(&camera);
@@ -471,7 +471,7 @@ impl<'a> Renderer2D<'a> {
 	}
 
 	/// A function to just draw a textured quad at a given position.
-	pub fn draw_texture_at(&mut self, texture_path: String, position: Point3) {
+	pub fn draw_texture_at(&mut self, texture_path: String, position: p3) {
 		let region = self.graphic_resource_manager.texture_locations().get(&texture_path).unwrap();
 		let (dim_x, dim_y) = region.dimensions();
 
@@ -496,13 +496,13 @@ impl<'a> Renderer2D<'a> {
 	}
 
 	/// A function to draw text at a given position.
-	pub fn draw_text_at(&mut self, text: &str, font: String, size: f32, position: Point2, color: impl Color) {
+	pub fn draw_text_at(&mut self, text: &str, font: String, size: f32, position: p2, color: impl Color) {
 		//self.set_font_atlas(font.clone());
 
 		let wgpu_color = color.to_wgpu();
 		let vert_color = [wgpu_color.r as f32, wgpu_color.g as f32, wgpu_color.b as f32, wgpu_color.a as f32];
 
-		let screen_position = Point2::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32);
+		let screen_position = p2::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32);
 		let scale_factor = size / self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().size();
 
 		let line_height = (self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().line_height() / self.config.height as f32) * scale_factor;
@@ -550,10 +550,10 @@ impl<'a> Renderer2D<'a> {
 		}
 	}
 
-	fn add_text_to_buffers(&self, text: String, font: String, size: f32, position: Point2, color: wgpu::Color) -> (Vec<Vertex>, Vec<u16>) {
+	fn add_text_to_buffers(&self, text: String, font: String, size: f32, position: p2, color: wgpu::Color) -> (Vec<Vertex>, Vec<u16>) {
 		let vert_color = [color.r as f32, color.g as f32, color.b as f32, color.a as f32];
 
-		let screen_position = Point2::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32);
+		let screen_position = p2::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32);
 		let scale_factor = size / self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().size();
 
 		let line_height = (self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().line_height() / self.config.height as f32) * scale_factor;
@@ -632,9 +632,9 @@ impl<'a> Renderer2D<'a> {
 		let camera = RenderCamera::new(
 			camera_component.zoom(),
 			camera_component.dimensions(),
-			Vec3::new(camera_position.as_vec().x(),
-					  camera_position.as_vec().y(),
-					  0.0));
+			v3::new(camera_position.as_vec().x(),
+					camera_position.as_vec().y(),
+					0.0));
 		let mut camera_uniform = CameraUniform::new();
 		camera_uniform.update_view_proj(&camera);
 

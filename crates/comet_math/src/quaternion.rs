@@ -1,26 +1,26 @@
 use std::ops::*;
 use std::ops::Mul;
-use crate::vector::Vec3;
+use crate::vector::v3;
 
 /// Representation of a quaternion in scalar/vector form
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Quat {
 	pub s: f32,
-	pub v: Vec3,
+	pub v: v3,
 }
 
 impl Quat {
 	pub const fn zero() -> Self {
 		Self {
 			s: 0.0,
-			v: Vec3 {
+			v: v3 {
 				x: 0.0,
 				y: 0.0,
 				z: 0.0,
 			},
 		}
 	}
-	pub const fn new(s: f32, v: Vec3) -> Self {
+	pub const fn new(s: f32, v: v3) -> Self {
 		Self { s, v }
 	}
 
@@ -36,8 +36,8 @@ impl Quat {
 		Self::new(self.s*inverse_squareroot, self.v*inverse_squareroot)
 	}
 
-	pub fn into_vec(&self) -> Vec3 {
-		Vec3 {
+	pub fn into_vec(&self) -> v3 {
+		v3 {
 			x: self.v.x,
 			y: self.v.y,
 			z: self.v.z,
@@ -117,7 +117,7 @@ impl Mul<Quat> for Quat {
 	fn mul(self, other: Quat) -> Quat {
 		Quat {
 			s: self.s*other.s - self.v.x*other.v.x - self.v.y*other.v.y - self.v.z*other.v.z,
-			v: Vec3 {
+			v: v3 {
 				x: self.s*other.v.x + self.v.x*other.s + self.v.y*other.v.z - self.v.z*other.v.y,
 				y: self.s*other.v.y + self.v.y*other.s + self.v.z*other.v.x - self.v.x*other.v.z,
 				z: self.s*other.v.z + self.v.z*other.s + self.v.x*other.v.y - self.v.y*other.v.x,

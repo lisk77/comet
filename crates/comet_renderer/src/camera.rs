@@ -1,4 +1,4 @@
-use comet_math::{Mat4, Point3, Vec2, Vec3};
+use comet_math::{m4, p3, v2, v3};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -12,15 +12,15 @@ const SAFE_FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2 - 0.0001;
 
 pub struct RenderCamera {
 	zoom: f32,
-	dimension: Vec2,
-	position: Vec3
+	dimension: v2,
+	position: v3
 }
 
 impl RenderCamera {
 	pub fn new(
-		zoom: f32,
-		dimension: Vec2,
-		position: Vec3
+        zoom: f32,
+        dimension: v2,
+        position: v3
 	) -> Self {
 		Self {
 			zoom,
@@ -29,16 +29,16 @@ impl RenderCamera {
 		}
 	}
 
-	pub fn build_view_projection_matrix(&self) -> Mat4 {
+	pub fn build_view_projection_matrix(&self) -> m4 {
 		let zoomed_width = self.dimension.x() / self.zoom;
 		let zoomed_height = self.dimension.y() / self.zoom;
 
-		Mat4::OPENGL_CONV * Mat4::orthographic_projection(self.position.x() - zoomed_width / 2.0,
-														   self.position.x() + zoomed_width / 2.0,
-														   self.position.y() - zoomed_height / 2.0,
-														   self.position.y() + zoomed_height / 2.0,
-														   1.0,
-														   0.0)
+		m4::OPENGL_CONV * m4::orthographic_projection(self.position.x() - zoomed_width / 2.0,
+													  self.position.x() + zoomed_width / 2.0,
+													  self.position.y() - zoomed_height / 2.0,
+													  self.position.y() + zoomed_height / 2.0,
+													  1.0,
+													  0.0)
 
 		/*OPENGL_TO_WGPU_MATRIX * cgmath::ortho(self.position.x() - zoomed_width / 2.0,
 											  self.position.x() + zoomed_width / 2.0,

@@ -1,4 +1,4 @@
-use comet_math::Vec4;
+use comet_math::v4;
 use crate::{sRgba, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha};
 
 #[derive(Debug, Clone, PartialEq, Copy)]
@@ -114,11 +114,11 @@ impl Color for Xyza {
 		self.to_linear().to_wgpu()
 	}
 
-	fn to_vec(&self) -> Vec4 {
-		Vec4::new(self.x, self.y, self.z, self.alpha)
+	fn to_vec(&self) -> v4 {
+		v4::new(self.x, self.y, self.z, self.alpha)
 	}
 
-	fn from_vec(color: Vec4) -> Self {
+	fn from_vec(color: v4) -> Self {
 		Self::new(color.x(), color.y(), color.z(), color.w())
 	}
 }

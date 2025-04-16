@@ -1,5 +1,5 @@
 use std::ops::*;
-use crate::vector::{Vec2, Vec3, Vec4};
+use crate::vector::{v2, v3, v4};
 
 trait LinearTransformation {
 	fn det(&self) -> f32;
@@ -11,14 +11,14 @@ trait LinearTransformation {
 
 #[repr(C)]
 #[derive(Debug, PartialEq)]
-pub struct Mat2 {
+pub struct m2 {
 	x00: f32,
 	x01: f32,
 	x10: f32,
 	x11: f32,
 }
 
-impl Mat2 {
+impl m2 {
 
 	pub const ZERO: Self = Self {
 		x00: 0.0, x01: 0.0,
@@ -39,14 +39,14 @@ impl Mat2 {
 		}
 	}
 
-	pub fn from_cols(col1: Vec2, col2: Vec2) -> Self {
+	pub fn from_cols(col1: v2, col2: v2) -> Self {
 		Self {
 			x00: col1.x(), x01: col1.y(),
 			x10: col2.x(), x11: col2.y(),
 		}
 	}
 
-	pub fn from_rows(row1: Vec2, row2: Vec2) -> Self {
+	pub fn from_rows(row1: v2, row2: v2) -> Self {
 		Self {
 			x00: row1.x(), x01: row2.x(),
 			x10: row1.y(), x11: row2.y(),
@@ -73,18 +73,18 @@ impl Mat2 {
 		}
 	}
 
-	pub fn col(&self, index: usize) -> Option<Vec2> {
+	pub fn col(&self, index: usize) -> Option<v2> {
 		match index {
-			0 => Some(Vec2::new(self.x00, self.x01)),
-			1 => Some(Vec2::new(self.x10, self.x11)),
+			0 => Some(v2::new(self.x00, self.x01)),
+			1 => Some(v2::new(self.x10, self.x11)),
 			_ => None
 		}
 	}
 
-	pub fn row(&self, index: usize) -> Option<Vec2> {
+	pub fn row(&self, index: usize) -> Option<v2> {
 		match index {
-			0 => Some(Vec2::new(self.x00, self.x10)),
-			1 => Some(Vec2::new(self.x01, self.x11)),
+			0 => Some(v2::new(self.x00, self.x10)),
+			1 => Some(v2::new(self.x01, self.x11)),
 			_ => None
 		}
 	}
@@ -101,7 +101,7 @@ impl Mat2 {
 	}
 }
 
-impl Add for Mat2 {
+impl Add for m2 {
 	type Output = Self;
 
 	fn add(self, rhs: Self) -> Self {
@@ -114,7 +114,7 @@ impl Add for Mat2 {
 	}
 }
 
-impl Sub for Mat2 {
+impl Sub for m2 {
 	type Output = Self;
 
 	fn sub(self, rhs: Self) -> Self {
@@ -127,7 +127,7 @@ impl Sub for Mat2 {
 	}
 }
 
-impl Mul<f32> for Mat2 {
+impl Mul<f32> for m2 {
 	type Output = Self;
 
 	fn mul(self, rhs: f32) -> Self {
@@ -140,18 +140,18 @@ impl Mul<f32> for Mat2 {
 	}
 }
 
-impl Mul<Vec2> for Mat2 {
-	type Output = Vec2;
+impl Mul<v2> for m2 {
+	type Output = v2;
 
-	fn mul(self, rhs: Vec2) -> Vec2 {
-		Vec2::new(
+	fn mul(self, rhs: v2) -> v2 {
+		v2::new(
 			self.x00 * rhs.x() + self.x01 * rhs.y(),
 			self.x10 * rhs.x() + self.x11 * rhs.y()
 		)
 	}
 }
 
-impl Mul<Mat2> for Mat2 {
+impl Mul<m2> for m2 {
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self {
@@ -164,7 +164,7 @@ impl Mul<Mat2> for Mat2 {
 	}
 }
 
-impl Div<f32> for Mat2 {
+impl Div<f32> for m2 {
 	type Output = Self;
 
 	fn div(self, rhs: f32) -> Self {
@@ -177,7 +177,7 @@ impl Div<f32> for Mat2 {
 	}
 }
 
-impl Into<[[f32;2];2]> for Mat2 {
+impl Into<[[f32;2];2]> for m2 {
 	fn into(self) -> [[f32;2];2] {
 		[
 			[self.x00, self.x01],
@@ -192,13 +192,13 @@ impl Into<[[f32;2];2]> for Mat2 {
 
 #[repr(C)]
 #[derive(Debug, PartialEq)]
-pub struct Mat3 {
+pub struct m3 {
 	x00: f32, x01: f32, x02: f32,
 	x10: f32, x11: f32, x12: f32,
 	x20: f32, x21: f32, x22: f32,
 }
 
-impl Mat3 {
+impl m3 {
 	pub const ZERO: Self = Self {
 		x00: 0.0, x01: 0.0, x02: 0.0,
 		x10: 0.0, x11: 0.0, x12: 0.0,
@@ -223,7 +223,7 @@ impl Mat3 {
 		}
 	}
 
-	pub fn from_cols(col1: Vec3, col2: Vec3, col3: Vec3) -> Self {
+	pub fn from_cols(col1: v3, col2: v3, col3: v3) -> Self {
 		Self {
 			x00: col1.x(), x01: col1.y(), x02: col1.z(),
 			x10: col2.x(), x11: col2.y(), x12: col2.z(),
@@ -231,7 +231,7 @@ impl Mat3 {
 		}
 	}
 
-	pub fn from_rows(row1: Vec3, row2: Vec3, row3: Vec3) -> Self {
+	pub fn from_rows(row1: v3, row2: v3, row3: v3) -> Self {
 		Self {
 			x00: row1.x(), x01: row2.x(), x02: row3.x(),
 			x10: row1.y(), x11: row2.y(), x12: row3.y(),
@@ -269,20 +269,20 @@ impl Mat3 {
 		}
 	}
 
-	pub fn col(&self, index: usize) -> Option<Vec3> {
+	pub fn col(&self, index: usize) -> Option<v3> {
 		match index {
-			0 => Some(Vec3::new(self.x00, self.x01, self.x02)),
-			1 => Some(Vec3::new(self.x10, self.x11, self.x12)),
-			2 => Some(Vec3::new(self.x20, self.x21, self.x22)),
+			0 => Some(v3::new(self.x00, self.x01, self.x02)),
+			1 => Some(v3::new(self.x10, self.x11, self.x12)),
+			2 => Some(v3::new(self.x20, self.x21, self.x22)),
 			_ => None
 		}
 	}
 
-	pub fn row(&self, index: usize) -> Option<Vec3> {
+	pub fn row(&self, index: usize) -> Option<v3> {
 		match index {
-			0 => Some(Vec3::new(self.x00, self.x10, self.x20)),
-			1 => Some(Vec3::new(self.x01, self.x11, self.x21)),
-			2 => Some(Vec3::new(self.x02, self.x12, self.x22)),
+			0 => Some(v3::new(self.x00, self.x10, self.x20)),
+			1 => Some(v3::new(self.x01, self.x11, self.x21)),
+			2 => Some(v3::new(self.x02, self.x12, self.x22)),
 			_ => None
 		}
 	}
@@ -302,7 +302,7 @@ impl Mat3 {
 	}
 }
 
-impl Add for Mat3 {
+impl Add for m3 {
 	type Output = Self;
 
 	fn add(self, rhs: Self) -> Self {
@@ -314,7 +314,7 @@ impl Add for Mat3 {
 	}
 }
 
-impl Sub for Mat3 {
+impl Sub for m3 {
 	type Output = Self;
 
 	fn sub(self, rhs: Self) -> Self {
@@ -326,7 +326,7 @@ impl Sub for Mat3 {
 	}
 }
 
-impl Mul<f32> for Mat3 {
+impl Mul<f32> for m3 {
 	type Output = Self;
 
 	fn mul(self, rhs: f32) -> Self {
@@ -338,11 +338,11 @@ impl Mul<f32> for Mat3 {
 	}
 }
 
-impl Mul<Vec3> for Mat3 {
-	type Output = Vec3;
+impl Mul<v3> for m3 {
+	type Output = v3;
 
-	fn mul(self, rhs: Vec3) -> Vec3 {
-		Vec3::new(
+	fn mul(self, rhs: v3) -> v3 {
+		v3::new(
 			self.x00 * rhs.x() + self.x01 * rhs.y() + self.x02 * rhs.z(),
 			self.x10 * rhs.x() + self.x11 * rhs.y() + self.x12 * rhs.z(),
 			self.x20 * rhs.x() + self.x21 * rhs.y() + self.x22 * rhs.z()
@@ -350,7 +350,7 @@ impl Mul<Vec3> for Mat3 {
 	}
 }
 
-impl Mul<Mat3> for Mat3 {
+impl Mul<m3> for m3 {
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self {
@@ -368,7 +368,7 @@ impl Mul<Mat3> for Mat3 {
 	}
 }
 
-impl Div<f32> for Mat3 {
+impl Div<f32> for m3 {
 	type Output = Self;
 
 	fn div(self, rhs: f32) -> Self {
@@ -380,7 +380,7 @@ impl Div<f32> for Mat3 {
 	}
 }
 
-impl Into<[[f32;3];3]> for Mat3 {
+impl Into<[[f32;3];3]> for m3 {
 	fn into(self) -> [[f32;3];3] {
 		[
 			[self.x00, self.x01, self.x02],
@@ -396,14 +396,14 @@ impl Into<[[f32;3];3]> for Mat3 {
 
 #[repr(C)]
 #[derive(Debug, PartialEq)]
-pub struct Mat4 {
+pub struct m4 {
 	x00: f32, x01: f32, x02: f32, x03: f32,
 	x10: f32, x11: f32, x12: f32, x13: f32,
 	x20: f32, x21: f32, x22: f32, x23: f32,
 	x30: f32, x31: f32, x32: f32, x33: f32,
 }
 
-impl Mat4 {
+impl m4 {
 	pub const ZERO: Self = Self {
 		x00: 0.0, x01: 0.0, x02: 0.0, x03: 0.0,
 		x10: 0.0, x11: 0.0, x12: 0.0, x13: 0.0,
@@ -439,7 +439,7 @@ impl Mat4 {
 		}
 	}
 
-	pub fn from_cols(col1: Vec4, col2: Vec4, col3: Vec4, col4: Vec4) -> Self {
+	pub fn from_cols(col1: v4, col2: v4, col3: v4, col4: v4) -> Self {
 		Self {
 			x00: col1.x(), x01: col1.y(), x02: col1.z(), x03: col1.w(),
 			x10: col2.x(), x11: col2.y(), x12: col2.z(), x13: col2.w(),
@@ -448,7 +448,7 @@ impl Mat4 {
 		}
 	}
 
-	pub fn from_rows(row1: Vec4, row2: Vec4, row3: Vec4, row4: Vec4) -> Self {
+	pub fn from_rows(row1: v4, row2: v4, row3: v4, row4: v4) -> Self {
 		Self {
 			x00: row1.x(), x01: row2.x(), x02: row3.x(), x03: row4.x(),
 			x10: row1.y(), x11: row2.y(), x12: row3.y(), x13: row4.y(),
@@ -501,22 +501,22 @@ impl Mat4 {
 		}
 	}
 
-	pub fn col(&self, index: usize) -> Option<Vec4> {
+	pub fn col(&self, index: usize) -> Option<v4> {
 		match index {
-			0 => Some(Vec4::new(self.x00, self.x01, self.x02, self.x03)),
-			1 => Some(Vec4::new(self.x10, self.x11, self.x12, self.x13)),
-			2 => Some(Vec4::new(self.x20, self.x21, self.x22, self.x23)),
-			3 => Some(Vec4::new(self.x30, self.x31, self.x32, self.x33)),
+			0 => Some(v4::new(self.x00, self.x01, self.x02, self.x03)),
+			1 => Some(v4::new(self.x10, self.x11, self.x12, self.x13)),
+			2 => Some(v4::new(self.x20, self.x21, self.x22, self.x23)),
+			3 => Some(v4::new(self.x30, self.x31, self.x32, self.x33)),
 			_ => None
 		}
 	}
 
-	pub fn row(&self, index: usize) -> Option<Vec4> {
+	pub fn row(&self, index: usize) -> Option<v4> {
 		match index {
-			0 => Some(Vec4::new(self.x00, self.x10, self.x20, self.x30)),
-			1 => Some(Vec4::new(self.x01, self.x11, self.x21, self.x31)),
-			2 => Some(Vec4::new(self.x02, self.x12, self.x22, self.x32)),
-			3 => Some(Vec4::new(self.x03, self.x13, self.x23, self.x33)),
+			0 => Some(v4::new(self.x00, self.x10, self.x20, self.x30)),
+			1 => Some(v4::new(self.x01, self.x11, self.x21, self.x31)),
+			2 => Some(v4::new(self.x02, self.x12, self.x22, self.x32)),
+			3 => Some(v4::new(self.x03, self.x13, self.x23, self.x33)),
 			_ => None
 		}
 	}
@@ -571,7 +571,7 @@ impl Mat4 {
 	}
 }
 
-impl Add for Mat4 {
+impl Add for m4 {
 	type Output = Self;
 
 	fn add(self, rhs: Self) -> Self {
@@ -584,7 +584,7 @@ impl Add for Mat4 {
 	}
 }
 
-impl Sub for Mat4 {
+impl Sub for m4 {
 	type Output = Self;
 
 	fn sub(self, rhs: Self) -> Self {
@@ -597,7 +597,7 @@ impl Sub for Mat4 {
 	}
 }
 
-impl Mul<f32> for Mat4 {
+impl Mul<f32> for m4 {
 	type Output = Self;
 
 	fn mul(self, rhs: f32) -> Self {
@@ -610,11 +610,11 @@ impl Mul<f32> for Mat4 {
 	}
 }
 
-impl Mul<Vec4> for Mat4 {
-	type Output = Vec4;
+impl Mul<v4> for m4 {
+	type Output = v4;
 
-	fn mul(self, rhs: Vec4) -> Vec4 {
-		Vec4::new(
+	fn mul(self, rhs: v4) -> v4 {
+		v4::new(
 			self.x00 * rhs.x() + self.x01 * rhs.y() + self.x02 * rhs.z() + self.x03 * rhs.w(),
 			self.x10 * rhs.x() + self.x11 * rhs.y() + self.x12 * rhs.z() + self.x13 * rhs.w(),
 			self.x20 * rhs.x() + self.x21 * rhs.y() + self.x22 * rhs.z() + self.x23 * rhs.w(),
@@ -623,7 +623,7 @@ impl Mul<Vec4> for Mat4 {
 	}
 }
 
-impl Mul<Mat4> for Mat4 {
+impl Mul<m4> for m4 {
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self {
@@ -648,7 +648,7 @@ impl Mul<Mat4> for Mat4 {
 	}
 }
 
-impl Div<f32> for Mat4 {
+impl Div<f32> for m4 {
 	type Output = Self;
 
 	fn div(self, rhs: f32) -> Self {
@@ -661,7 +661,7 @@ impl Div<f32> for Mat4 {
 	}
 }
 
-impl Into<[[f32;4];4]> for Mat4 {
+impl Into<[[f32;4];4]> for m4 {
 	fn into(self) -> [[f32;4];4] {
 		[
 			[self.x00, self.x01, self.x02, self.x03],

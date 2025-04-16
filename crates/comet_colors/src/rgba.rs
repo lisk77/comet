@@ -1,4 +1,4 @@
-use crate::{math::Vec4, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
+use crate::{math::v4, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
 
 /// sRGB representation of color
 /// There are two variants: `sRgba<u8>` and `sRgba<f32>`
@@ -139,8 +139,8 @@ impl sRgba<u8> {
 		self.to_linear().to_oklaba()
 	}
 
-	pub fn to_vec(&self) -> Vec4 {
-		Vec4::new(
+	pub fn to_vec(&self) -> v4 {
+		v4::new(
 			self.red as f32,
 			self.green as f32,
 			self.blue as f32,
@@ -334,8 +334,8 @@ impl sRgba<f32> {
 		self.to_hsva().to_hsla()
 	}
 
-	pub fn to_vec(&self) -> Vec4 {
-		Vec4::new(
+	pub fn to_vec(&self) -> v4 {
+		v4::new(
 			self.red,
 			self.green,
 			self.blue,
@@ -349,11 +349,11 @@ impl Color for sRgba<f32> {
 		self.to_linear().to_wgpu()
 	}
 
-	fn to_vec(&self) -> Vec4 {
-		Vec4::new(self.red, self.green, self.blue, self.alpha)
+	fn to_vec(&self) -> v4 {
+		v4::new(self.red, self.green, self.blue, self.alpha)
 	}
 
-	fn from_vec(color: Vec4) -> Self {
+	fn from_vec(color: v4) -> Self {
 		Self::new(color.x(), color.y(), color.z(), color.w())
 	}
 }
@@ -363,8 +363,8 @@ impl Color for sRgba<u8> {
 		self.to_linear().to_wgpu()
 	}
 
-	fn to_vec(&self) -> Vec4 {
-		Vec4::new(
+	fn to_vec(&self) -> v4 {
+		v4::new(
 			self.red as f32,
 			self.green as f32,
 			self.blue as f32,
@@ -372,7 +372,7 @@ impl Color for sRgba<u8> {
 		)
 	}
 
-	fn from_vec(color: Vec4) -> Self {
+	fn from_vec(color: v4) -> Self {
 		Self::new(color.x() as u8, color.y() as u8, color.z() as u8, color.w() as u8)
 	}
 }

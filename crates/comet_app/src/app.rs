@@ -15,7 +15,7 @@ use winit::{
 	window::{Icon, Window},
 };
 use comet_colors::LinearRgba;
-use comet_ecs::math::Point3;
+use comet_ecs::math::p3;
 use comet_log::*;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event_loop::ControlFlow;

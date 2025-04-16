@@ -1,5 +1,5 @@
 use crate::InnerSpace;
-use crate::vector::{Vec2, Vec3};
+use crate::vector::{v2, v3};
 
 pub trait Point {
 	fn lerp(&self, other: &Self, t: f32) -> Self;
@@ -7,24 +7,17 @@ pub trait Point {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Point2 {
+pub struct p2 {
 	x: f32,
 	y: f32
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Point3 {
-	x: f32,
-	y: f32,
-	z: f32
-}
-
-impl Point2 {
+impl p2 {
 	pub fn new(x: f32, y: f32) -> Self {
-		Point2 { x, y }
+		p2 { x, y }
 	}
 
-	pub fn from_vec(v: Vec2) -> Self {
+	pub fn from_vec(v: v2) -> Self {
 		Self { x: v.x(), y: v.y() }
 	}
 
@@ -37,12 +30,19 @@ impl Point2 {
 	}
 }
 
-impl Point3 {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct p3 {
+	x: f32,
+	y: f32,
+	z: f32
+}
+
+impl p3 {
 	pub fn new(x: f32, y: f32, z: f32) -> Self {
-		Point3 { x, y, z }
+		p3 { x, y, z }
 	}
 
-	pub fn from_vec(v: Vec3) -> Self {
+	pub fn from_vec(v: v3) -> Self {
 		Self { x: v.x(), y: v.y(), z: v.z() }
 	}
 
@@ -59,18 +59,18 @@ impl Point3 {
 	}
 }
 
-impl Point for Point2 {
+impl Point for p2 {
 	fn lerp(&self, other: &Self, t: f32) -> Self {
 		let x = self.x + (other.x - self.x) * t;
 		let y = self.y + (other.y - self.y) * t;
 		Self { x, y }
 	}
 
-	fn to_vec(&self) -> Vec2 {
-		Vec2::new(self.x, self.y)
+	fn to_vec(&self) -> v2 {
+		v2::new(self.x, self.y)
 	}
 }
-impl Point for Point3 {
+impl Point for p3 {
 	fn lerp(&self, other: &Self, t: f32) -> Self {
 		let x = self.x + (other.x - self.x) * t;
 		let y = self.y + (other.y - self.y) * t;
@@ -78,31 +78,31 @@ impl Point for Point3 {
 		Self { x, y, z }
 	}
 
-	fn to_vec(&self) -> Vec3 {
-		Vec3::new(self.x, self.y, self.z)
+	fn to_vec(&self) -> v3 {
+		v3::new(self.x, self.y, self.z)
 	}
 }
 
-impl Into<Vec2> for Point2 {
-	fn into(self) -> Vec2 {
+impl Into<v2> for p2 {
+	fn into(self) -> v2 {
 		self.to_vec()
 	}
 }
 
-impl Into<Vec3> for Point3 {
-	fn into(self) -> Vec3 {
+impl Into<v3> for p3 {
+	fn into(self) -> v3 {
 		self.to_vec()
 	}
 }
 
-impl From<Vec2> for Point2 {
-	fn from(v: Vec2) -> Self {
+impl From<v2> for p2 {
+	fn from(v: v2) -> Self {
 		Self::from_vec(v)
 	}
 }
 
-impl From<Vec3> for Point3 {
-	fn from(v: Vec3) -> Self {
+impl From<v3> for p3 {
+	fn from(v: v3) -> Self {
 		Self::from_vec(v)
 	}
 }

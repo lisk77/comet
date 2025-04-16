@@ -3,10 +3,10 @@
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2D)
 
-use comet_math::Mat4;
+use comet_math::m4;
 use crate::math::{
-	Vec2,
-	Vec3
+    v2,
+	v3
 };
 use comet_colors::Color as ColorTrait;
 use component_derive::Component;
@@ -18,12 +18,12 @@ use crate::{Entity, Scene};
 
 #[derive(Component)]
 pub struct Position2D {
-	position: Vec2
+	position: v2
 }
 
 #[derive(Component)]
 pub struct Position3D {
-	position: Vec3
+	position: v3
 }
 
 #[derive(Component)]
@@ -41,20 +41,20 @@ pub struct Rotation3D {
 #[derive(Component)]
 pub struct Rectangle2D{
 	position: Position2D,
-	size: Vec2
+	size: v2
 }
 
 #[derive(Component)]
 pub struct Render2D {
 	is_visible: bool,
 	texture_name: &'static str,
-	scale: Vec2
+	scale: v2
 }
 
 #[derive(Component)]
 pub struct Camera2D {
 	zoom: f32,
-	dimensions: Vec2,
+	dimensions: v2,
 	priority: u8
 }
 
@@ -120,7 +120,7 @@ pub trait Render {
 
 pub trait Camera {
 	fn get_visible_entities(&self, camera_position: Position2D, scene: Scene) -> Vec<Entity>;
-	fn get_projection_matrix(&self) -> Mat4;
+	fn get_projection_matrix(&self) -> m4;
 }
 
 // ##################################################
@@ -128,13 +128,13 @@ pub trait Camera {
 // ##################################################
 
 impl Position2D {
-	pub fn from_vec(vec: Vec2) -> Self {
+	pub fn from_vec(vec: v2) -> Self {
 		Self {
 			position: vec
 		}
 	}
 
-	pub fn as_vec(&self) -> Vec2 {
+	pub fn as_vec(&self) -> v2 {
 		self.position
 	}
 
@@ -156,13 +156,13 @@ impl Position2D {
 }
 
 impl Position3D {
-	pub fn from_vec(vec: Vec3) -> Self {
+	pub fn from_vec(vec: v3) -> Self {
 		Self {
 			position: vec
 		}
 	}
 
-	pub fn as_vec(&self) -> Vec3 {
+	pub fn as_vec(&self) -> v3 {
 		self.position
 	}
 
@@ -192,7 +192,7 @@ impl Position3D {
 }
 
 impl Rectangle2D {
-	pub fn new(position: Position2D, size: Vec2) -> Self {
+	pub fn new(position: Position2D, size: v2) -> Self {
 		Self {
 			position,
 			size
@@ -205,7 +205,7 @@ impl Rectangle2D {
 	pub fn set_position(&mut self, position: Position2D) {
 		self.position = position;
 	}
-	pub fn size(&self) -> Vec2 {
+	pub fn size(&self) -> v2 {
 		self.size
 	}
 }
@@ -267,7 +267,7 @@ impl Transform2D {
 		&mut self.rotation
 	}
 
-	pub fn translate(&mut self, displacement: Vec2) {
+	pub fn translate(&mut self, displacement: v2) {
 		let x = self.position().x() + displacement.x();
 		let y = self.position().y() + displacement.y();
 		self.position_mut().set_x(x);
@@ -294,7 +294,7 @@ impl Transform3D {
 }
 
 impl Camera2D {
-	pub fn new(dimensions: Vec2, zoom: f32, priority: u8) -> Self {
+	pub fn new(dimensions: v2, zoom: f32, priority: u8) -> Self {
 		Self {
 			dimensions,
 			zoom,
@@ -310,11 +310,11 @@ impl Camera2D {
 		self.zoom = zoom;
 	}
 
-	pub fn dimensions(&self) -> Vec2 {
+	pub fn dimensions(&self) -> v2 {
 		self.dimensions
 	}
 
-	pub fn set_dimensions(&mut self, dimensions: Vec2) {
+	pub fn set_dimensions(&mut self, dimensions: v2) {
 		self.dimensions = dimensions;
 	}
 
@@ -348,13 +348,13 @@ impl Camera for Camera2D {
 		visible_entities
 	}
 
-	fn get_projection_matrix(&self) -> Mat4 {
+	fn get_projection_matrix(&self) -> m4 {
 		let left = -self.dimensions.x() / 2.0;
 		let right = self.dimensions.x() / 2.0;
 		let bottom = -self.dimensions.y() / 2.0;
 		let top = self.dimensions.y() / 2.0;
 
-		Mat4::OPENGL_CONV * Mat4::orthographic_projection(left, right, bottom, top, 1.0, 0.0)
+		m4::OPENGL_CONV * m4::orthographic_projection(left, right, bottom, top, 1.0, 0.0)
 	}
 }
 

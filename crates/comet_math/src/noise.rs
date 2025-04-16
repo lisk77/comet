@@ -1,7 +1,7 @@
 use image::{DynamicImage, GenericImage, GenericImageView, Rgba};
 use rand::Rng;
 use comet_log::debug;
-use crate::Vec2;
+use crate::v2;
 use crate::lerp;
 
 // TODO
