@@ -43,7 +43,7 @@ pub struct Renderer2D<'a> {
 }
 
 impl<'a> Renderer2D<'a> {
-	pub async fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
+	pub fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
 		let size = PhysicalSize::<u32>::new(1920, 1080);
 
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -53,16 +53,15 @@ impl<'a> Renderer2D<'a> {
 
 		let surface = instance.create_surface(window).unwrap();
 
-		let adapter = instance
+		let adapter = pollster::block_on(instance
 			.request_adapter(&wgpu::RequestAdapterOptions {
 				power_preference: wgpu::PowerPreference::default(),
 				compatible_surface: Some(&surface),
 				force_fallback_adapter: false,
-			})
-			.await
+			}))
 			.unwrap();
 
-		let (device, queue) = adapter
+		let (device, queue) = pollster::block_on(adapter
 			.request_device(
 				&wgpu::DeviceDescriptor {
 					label: None,
@@ -71,8 +70,7 @@ impl<'a> Renderer2D<'a> {
 					memory_hints: Default::default(),
 				},
 				None, // Trace path
-			)
-			.await
+			))
 			.unwrap();
 
 		let surface_caps = surface.get_capabilities(&adapter);
@@ -1009,8 +1007,8 @@ impl<'a> Renderer2D<'a> {
 }
 
 impl<'a> Renderer for Renderer2D<'a> {
-	async fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
-		Self::new(window, clear_color).await
+	fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
+		Self::new(window, clear_color)
 	}
 
 	fn size(&self) -> PhysicalSize<u32> {

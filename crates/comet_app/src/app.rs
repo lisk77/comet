@@ -250,7 +250,7 @@ impl App {
 		pollster::block_on(async {
 			let event_loop = EventLoop::new().unwrap();
 			let window = Arc::new(Self::create_window(self.title.clone(), &self.icon, &self.size ,&event_loop));
-			let mut renderer = R::new(window.clone(), self.clear_color.clone()).await;
+			let mut renderer = R::new(window.clone(), self.clear_color.clone());
 			info!("Renderer created! ({})", type_name::<R>());
 
 			info!("Setting up!");
