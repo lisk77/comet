@@ -32,13 +32,6 @@ pub enum ApplicationType {
 	App3D
 }
 
-pub enum AppMessage {
-	Resize(PhysicalSize<u32>),
-	Input(InputManager),
-	UpdateCompleted(f32),
-	Quit
-}
-
 pub struct App {
 	title: String,
 	icon: Option<Icon>,
