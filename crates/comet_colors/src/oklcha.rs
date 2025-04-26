@@ -96,6 +96,9 @@ impl Color for Oklcha {
 	fn to_wgpu(&self) -> wgpu::Color {
 		self.to_linear().to_wgpu()
 	}
+	fn to_linear(&self) -> LinearRgba {
+		self.to_linear()
+	}
 
 	fn to_vec(&self) -> v4 {
 		v4::new(self.lightness, self.chroma, self.hue, self.alpha)

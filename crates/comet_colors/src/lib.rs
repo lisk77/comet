@@ -24,6 +24,7 @@ mod oklcha;
 
 pub trait Color: Copy {
 	fn to_wgpu(&self) -> wgpu::Color;
+	fn to_linear(&self) -> LinearRgba;
 	fn to_vec(&self) -> v4;
 	fn from_vec(color: v4) -> Self;
 }

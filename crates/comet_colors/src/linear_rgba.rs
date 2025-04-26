@@ -136,6 +136,10 @@ impl Color for LinearRgba {
 		}
 	}
 
+	fn to_linear(&self) -> LinearRgba {
+		self.clone()
+	}
+
 	fn to_vec(&self) -> v4 {
 		v4::new(self.red, self.green, self.blue, self.alpha)
 	}

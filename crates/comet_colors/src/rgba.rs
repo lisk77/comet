@@ -348,6 +348,9 @@ impl Color for sRgba<f32> {
 	fn to_wgpu(&self) -> wgpu::Color {
 		self.to_linear().to_wgpu()
 	}
+	fn to_linear(&self) -> LinearRgba {
+		self.to_linear()
+	}
 
 	fn to_vec(&self) -> v4 {
 		v4::new(self.red, self.green, self.blue, self.alpha)
@@ -361,6 +364,9 @@ impl Color for sRgba<f32> {
 impl Color for sRgba<u8> {
 	fn to_wgpu(&self) -> wgpu::Color {
 		self.to_linear().to_wgpu()
+	}
+	fn to_linear(&self) -> LinearRgba {
+		self.to_linear()
 	}
 
 	fn to_vec(&self) -> v4 {

@@ -106,6 +106,10 @@ impl Color for Hsla {
 		self.to_linear().to_wgpu()
 	}
 
+	fn to_linear(&self) -> LinearRgba {
+		self.to_linear()
+	}
+
 	fn to_vec(&self) -> v4 {
 		v4::new(self.hue, self.saturation, self.lightness, self.alpha)
 	}
