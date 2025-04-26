@@ -1,31 +1,20 @@
 use std::any::{type_name, Any};
-use std::sync::{Arc, Mutex, RwLock};
-use std::sync::atomic::AtomicBool;
-use std::thread;
-use std::time::{Duration, Instant};
-use crossbeam_channel::bounded;
-use comet_ecs::{Camera2D, Component, Entity, Render, Render2D, Scene, Transform2D, Transform3D};
-use comet_resources::{ResourceManager, Vertex};
-use comet_renderer::renderer2d::Renderer2D;
+use std::sync::{Arc, RwLock};
+use comet_ecs::{Camera2D, Component, Entity, Render2D, Scene, Transform2D, Transform3D};
 
 use winit::{
-	event::{self, *},
-	event_loop::{self, EventLoop, EventLoopWindowTarget},
+	event::*,
+	event_loop::{EventLoop, EventLoopWindowTarget},
 	keyboard::{KeyCode, PhysicalKey},
 	window::{Icon, Window},
 };
-use comet_colors::LinearRgba;
-use comet_ecs::math::p3;
+use comet_colors::{Color, LinearRgba};
 use comet_log::*;
-use winit::dpi::{LogicalSize, PhysicalSize};
-use winit::event_loop::ControlFlow;
-use winit::window::Fullscreen;
+use winit::dpi::LogicalSize;
 use winit_input_helper::WinitInputHelper as InputManager;
-use comet_input::input_handler::InputHandler;
 use comet_input::keyboard::Key;
 use comet_renderer::renderer::Renderer;
 use comet_structs::ComponentSet;
-use crate::GameState;
 
 pub enum ApplicationType {
 	App2D,
@@ -78,8 +67,8 @@ impl App {
 		self
 	}
 
-	pub fn with_clear_color(mut self, clear_color: LinearRgba) -> Self {
-		self.clear_color = Some(clear_color);
+	pub fn with_clear_color(mut self, clear_color: impl Color) -> Self {
+		self.clear_color = Some(clear_color.to_linear());
 		self
 	}
 
