@@ -1,11 +1,10 @@
 use std::any::{type_name, Any};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use comet_ecs::{Camera2D, Component, Entity, Render2D, Scene, Transform2D, Transform3D};
 
 use winit::{
 	event::*,
-	event_loop::{EventLoop, EventLoopWindowTarget},
-	keyboard::{KeyCode, PhysicalKey},
+	event_loop::EventLoop,
 	window::{Icon, Window},
 };
 use comet_colors::{Color, LinearRgba};

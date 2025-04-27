@@ -1,10 +1,7 @@
 use std::any::TypeId;
-use bit_set::BitSet;
 use crate::{
 	Entity,
 	Component,
-	Transform2D,
-	Transform3D,
 	IdQueue,
 };
 use comet_log::*;
