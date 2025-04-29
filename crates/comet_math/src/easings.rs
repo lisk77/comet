@@ -21,7 +21,7 @@ pub fn ease_out_quad(x: f32) -> f32 {
 }
 
 pub fn ease_in_out_quad(x: f32) -> f32 {
-	if x < 0.5 { 2.0 * x * x } else { 1.0 - (-2.0 * x + 2.0).powf(2.0) / 2.0 }
+	if x < 0.5 { 2.0 * x * x } else { 1.0 - (-2.0 * x + 2.0).powi(2) / 2.0 }
 }
 
 pub fn ease_in_cubic(x: f32) -> f32 {
@@ -29,11 +29,11 @@ pub fn ease_in_cubic(x: f32) -> f32 {
 }
 
 pub fn ease_out_cubic(x: f32) -> f32 {
-	1.0 - (1.0 - x).powf(3.0)
+	1.0 - (1.0 - x).powi(3)
 }
 
 pub fn ease_in_out_cubic(x: f32) -> f32 {
-	if x < 0.5 { 4.0 * x * x * x } else { 1.0 - (-2.0 * x + 2.0).powf(3.0) / 2.0 }
+	if x < 0.5 { 4.0 * x * x * x } else { 1.0 - (-2.0 * x + 2.0).powi(3) / 2.0 }
 }
 
 pub fn ease_in_quart(x: f32) -> f32 {
@@ -41,11 +41,11 @@ pub fn ease_in_quart(x: f32) -> f32 {
 }
 
 pub fn ease_out_quart(x: f32) -> f32 {
-	1.0 - (1.0 - x).powf(4.0)
+	1.0 - (1.0 - x).powi(4)
 }
 
 pub fn ease_in_out_quart(x: f32) -> f32 {
-	if x < 0.5 { 8.0 * x * x * x * x } else { 1.0 - (-2.0 * x + 2.0).powf(4.0) / 2.0 }
+	if x < 0.5 { 8.0 * x * x * x * x } else { 1.0 - (-2.0 * x + 2.0).powi(4) / 2.0 }
 }
 
 pub fn ease_in_quint(x: f32) -> f32 {
@@ -53,11 +53,11 @@ pub fn ease_in_quint(x: f32) -> f32 {
 }
 
 pub fn ease_out_quint(x: f32) -> f32 {
-	1.0 - (1.0 - x).powf(5.0)
+	1.0 - (1.0 - x).powi(5)
 }
 
 pub fn ease_in_out_quint(x: f32) -> f32 {
-	if x < 0.5 { 16.0 * x * x * x * x * x } else { 1.0 - (-2.0 * x + 2.0).powf(5.0) / 2.0 }
+	if x < 0.5 { 16.0 * x * x * x * x * x } else { 1.0 - (-2.0 * x + 2.0).powi(5) / 2.0 }
 }
 
 pub fn ease_in_expo(x: f32) -> f32 {
@@ -77,29 +77,25 @@ pub fn ease_in_circ(x: f32) -> f32 {
 }
 
 pub fn ease_out_circ(x: f32) -> f32 {
-	(1.0 - (x - 1.0).powf(2.0)).sqrt()
+	(1.0 - (x - 1.0).powi(2)).sqrt()
 }
 
 pub fn ease_in_out_circ(x: f32) -> f32 {
-	if x < 0.5 { (1.0 - (1.0 - 2.0 * x).powf(2.0)).sqrt() / 2.0 } else { ((1.0 - (-2.0 * x + 2.0).powf(2.0)).sqrt() + 1.0) / 2.0 }
+	if x < 0.5 { (1.0 - (1.0 - 2.0 * x).powi(2)).sqrt() / 2.0 } else { ((1.0 - (-2.0 * x + 2.0).powi(2)).sqrt() + 1.0) / 2.0 }
 }
 
 pub fn ease_in_back(x: f32) -> f32 {
-	let c1 = 1.70158;
-	let c3 = c1 + 1.0;
-	c3 * x * x * x - c1 * x * x
+	2.70158 * x * x * x - 1.70158 * x * x
 }
 
 pub fn ease_out_back(x: f32) -> f32 {
-	let c1 = 1.70158;
-	let c3 = c1 + 1.0;
-	1.0 + c3 * (x - 1.0).powf(3.0) + c1 * (x - 1.0).powf(2.0)
+	1.0 + 2.70158 * (x - 1.0).powi(3) + 1.70158 * (x - 1.0).powi(2)
 }
 
 pub fn ease_in_out_back(x: f32) -> f32 {
 	let c1 = 1.70158;
 	let c2 = c1 * 1.525;
-	if x < 0.5 { (2.0 * x).powf(2.0) * ((c2 + 1.0) * 2.0 * x - c2) / 2.0 } else { ((2.0 * x - 2.0).powf(2.0) * ((c2 + 1.0) * (2.0 * x - 2.0) + c2) + 2.0) / 2.0 }
+	if x < 0.5 { (2.0 * x).powi(2) * ((c2 + 1.0) * 2.0 * x - c2) / 2.0 } else { ((2.0 * x - 2.0).powi(2) * ((c2 + 1.0) * (2.0 * x - 2.0) + c2) + 2.0) / 2.0 }
 }
 
 pub fn ease_in_elastic(x: f32) -> f32 {
