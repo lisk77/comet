@@ -206,7 +206,6 @@ impl Scene {
 		if self.archetypes.contains_archetype(&components) {
 			return self.archetypes.get_archetype(&components).unwrap().clone().iter().map(|x| *x as usize).collect();
 		}
-		error!("The given components {:?} are not registered in the scene!", components);
 		Vec::new()
 	}
 
