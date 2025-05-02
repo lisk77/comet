@@ -3,18 +3,20 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::BufferUsages;
+use wgpu::core::command::DrawKind::Draw;
 use wgpu::naga::ShaderStage;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 use comet_colors::Color;
-use comet_ecs::{Camera2D, Component, Position2D, Render, Render2D, Transform2D, Scene};
+use comet_ecs::{Camera2D, Component, Position2D, Render, Render2D, Transform2D, Scene, Text};
 use comet_log::*;
 use comet_math::{p2, p3, v2, v3};
 use comet_resources::{graphic_resource_manager::GraphicResourceManager, Texture, Vertex};
 use comet_resources::texture_atlas::TextureRegion;
 use comet_structs::ComponentSet;
 use crate::camera::{RenderCamera, CameraUniform};
+use crate::draw_info::DrawInfo;
 use crate::render_pass::{RenderPassInfo, RenderPassType};
 use crate::renderer::Renderer;
 
@@ -34,6 +36,7 @@ pub struct Renderer2D<'a> {
 	camera_buffer: wgpu::Buffer,
 	camera_bind_group: wgpu::BindGroup,
 	render_pass: Vec<RenderPassInfo>,
+	draw_info: Vec<DrawInfo>,
 	graphic_resource_manager: GraphicResourceManager,
 	delta_time: f32,
 	last_frame_time: Instant,
@@ -164,7 +167,6 @@ impl<'a> Renderer2D<'a> {
 				bind_group_layouts: &[
 					&texture_bind_group_layout,
 					&camera_bind_group_layout,
-					&texture_bind_group_layout,
 				],
 				push_constant_ranges: &[],
 			});
@@ -218,15 +220,15 @@ impl<'a> Renderer2D<'a> {
 			cache: None,
 		});
 
-		let mut render_pass = Vec::new();
-		render_pass.push(RenderPassInfo::new_engine_pass(
+		let mut render_pass: Vec<RenderPassInfo> = Vec::new();
+		/*render_pass.push(RenderPassInfo::new_engine_pass(
 			&device,
 			"Standard Render Pass".to_string(),
 			&texture_bind_group_layout,
 			&diffuse_texture,
 			vec![],
 			vec![],
-		));
+		));*/
 
 		let clear_color = match clear_color {
 			Some(color) => color.to_wgpu(),
@@ -282,6 +284,8 @@ impl<'a> Renderer2D<'a> {
 			],
 			label: Some("dummy_texture_bind_group"),
 		});
+		
+		let mut draw_info: Vec<DrawInfo> = Vec::new();
 
 		Self {
 			surface,
@@ -299,6 +303,7 @@ impl<'a> Renderer2D<'a> {
 			camera_buffer,
 			camera_bind_group,
 			render_pass,
+			draw_info,
 			graphic_resource_manager,
 			delta_time: 0.0,
 			last_frame_time: Instant::now(),
@@ -342,6 +347,19 @@ impl<'a> Renderer2D<'a> {
 		);
 		self.render_pass.push(render_pass);
 	}
+	
+	pub fn add_draw_call(&mut self, draw_call: String, texture: Texture) {
+		let draw_info = DrawInfo::new(
+			draw_call,
+			&self.device,
+			&texture,
+			&self.texture_bind_group_layout,
+			&self.texture_sampler,
+			vec![],
+			vec![],
+		);
+		self.draw_info.push(draw_info);
+	}
 
 	/// A function that loads a shader from the resources/shaders folder given the full name of the shader file.
 	pub fn load_shader(&mut self, file_name: &str, shader_stage: Option<ShaderStage>) {
@@ -377,22 +395,25 @@ impl<'a> Renderer2D<'a> {
 	pub fn load_font(&mut self, path: &str, size: f32) {
 		self.graphic_resource_manager.load_font(path, size);
 		let atlas = self.graphic_resource_manager.fonts().iter().find(|f| f.name() == path).unwrap().glyphs().atlas();
-		let font_pass = RenderPassInfo::new_engine_pass(
+		let font_info = DrawInfo::new(
+			format!("{}", path),
 			&self.device,
-			format!("Font Render Pass {}", path),
-			&self.texture_bind_group_layout,
 			&Texture::from_image(&self.device, &self.queue, atlas, None, false).unwrap(),
+			&self.texture_bind_group_layout,
+			&self.texture_sampler,
 			vec![],
 			vec![],
 		);
 
-		self.render_pass.push(font_pass);
+		self.draw_info.push(font_info);
 	}
 
 	/// An interface for getting the location of the texture in the texture atlas.
-	pub fn get_texture_region(&self, texture_path: String) -> &TextureRegion {
-		assert!(self.graphic_resource_manager.texture_atlas().textures().contains_key(&texture_path), "Texture not found in atlas");
-		self.graphic_resource_manager.texture_atlas().textures().get(&texture_path).unwrap()
+	pub fn get_texture_region(&self, texture_path: String) -> Option<&TextureRegion> {
+		if !self.graphic_resource_manager.texture_atlas().textures().contains_key(&texture_path) {
+			error!("Texture {} not found in atlas", &texture_path);
+		}
+		self.graphic_resource_manager.texture_atlas().textures().get(&texture_path)
 	}
 
 	pub fn get_glyph_region(&self, glyph: char, font: String) -> &TextureRegion {
@@ -404,11 +425,27 @@ impl<'a> Renderer2D<'a> {
 	/// The old texture atlas will be replaced with the new one.
 	pub fn set_texture_atlas_by_paths(&mut self, paths: Vec<String>) {
 		self.graphic_resource_manager.create_texture_atlas(paths);
-		self.render_pass[0].set_texture(&self.device, &self.texture_bind_group_layout, &Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap());
+		let universal_draw = DrawInfo::new(
+			"Universal Draw".to_string(),
+			&self.device,
+			&Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap(),
+			&self.texture_bind_group_layout,
+			&self.texture_sampler,
+			vec![],
+			vec![],
+		);
+
+		self.draw_info.push(universal_draw);
+		//self.render_pass[0].set_texture(&self.device, &self.texture_bind_group_layout, &Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap());
 	}
 
 	fn set_texture_atlas(&mut self, texture_atlas: Texture) {
-		self.render_pass[0].set_texture(
+		self.draw_info[0].set_texture(
+			&self.device,
+			&self.texture_bind_group_layout,
+			&texture_atlas,
+		);
+		/*self.render_pass[0].set_texture(
 			&self.device,
 			&self.texture_bind_group_layout,
 			&Texture::from_image(
@@ -418,7 +455,7 @@ impl<'a> Renderer2D<'a> {
 				None,
 				false
 			).unwrap()
-		);
+		);*/
 	}
 
 	fn get_project_root() -> std::io::Result<PathBuf> {
@@ -451,8 +488,10 @@ impl<'a> Renderer2D<'a> {
 
 	/// A function that writes on the buffers and sets the geometry and index buffer of the `Renderer2D` with the given data.
 	fn set_buffers(&mut self, new_geometry_buffer: Vec<Vertex>, new_index_buffer: Vec<u16>) {
-		self.render_pass[0].set_vertex_buffer(&self.device, &self.queue, new_geometry_buffer);
-		self.render_pass[0].set_index_buffer(&self.device, &self.queue, new_index_buffer);
+		self.draw_info[0].update_vertex_buffer(&self.device, &self.queue, new_geometry_buffer);
+		self.draw_info[0].update_index_buffer(&self.device, &self.queue, new_index_buffer);
+		//self.render_pass[0].set_vertex_buffer(&self.device, &self.queue, new_geometry_buffer);
+		//self.render_pass[0].set_index_buffer(&self.device, &self.queue, new_index_buffer);
 	}
 
 	/// A function that adds data to the already existing geometry and index buffers of the `Renderer2D`.
@@ -546,7 +585,7 @@ impl<'a> Renderer2D<'a> {
 		}
 	}
 
-	fn add_text_to_buffers(&self, text: String, font: String, size: f32, position: p2, color: wgpu::Color) -> (Vec<Vertex>, Vec<u16>) {
+	fn add_text_to_buffers(&self, draw_index: usize, text: String, font: String, size: f32, position: p2, color: wgpu::Color) -> (Vec<Vertex>, Vec<u16>) {
 		let vert_color = [color.r as f32, color.g as f32, color.b as f32, color.a as f32];
 
 		let screen_position = p2::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32);
@@ -584,7 +623,7 @@ impl<'a> Renderer2D<'a> {
 					Vertex::new([ glyph_right, glyph_top,    0.0 ], [region.u1(), region.v0()], vert_color),
 				];
 
-				let buffer_size = self.render_pass[1].vertex_data().len() as u16;
+				let buffer_size = vertex_data.len() as u16;
 				let indices: &mut Vec<u16> = &mut vec![
 					buffer_size,     buffer_size + 1, buffer_size + 3,
 					buffer_size + 1, buffer_size + 2, buffer_size + 3,
@@ -682,7 +721,7 @@ impl<'a> Renderer2D<'a> {
 		}
 
 		let entities =  scene.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
-		//let texts = scene.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), comet_ecs::Text::type_id()]));
+		let texts = scene.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), comet_ecs::Text::type_id()]));
 
 		self.setup_camera(cameras, scene);
 
@@ -697,7 +736,14 @@ impl<'a> Renderer2D<'a> {
 				let mut position = transform_component.position().clone();
 				position.set_x(position.x() / self.config().width as f32);
 				position.set_y(position.y() / self.config().height as f32);
-				let region = self.get_texture_region(renderer_component.get_texture().to_string());
+				let mut t_region: Option<&TextureRegion> = None;
+				match self.get_texture_region(renderer_component.get_texture().to_string()) {
+					Some(texture_region) => {
+						t_region = Some(texture_region);
+					},
+					None => continue,
+				}
+				let region = t_region.unwrap();
 				let (dim_x, dim_y) = region.dimensions();
 
 				let (bound_x, bound_y) =
@@ -719,17 +765,18 @@ impl<'a> Renderer2D<'a> {
 			}
 		}
 
-		/*for text in texts {
-			let component = scene.get_component::<comet_ecs::Text>(text).unwrap();
+		for text in texts {
+			let component = scene.get_component::<Text>(text).unwrap();
 			let transform = scene.get_component::<Transform2D>(text).unwrap();
 
 			if component.is_visible() {
-				let (vertices, indices) = self.add_text_to_buffers(component.content().to_string(), component.font().to_string(), component.font_size(), Point2::from_vec(transform.position().as_vec()), component.color().to_wgpu());
-				let render_pass = self.render_pass.iter_mut().find(|r| r.pass_name() == format!("Font Render Pass {}", component.font())).unwrap();
-				render_pass.set_vertex_buffer(&self.device, &self.queue, vertices);
-				render_pass.set_index_buffer(&self.device, &self.queue, indices);
+				let draw_index = self.draw_info.iter().enumerate().find(|(_, d)| d.name() == &format!("{}", component.font())).unwrap().0;
+				let (vertices, indices) = self.add_text_to_buffers(draw_index, component.content().to_string(), component.font().to_string(), component.font_size(), p2::from_vec(transform.position().as_vec()), component.color().to_wgpu());
+				let draw = self.draw_info.iter_mut().find(|d| d.name() == &format!("{}", component.font())).unwrap();
+				draw.update_vertex_buffer(&self.device, &self.queue, vertices);
+				draw.update_index_buffer(&self.device, &self.queue, indices);
 			}
-		}*/
+		}
 
 		self.set_buffers(vertex_buffer, index_buffer);
 	}
@@ -806,7 +853,7 @@ impl<'a> Renderer2D<'a> {
 				let mut position = transform_component.unwrap().position().clone();
 				position.set_x(position.x() / self.config().width as f32);
 				position.set_y(position.y() / self.config().height as f32);
-				let region = self.get_texture_region(renderer_component.unwrap().get_texture().to_string());
+				let region = self.get_texture_region(renderer_component.unwrap().get_texture().to_string()).unwrap();
 				let (dim_x, dim_y) = region.dimensions();
 
 				let (bound_x, bound_y) =
@@ -847,157 +894,33 @@ impl<'a> Renderer2D<'a> {
 			.create_command_encoder(&wgpu::CommandEncoderDescriptor {
 				label: Some("Render Encoder"),
 			});
-
-		if self.render_pass.len() < 2 {
-			{
-				let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-					label: Some("Render Pass"),
-					color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-						view: &output_view,
-						resolve_target: None,
-						ops: wgpu::Operations {
-							load: wgpu::LoadOp::Clear(self.clear_color),
-							store: wgpu::StoreOp::Store,
-						},
-					})],
-					depth_stencil_attachment: None,
-					occlusion_query_set: None,
-					timestamp_writes: None,
-				});
-
-				render_pass.set_pipeline(&self.universal_render_pipeline);
-				render_pass.set_bind_group(0, self.render_pass[0].texture_bind_group(), &[]);
-				render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-				render_pass.set_bind_group(2, &self.dummy_texture_bind_group, &[]);
-				render_pass.set_vertex_buffer(0, self.render_pass[0].vertex_buffer().slice(..));
-				render_pass.set_index_buffer(self.render_pass[0].index_buffer().slice(..), wgpu::IndexFormat::Uint16);
-				render_pass.draw_indexed(0..self.render_pass[0].num_indices(), 0, 0..1);
-			}
-		}
-		else {
-		    let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-				label: Some("Intermediary Texture"),
-				size: wgpu::Extent3d {
-					width: self.config.width,
-					height: self.config.height,
-					depth_or_array_layers: 1,
-				},
-				mip_level_count: 1,
-				sample_count: 1,
-				dimension: wgpu::TextureDimension::D2,
-				format: self.config.format,
-				usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::TEXTURE_BINDING,
-				view_formats: &[wgpu::TextureFormat::Bgra8UnormSrgb],
+		
+		{
+			let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+				label: Some("Render Pass"),
+				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+					view: &output_view,
+					resolve_target: None,
+					ops: wgpu::Operations {
+						load: wgpu::LoadOp::Clear(self.clear_color),
+						store: wgpu::StoreOp::Store,
+					},
+				})],
+				depth_stencil_attachment: None,
+				occlusion_query_set: None,
+				timestamp_writes: None,
 			});
 
-			let intermediary_texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-			let (middle, last) = self.render_pass.split_at(self.render_pass.len() - 1);
-			let first_pass = &middle[0];
-			let last_pass = &last[0];
-
-			{
-				let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-					label: Some("Render Pass"),
-					color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-						view: &intermediary_texture_view,
-						resolve_target: None,
-						ops: wgpu::Operations {
-							load: wgpu::LoadOp::Clear(self.clear_color),
-							store: wgpu::StoreOp::Store,
-						},
-					})],
-					depth_stencil_attachment: None,
-					occlusion_query_set: None,
-					timestamp_writes: None,
-				});
-
+			for i in 0..self.draw_info.len() {
 				render_pass.set_pipeline(&self.universal_render_pipeline);
-				render_pass.set_bind_group(0, first_pass.texture_bind_group(), &[]);
+				render_pass.set_bind_group(0, self.draw_info[i].texture(), &[]);
 				render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-				render_pass.set_bind_group(2, &self.dummy_texture_bind_group, &[]);
-				render_pass.set_vertex_buffer(0, first_pass.vertex_buffer().slice(..));
-				render_pass.set_index_buffer(first_pass.index_buffer().slice(..), wgpu::IndexFormat::Uint16);
-				render_pass.draw_indexed(0..first_pass.num_indices(), 0, 0..1);
+				render_pass.set_vertex_buffer(0, self.draw_info[i].vertex_buffer().slice(..));
+				render_pass.set_index_buffer(self.draw_info[i].index_buffer().slice(..), wgpu::IndexFormat::Uint16);
+				render_pass.draw_indexed(0..self.draw_info[i].num_indices(), 0, 0..1);
 			}
-
-			/*if middle.iter().skip(1).len() > 0 {
-				let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-					label: Some("Middle Render Pass"),
-					color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-						view: &intermediary_texture_view,
-						resolve_target: None,
-						ops: wgpu::Operations {
-							load: wgpu::LoadOp::Load,
-							store: wgpu::StoreOp::Store,
-						},
-					})],
-					depth_stencil_attachment: None,
-					occlusion_query_set: None,
-					timestamp_writes: None,
-				});
-
-				for pass in &middle[1..] {
-					render_pass.set_pipeline(match pass.pass_type() {
-						RenderPassType::Engine => &self.universal_render_pipeline,
-						RenderPassType::User => pass.pipeline().unwrap(),
-					});
-
-					render_pass.set_bind_group(0, pass.texture_bind_group(), &[]);
-					render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-					render_pass.set_bind_group(2, &self.dummy_texture_bind_group, &[]);
-					render_pass.set_vertex_buffer(0, pass.vertex_buffer().slice(..));
-					render_pass.set_index_buffer(pass.index_buffer().slice(..), wgpu::IndexFormat::Uint16);
-					render_pass.draw_indexed(0..pass.num_indices(), 0, 0..1);
-				}
-			}*/
-
-			let intermediary_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-				layout: &self.texture_bind_group_layout,
-				entries: &[
-					wgpu::BindGroupEntry {
-						binding: 0,
-						resource: wgpu::BindingResource::TextureView(&intermediary_texture_view),
-					},
-					wgpu::BindGroupEntry {
-						binding: 1,
-						resource: wgpu::BindingResource::Sampler(&self.texture_sampler),
-					},
-				],
-				label: Some("intermediary_bind_group"),
-			});
-
-			{
-				let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-					label: Some("Last Render Pass"),
-					color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-						view: &output_view,
-						resolve_target: None,
-						ops: wgpu::Operations {
-							load: wgpu::LoadOp::Clear(self.clear_color),
-							store: wgpu::StoreOp::Store,
-						},
-					})],
-					depth_stencil_attachment: None,
-					occlusion_query_set: None,
-					timestamp_writes: None,
-				});
-
-				render_pass.set_pipeline(match last_pass.pass_type() {
-					RenderPassType::Engine => &self.universal_render_pipeline,
-					RenderPassType::User => last_pass.pipeline().unwrap(),
-				});
-
-				render_pass.set_bind_group(0, last_pass.texture_bind_group(), &[]);
-				render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-				render_pass.set_bind_group(2, &intermediary_bind_group, &[]);
-				render_pass.set_vertex_buffer(0, last_pass.vertex_buffer().slice(..));
-				render_pass.set_index_buffer(last_pass.index_buffer().slice(..), wgpu::IndexFormat::Uint16);
-				render_pass.draw_indexed(0..last_pass.num_indices(), 0, 0..1);
-			}
-
 		}
-
+		
 		self.queue.submit(iter::once(encoder.finish()));
 		output.present();
 		Ok(())

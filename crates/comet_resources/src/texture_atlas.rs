@@ -249,27 +249,30 @@ impl TextureAtlas {
 			&glyphs.iter().map(|g| g.render.clone()).collect::<Vec<_>>()
 		);
 
-		let mut base = DynamicImage::new_rgba8(width, height);
+		let padding = (glyphs.len() * 3) as u32;
+
+		let mut base = DynamicImage::new_rgba8(width + padding, height);
 		let mut regions = HashMap::new();
 		let mut current_row_height = glyphs[0].render.height();
 		let mut x_offset: u32 = 0;
 		let mut y_offset: u32 = 0;
+
 
 		for g in glyphs.iter() {
 			let glyph_w = g.render.width();
 			let glyph_h = g.render.height();
 
 			if glyph_h != current_row_height {
-				y_offset += current_row_height;
+				y_offset += current_row_height + 3;
 				x_offset = 0;
 				current_row_height = glyph_h;
 			}
 
 			Self::insert_texture_at(&mut base, &g.render, x_offset, y_offset);
 
-			let u0 = x_offset as f32 / width as f32;
+			let u0 = x_offset as f32 / (width + padding) as f32;
 			let v0 = y_offset as f32 / height as f32;
-			let u1 = (x_offset + glyph_w) as f32 / width as f32;
+			let u1 = (x_offset + glyph_w) as f32 / (width + padding) as f32;
 			let v1 = (y_offset + glyph_h) as f32 / height as f32;
 
 			let region = TextureRegion::new(
@@ -282,7 +285,7 @@ impl TextureAtlas {
 
 			regions.insert(g.name.clone(), region);
 
-			x_offset += glyph_w;
+			x_offset += glyph_w + 3;
 		}
 
 		TextureAtlas {
