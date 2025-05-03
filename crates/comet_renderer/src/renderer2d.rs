@@ -45,7 +45,7 @@ pub struct Renderer2D<'a> {
 
 impl<'a> Renderer2D<'a> {
 	pub fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
-		let size = PhysicalSize::<u32>::new(1920, 1080);
+		let size = window.inner_size();//PhysicalSize::<u32>::new(1920, 1080);
 
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
 			backends: wgpu::Backends::PRIMARY,
@@ -592,7 +592,19 @@ impl<'a> Renderer2D<'a> {
 		let scale_factor = size / self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().size();
 
 		let line_height = (self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().line_height() / self.config.height as f32) * scale_factor;
-		let lines = text.split("\n").collect::<Vec<&str>>();
+		let lines = text
+			.split("\n")
+			.map(|s| {
+				s.split("").map(|escape| {
+					match escape {
+						_ if escape == "\t" => {
+							"  "
+						} 
+						_ => escape
+					}
+				}).collect::<String>()
+			})
+			.collect::<Vec<String>>();
 
 		let mut x_offset = 0.0;
 		let mut y_offset = 0.0;
