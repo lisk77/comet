@@ -1,13 +1,13 @@
 use std::any::{type_name, Any};
 use std::sync::Arc;
-use comet_ecs::{Camera2D, Component, Entity, Render2D, Scene, Transform2D, Transform3D};
+use comet_ecs::{Camera2D, Color, Component, Entity, Render2D, Scene, Text, Transform2D, Transform3D};
 
 use winit::{
 	event::*,
 	event_loop::EventLoop,
 	window::{Icon, Window},
 };
-use comet_colors::{Color, LinearRgba};
+use comet_colors::{Color as ColorTrait, LinearRgba};
 use comet_log::*;
 use winit::dpi::LogicalSize;
 use winit_input_helper::WinitInputHelper as InputManager;
@@ -66,7 +66,7 @@ impl App {
 		self
 	}
 
-	pub fn with_clear_color(mut self, clear_color: impl Color) -> Self {
+	pub fn with_clear_color(mut self, clear_color: impl ColorTrait) -> Self {
 		self.clear_color = Some(clear_color.to_linear());
 		self
 	}
@@ -82,7 +82,8 @@ impl App {
 				info!("Creating 2D app!");
 				self.scene.register_component::<Transform2D>();
 				self.scene.register_component::<Render2D>();
-				self.scene.register_component::<Camera2D>()
+				self.scene.register_component::<Camera2D>();
+				self.scene.register_component::<Text>();
 			},
 			ApplicationType::App3D => {
 				info!("Creating 3D app!");

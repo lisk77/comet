@@ -16,3 +16,4 @@ wgpu = { version = "22.0", features = ["glsl", "wgsl", "naga-ir"]}
 winit = { version = "0.29", features = ["rwh_05"] }
 chrono = "0.4.40"
 pollster = "0.3"
+image = "0.24"

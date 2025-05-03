@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::BufferUsages;
-use wgpu::core::command::DrawKind::Draw;
 use wgpu::naga::ShaderStage;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
@@ -11,14 +10,11 @@ use winit::window::Window;
 use comet_colors::Color;
 use comet_ecs::{Camera2D, Component, Position2D, Render, Render2D, Transform2D, Scene, Text};
 use comet_log::*;
-use comet_math::{p2, p3, v2, v3};
+use comet_math::{p2, v2, v3};
 use comet_resources::{graphic_resource_manager::GraphicResourceManager, Texture, Vertex};
 use comet_resources::texture_atlas::TextureRegion;
 use comet_structs::ComponentSet;
-use crate::camera::{RenderCamera, CameraUniform};
-use crate::draw_info::DrawInfo;
-use crate::render_pass::{RenderPassInfo, RenderPassType};
-use crate::renderer::Renderer;
+use crate::{renderer::Renderer, draw_info::DrawInfo, camera::{RenderCamera, CameraUniform}};
 
 pub struct Renderer2D<'a> {
 	surface: wgpu::Surface<'a>,
@@ -26,16 +22,13 @@ pub struct Renderer2D<'a> {
 	queue: wgpu::Queue,
 	config: wgpu::SurfaceConfiguration,
 	size: PhysicalSize<u32>,
-	render_pipeline_layout: wgpu::PipelineLayout,
 	universal_render_pipeline: wgpu::RenderPipeline,
 	texture_bind_group_layout: wgpu::BindGroupLayout,
-	dummy_texture_bind_group: wgpu::BindGroup,
 	texture_sampler: wgpu::Sampler,
 	camera: RenderCamera,
 	camera_uniform: CameraUniform,
 	camera_buffer: wgpu::Buffer,
 	camera_bind_group: wgpu::BindGroup,
-	render_pass: Vec<RenderPassInfo>,
 	draw_info: Vec<DrawInfo>,
 	graphic_resource_manager: GraphicResourceManager,
 	delta_time: f32,
@@ -93,15 +86,11 @@ impl<'a> Renderer2D<'a> {
 		};
 
 		let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-			label: Some("Shader"),
+			label: Some("Universal Shader"),
 			source: wgpu::ShaderSource::Wgsl(include_str!("base2d.wgsl").into()),
 		});
 
 		let graphic_resource_manager = GraphicResourceManager::new();
-
-		let diffuse_bytes = include_bytes!(r"../../../resources/textures/comet_icon.png");
-		let diffuse_texture =
-			Texture::from_bytes(&device, &queue, diffuse_bytes, "comet_icon.png", false).unwrap();
 
 		let texture_bind_group_layout =
 			device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -123,7 +112,7 @@ impl<'a> Renderer2D<'a> {
 						count: None,
 					},
 				],
-				label: Some("texture_bind_group_layout"),
+				label: Some("Universal Texture Bind Group Layout"),
 			});
 
 		let camera = RenderCamera::new(1.0, v2::new(2.0, 2.0), v3::new(0.0, 0.0, 0.0));
@@ -149,7 +138,7 @@ impl<'a> Renderer2D<'a> {
 					},
 					count: None,
 				}],
-				label: Some("camera_bind_group_layout"),
+				label: Some("Universal Camera Bind Group Layout"),
 			});
 
 		let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -158,12 +147,12 @@ impl<'a> Renderer2D<'a> {
 				binding: 0,
 				resource: camera_buffer.as_entire_binding(),
 			}],
-			label: Some("camera_bind_group"),
+			label: Some("Universal Camera Bind Group"),
 		});
 
 		let render_pipeline_layout =
 			device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-				label: Some("Render Pipeline Layout"),
+				label: Some("Universal Render Pipeline Layout"),
 				bind_group_layouts: &[
 					&texture_bind_group_layout,
 					&camera_bind_group_layout,
@@ -172,7 +161,7 @@ impl<'a> Renderer2D<'a> {
 			});
 
 		let universal_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-			label: Some("Render Pipeline"),
+			label: Some("Universal Render Pipeline"),
 			layout: Some(&render_pipeline_layout),
 			vertex: wgpu::VertexState {
 				module: &shader,
@@ -220,16 +209,6 @@ impl<'a> Renderer2D<'a> {
 			cache: None,
 		});
 
-		let mut render_pass: Vec<RenderPassInfo> = Vec::new();
-		/*render_pass.push(RenderPassInfo::new_engine_pass(
-			&device,
-			"Standard Render Pass".to_string(),
-			&texture_bind_group_layout,
-			&diffuse_texture,
-			vec![],
-			vec![],
-		));*/
-
 		let clear_color = match clear_color {
 			Some(color) => color.to_wgpu(),
 			None => wgpu::Color {
@@ -254,38 +233,19 @@ impl<'a> Renderer2D<'a> {
 			border_color: None,
 			..Default::default()
 		});
-
-		let empty_texture = device.create_texture(&wgpu::TextureDescriptor {
-			label: Some("Empty Texture"),
-			size: wgpu::Extent3d {
-				width: config.width,
-				height: config.height,
-				depth_or_array_layers: 1,
-			},
-			mip_level_count: 1,
-			sample_count: 1,
-			dimension: wgpu::TextureDimension::D2,
-			format: wgpu::TextureFormat::Bgra8UnormSrgb,
-			usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-			view_formats: &[wgpu::TextureFormat::Bgra8UnormSrgb],
-		});
-
-		let dummy_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &texture_bind_group_layout,
-			entries: &[
-				wgpu::BindGroupEntry {
-					binding: 0,
-					resource: wgpu::BindingResource::TextureView(&empty_texture.create_view(&wgpu::TextureViewDescriptor::default())),
-				},
-				wgpu::BindGroupEntry {
-					binding: 1,
-					resource: wgpu::BindingResource::Sampler(&texture_sampler),
-				},
-			],
-			label: Some("dummy_texture_bind_group"),
-		});
 		
 		let mut draw_info: Vec<DrawInfo> = Vec::new();
+		draw_info.push(
+			DrawInfo::new(
+				"Universal Draw".to_string(),
+				&device,
+				&Texture::from_image(&device, &queue, &image::DynamicImage::new(1, 1, image::ColorType::Rgba8), None, false).unwrap(),
+				&texture_bind_group_layout,
+				&texture_sampler,
+				vec![],
+				vec![],
+			)
+		);
 
 		Self {
 			surface,
@@ -293,16 +253,13 @@ impl<'a> Renderer2D<'a> {
 			queue,
 			config,
 			size,
-			render_pipeline_layout,
 			universal_render_pipeline,
 			texture_bind_group_layout,
-			dummy_texture_bind_group,
 			texture_sampler,
 			camera,
 			camera_uniform,
 			camera_buffer,
 			camera_bind_group,
-			render_pass,
 			draw_info,
 			graphic_resource_manager,
 			delta_time: 0.0,
@@ -325,27 +282,11 @@ impl<'a> Renderer2D<'a> {
 
 	pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
 		if new_size.width > 0 && new_size.height > 0 {
-			//self.projection.resize(new_size.width, new_size.height);
 			self.size = new_size;
 			self.config.width = new_size.width;
 			self.config.height = new_size.height;
 			self.surface.configure(&self.device, &self.config);
 		}
-	}
-
-	pub fn add_render_pass(&mut self, name: String, texture: Texture, shader: String) {
-		let render_pass = RenderPassInfo::new_user_pass(
-			&self.device,
-			name,
-			&self.texture_bind_group_layout,
-			&texture,
-			self.graphic_resource_manager.get_shader(shader.as_str()).unwrap(),
-			vec![],
-			vec![],
-			&self.render_pipeline_layout,
-			&self.config
-		);
-		self.render_pass.push(render_pass);
 	}
 	
 	pub fn add_draw_call(&mut self, draw_call: String, texture: Texture) {
@@ -361,12 +302,13 @@ impl<'a> Renderer2D<'a> {
 		self.draw_info.push(draw_info);
 	}
 
-	/// A function that loads a shader from the resources/shaders folder given the full name of the shader file.
+	/// A function that loads a shader from the resources/shaders dir given the full name of the shader file.
 	pub fn load_shader(&mut self, file_name: &str, shader_stage: Option<ShaderStage>) {
-		self.graphic_resource_manager.load_shader(shader_stage, ((Self::get_project_root().unwrap().as_os_str().to_str().unwrap().to_string() + "\\resources\\shaders\\").as_str().to_string() + file_name.clone()).as_str(), &self.device).unwrap();
+		self.graphic_resource_manager.load_shader(shader_stage, ((Self::get_project_root().unwrap().as_os_str().to_str().unwrap().to_string() + "/resources/shaders/").as_str().to_string() + file_name).as_str(), &self.device).unwrap();
 		info!("Shader ({}) loaded successfully", file_name);
 	}
 
+	/// A function that loads a list of shaders from the given filenames out of the resources/shaders dir
 	pub fn load_shaders(&mut self, shader_stages: Vec<Option<ShaderStage>>, file_names: Vec<&str>) {
 		for (i, file_name) in file_names.iter().enumerate() {
 			self.load_shader(file_name, shader_stages[i].clone());
@@ -383,8 +325,6 @@ impl<'a> Renderer2D<'a> {
 				return;
 			}
 		};
-
-		self.render_pass[0].set_shader(&self.device, &self.config, &self.render_pipeline_layout, module);
 	}
 
 	/// A function to revert back to the base shader of the `Renderer2D`
@@ -392,6 +332,7 @@ impl<'a> Renderer2D<'a> {
 		todo!()
 	}
 
+	/// A function to load a TTF font from the specified path
 	pub fn load_font(&mut self, path: &str, size: f32) {
 		self.graphic_resource_manager.load_font(path, size);
 		let atlas = self.graphic_resource_manager.fonts().iter().find(|f| f.name() == path).unwrap().glyphs().atlas();
@@ -416,6 +357,7 @@ impl<'a> Renderer2D<'a> {
 		self.graphic_resource_manager.texture_atlas().textures().get(&texture_path)
 	}
 
+	/// A function to get the `TextureRegion` of a specified glyph
 	pub fn get_glyph_region(&self, glyph: char, font: String) -> &TextureRegion {
 		let font_atlas = self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap();
 		font_atlas.get_glyph(glyph).unwrap()
@@ -425,18 +367,7 @@ impl<'a> Renderer2D<'a> {
 	/// The old texture atlas will be replaced with the new one.
 	pub fn set_texture_atlas_by_paths(&mut self, paths: Vec<String>) {
 		self.graphic_resource_manager.create_texture_atlas(paths);
-		let universal_draw = DrawInfo::new(
-			"Universal Draw".to_string(),
-			&self.device,
-			&Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap(),
-			&self.texture_bind_group_layout,
-			&self.texture_sampler,
-			vec![],
-			vec![],
-		);
-
-		self.draw_info.push(universal_draw);
-		//self.render_pass[0].set_texture(&self.device, &self.texture_bind_group_layout, &Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap());
+		self.draw_info[0].set_texture(&self.device, &self.texture_bind_group_layout, &Texture::from_image(&self.device, &self.queue, self.graphic_resource_manager.texture_atlas().atlas(), None, false).unwrap());
 	}
 
 	fn set_texture_atlas(&mut self, texture_atlas: Texture) {
@@ -445,17 +376,6 @@ impl<'a> Renderer2D<'a> {
 			&self.texture_bind_group_layout,
 			&texture_atlas,
 		);
-		/*self.render_pass[0].set_texture(
-			&self.device,
-			&self.texture_bind_group_layout,
-			&Texture::from_image(
-				&self.device,
-				&self.queue,
-				&texture_atlas.to_image(&self.device, &self.queue).unwrap(),
-				None,
-				false
-			).unwrap()
-		);*/
 	}
 
 	fn get_project_root() -> std::io::Result<PathBuf> {
@@ -490,102 +410,9 @@ impl<'a> Renderer2D<'a> {
 	fn set_buffers(&mut self, new_geometry_buffer: Vec<Vertex>, new_index_buffer: Vec<u16>) {
 		self.draw_info[0].update_vertex_buffer(&self.device, &self.queue, new_geometry_buffer);
 		self.draw_info[0].update_index_buffer(&self.device, &self.queue, new_index_buffer);
-		//self.render_pass[0].set_vertex_buffer(&self.device, &self.queue, new_geometry_buffer);
-		//self.render_pass[0].set_index_buffer(&self.device, &self.queue, new_index_buffer);
 	}
 
-	/// A function that adds data to the already existing geometry and index buffers of the `Renderer2D`.
-	fn push_to_buffers(&mut self, new_geometry_data: &mut Vec<Vertex>, new_index_buffer: &mut Vec<u16>) {
-		self.render_pass[0].push_to_vertex_buffer(&self.device, new_geometry_data);
-		self.render_pass[0].push_to_index_buffer(&self.device, new_index_buffer);
-	}
-
-	/// A function that clears the geometry and index buffers of the `Renderer2D`.
-	fn clear_buffers(&mut self) {
-		todo!()
-	}
-
-	/// A function to just draw a textured quad at a given position.
-	pub fn draw_texture_at(&mut self, texture_path: String, position: p3) {
-		let region = self.graphic_resource_manager.texture_locations().get(&texture_path).unwrap();
-		let (dim_x, dim_y) = region.dimensions();
-
-		let (bound_x, bound_y) =
-			((dim_x as f32/ self.config.width as f32) * 0.5, (dim_y as f32/ self.config.height as f32) * 0.5);
-
-		let vertices: &mut Vec<Vertex> = &mut vec![
-			Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.u0(), region.v0()], [0.0, 0.0, 0.0, 0.0] ),
-			Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.u0(), region.v1()], [0.0, 0.0, 0.0, 0.0] ),
-			Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0 + position.z()], [region.u1(), region.v1()], [0.0, 0.0, 0.0, 0.0] ) ,
-			Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0 + position.z()], [region.u1(), region.v0()], [0.0, 0.0, 0.0, 0.0] )
-		];
-
-		let buffer_size = self.render_pass[0].vertex_data().len() as u16;
-
-		let indices: &mut Vec<u16> = &mut vec![
-			0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
-			1 + buffer_size, 2 + buffer_size, 3 + buffer_size
-		];
-
-		self.push_to_buffers(vertices, indices)
-	}
-
-	/// A function to draw text at a given position.
-	pub fn draw_text_at(&mut self, text: &str, font: String, size: f32, position: p2, color: impl Color) {
-		//self.set_font_atlas(font.clone());
-
-		let wgpu_color = color.to_wgpu();
-		let vert_color = [wgpu_color.r as f32, wgpu_color.g as f32, wgpu_color.b as f32, wgpu_color.a as f32];
-
-		let screen_position = p2::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32);
-		let scale_factor = size / self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().size();
-
-		let line_height = (self.graphic_resource_manager.fonts().iter().find(|f| f.name() == font).unwrap().line_height() / self.config.height as f32) * scale_factor;
-		let lines = text.split("\n").collect::<Vec<&str>>();
-
-		let mut x_offset = 0.0;
-		let mut y_offset = 0.0;
-
-		for line in lines {
-			for c in line.chars() {
-				let region = self.get_glyph_region(c, font.clone());
-				let (dim_x, dim_y) = region.dimensions();
-
-				let w = (dim_x as f32 / self.config.width as f32) * scale_factor;
-				let h = (dim_y as f32 / self.config.height as f32) * scale_factor;
-
-				let offset_x_px = (region.offset_x() / self.config.width as f32) * scale_factor;
-				let offset_y_px = (region.offset_y() / self.config.height as f32) * scale_factor;
-
-				let glyph_left   = screen_position.x() + x_offset + offset_x_px;
-				let glyph_top    = screen_position.y() - offset_y_px - y_offset;
-				let glyph_right  = glyph_left + w;
-				let glyph_bottom = glyph_top - h;
-
-				let vertices: &mut Vec<Vertex> = &mut vec![
-					Vertex::new([ glyph_left,  glyph_top,    0.0 ], [region.u0(), region.v0()], vert_color),
-					Vertex::new([ glyph_left,  glyph_bottom, 0.0 ], [region.u0(), region.v1()], vert_color),
-					Vertex::new([ glyph_right, glyph_bottom, 0.0 ], [region.u1(), region.v1()], vert_color),
-					Vertex::new([ glyph_right, glyph_top,    0.0 ], [region.u1(), region.v0()], vert_color),
-				];
-
-				let buffer_size = self.render_pass[1].vertex_data().len() as u16;
-				let indices: &mut Vec<u16> = &mut vec![
-					buffer_size,     buffer_size + 1, buffer_size + 3,
-					buffer_size + 1, buffer_size + 2, buffer_size + 3,
-				];
-
-				x_offset += (region.advance() / self.config.width as f32) * scale_factor;
-
-				self.push_to_buffers(vertices, indices);
-			}
-
-			y_offset += line_height;
-			x_offset = 0.0;
-		}
-	}
-
-	fn add_text_to_buffers(&self, draw_index: usize, text: String, font: String, size: f32, position: p2, color: wgpu::Color) -> (Vec<Vertex>, Vec<u16>) {
+	fn add_text_to_buffers(&self, text: String, font: String, size: f32, position: p2, color: wgpu::Color) -> (Vec<Vertex>, Vec<u16>) {
 		let vert_color = [color.r as f32, color.g as f32, color.b as f32, color.a as f32];
 
 		let screen_position = p2::new(position.x()/self.config.width as f32, position.y()/self.config.height as f32);
@@ -686,7 +513,7 @@ impl<'a> Renderer2D<'a> {
 		camera_uniform.update_view_proj(&camera);
 
 		let camera_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Camera Buffer"),
+			label: Some("Universal Camera Buffer"),
 			contents: bytemuck::cast_slice(&[camera_uniform]),
 			usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
 		});
@@ -703,7 +530,7 @@ impl<'a> Renderer2D<'a> {
 					},
 					count: None,
 				}],
-				label: Some("camera_bind_group_layout"),
+				label: Some("Universal Camera Bind Group Layout"),
 			});
 
 		let camera_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -712,7 +539,7 @@ impl<'a> Renderer2D<'a> {
 				binding: 0,
 				resource: camera_buffer.as_entire_binding(),
 			}],
-			label: Some("camera_bind_group"),
+			label: Some("Universal Camera Bind Group"),
 		});
 
 		self.camera = camera;
@@ -748,6 +575,7 @@ impl<'a> Renderer2D<'a> {
 				let mut position = transform_component.position().clone();
 				position.set_x(position.x() / self.config().width as f32);
 				position.set_y(position.y() / self.config().height as f32);
+
 				let mut t_region: Option<&TextureRegion> = None;
 				match self.get_texture_region(renderer_component.get_texture().to_string()) {
 					Some(texture_region) => {
@@ -782,8 +610,7 @@ impl<'a> Renderer2D<'a> {
 			let transform = scene.get_component::<Transform2D>(text).unwrap();
 
 			if component.is_visible() {
-				let draw_index = self.draw_info.iter().enumerate().find(|(_, d)| d.name() == &format!("{}", component.font())).unwrap().0;
-				let (vertices, indices) = self.add_text_to_buffers(draw_index, component.content().to_string(), component.font().to_string(), component.font_size(), p2::from_vec(transform.position().as_vec()), component.color().to_wgpu());
+				let (vertices, indices) = self.add_text_to_buffers(component.content().to_string(), component.font().to_string(), component.font_size(), p2::from_vec(transform.position().as_vec()), component.color().to_wgpu());
 				let draw = self.draw_info.iter_mut().find(|d| d.name() == &format!("{}", component.font())).unwrap();
 				draw.update_vertex_buffer(&self.device, &self.queue, vertices);
 				draw.update_index_buffer(&self.device, &self.queue, indices);
@@ -806,90 +633,6 @@ impl<'a> Renderer2D<'a> {
 		sorted_entities
 	}
 
-	/// A function to render the screen from top to bottom.
-	/// Generally useful in top-down games to render trees in front of players for example.
-	pub fn render_layered_scene_2d(&mut self, world: &Scene) {
-		let cameras = world.get_entities_with(ComponentSet::from_ids(vec![Camera2D::type_id()]));
-
-		if cameras == vec![] {
-			return;
-		}
-
-		let (camera_position, camera_component) = self.setup_camera(cameras, world);
-
-		let mut visible_entities: Vec<usize> = vec![];
-
-		for entity in world.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()])) {
-			let entity_id = entity as usize;
-
-			if !camera_component
-				.in_view_frustum(*camera_position, *world.get_component::<Transform2D>(entity_id).unwrap().position())
-			{
-				continue;
-			}
-
-			match world.get_component::<Render2D>(entity_id) {
-				Some(render) => {
-					if !render.is_visible() {
-						continue;
-					}
-					if let Some(cam) = world.get_component::<Camera2D>(entity_id) {
-						continue;
-					}
-					visible_entities.push(entity_id);
-				}
-				None => {
-					continue;
-				}
-			}
-		}
-
-		let entity_data = {
-			let mut data: Vec<(usize, Position2D)> = vec![];
-			for entity in visible_entities {
-				data.push((entity, *world.get_component::<Transform2D>(entity).unwrap().position()));
-			}
-			data
-		};
-
-		let visible_entities = self.sort_entities_by_position(entity_data);
-
-		let mut vertex_buffer: Vec<Vertex> = Vec::new();
-		let mut index_buffer: Vec<u16> = Vec::new();
-
-		for entity in visible_entities {
-			let renderer_component = world.get_component::<Render2D>(entity);
-			let transform_component = world.get_component::<Transform2D>(entity);
-
-			if renderer_component.unwrap().is_visible() {
-				let mut position = transform_component.unwrap().position().clone();
-				position.set_x(position.x() / self.config().width as f32);
-				position.set_y(position.y() / self.config().height as f32);
-				let region = self.get_texture_region(renderer_component.unwrap().get_texture().to_string()).unwrap();
-				let (dim_x, dim_y) = region.dimensions();
-
-				let (bound_x, bound_y) =
-					((dim_x as f32 / self.config().width as f32) * 0.5, (dim_y as f32 / self.config().height as f32) * 0.5);
-
-				let buffer_size = vertex_buffer.len() as u16;
-
-				vertex_buffer.append(&mut vec![
-					Vertex::new([-bound_x + position.x(), bound_y + position.y(), 0.0], [region.u0(), region.v0()], [0.0, 0.0, 0.0, 0.0]),
-					Vertex::new([-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u0(), region.v1()], [0.0, 0.0, 0.0, 0.0]),
-					Vertex::new([bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u1(), region.v1()], [0.0, 0.0, 0.0, 0.0]),
-					Vertex::new([bound_x + position.x(), bound_y + position.y(), 0.0], [region.u1(), region.v0()], [0.0, 0.0, 0.0, 0.0])
-				]);
-
-				index_buffer.append(&mut vec![
-					0 + buffer_size, 1 + buffer_size, 3 + buffer_size,
-					1 + buffer_size, 2 + buffer_size, 3 + buffer_size
-				]);
-			}
-		}
-
-		self.set_buffers(vertex_buffer, index_buffer);
-	}
-
 	pub fn update(&mut self) -> f32 {
 		let now = Instant::now();
 		self.delta_time = now.duration_since(self.last_frame_time).as_secs_f32();  // Time delta in seconds
@@ -909,7 +652,7 @@ impl<'a> Renderer2D<'a> {
 		
 		{
 			let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-				label: Some("Render Pass"),
+				label: Some("Universal Render Pass"),
 				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
 					view: &output_view,
 					resolve_target: None,
@@ -923,8 +666,9 @@ impl<'a> Renderer2D<'a> {
 				timestamp_writes: None,
 			});
 
+			render_pass.set_pipeline(&self.universal_render_pipeline);
+
 			for i in 0..self.draw_info.len() {
-				render_pass.set_pipeline(&self.universal_render_pipeline);
 				render_pass.set_bind_group(0, self.draw_info[i].texture(), &[]);
 				render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
 				render_pass.set_vertex_buffer(0, self.draw_info[i].vertex_buffer().slice(..));
