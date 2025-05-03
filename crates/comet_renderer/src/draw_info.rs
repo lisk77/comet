@@ -127,7 +127,6 @@ impl DrawInfo {
                     }
                 }
                 self.num_indices = index_data.len() as u32;
-                warn!("indices: {}", index_data.len());
                 self.index_data = index_data;
             }
         }
