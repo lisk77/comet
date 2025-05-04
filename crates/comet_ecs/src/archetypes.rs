@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use comet_structs::ComponentSet;
 
 #[derive(Debug, Clone)]
 pub struct Archetypes {
-	archetypes: HashMap<ComponentSet, Vec<u32>>
+	archetypes: HashMap<ComponentSet, HashSet<u32>>
 }
 
 impl Archetypes {
@@ -18,20 +18,20 @@ impl Archetypes {
 	}
 
 	pub fn create_archetype(&mut self, components: ComponentSet) {
-		self.archetypes.insert(components, Vec::new());
+		self.archetypes.insert(components, HashSet::new());
 	}
 
-	pub fn get_archetype(&self, components: &ComponentSet) -> Option<&Vec<u32>> {
+	pub fn get_archetype(&self, components: &ComponentSet) -> Option<&HashSet<u32>> {
 		self.archetypes.get(components)
 	}
 
-	pub fn get_archetype_mut(&mut self, components: &ComponentSet) -> Option<&mut Vec<u32>> {
+	pub fn get_archetype_mut(&mut self, components: &ComponentSet) -> Option<&mut HashSet<u32>> {
 		self.archetypes.get_mut(components)
 	}
 
 	pub fn add_entity_to_archetype(&mut self, components: &ComponentSet, entity: u32) {
 		if let Some(archetype) = self.archetypes.get_mut(components) {
-			archetype.push(entity);
+			archetype.insert(entity);
 		}
 	}
 
