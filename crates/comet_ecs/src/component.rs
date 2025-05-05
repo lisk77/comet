@@ -208,6 +208,10 @@ impl Rectangle2D {
 	pub fn size(&self) -> v2 {
 		self.size
 	}
+
+	pub fn set_size(&mut self, size: v2) {
+		self.size = size
+	}
 }
 
 impl Collider for Rectangle2D {
