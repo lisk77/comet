@@ -20,6 +20,24 @@ impl ComponentSet {
 		}
 	}
 
+	pub fn powerset(ids: Vec<TypeId>) -> Vec<HashSet<TypeId>> {
+		let n = ids.len();
+		let mut subsets: Vec<HashSet<TypeId>> = Vec::with_capacity(1 << n);
+	
+		for mask in 0..(1 << n) {
+			let mut subset = HashSet::new();
+        	for i in 0..n {
+            	if (mask & (1 << i)) != 0 {
+                	subset.insert(ids[i].clone());
+            	}
+        	}
+        	subsets.push(subset);
+		}
+		subsets.remove(0);
+
+		subsets
+	}
+
 	pub fn is_subset(&self, other: &ComponentSet) -> bool {
 		self.set.is_subset(&other.set)
 	}

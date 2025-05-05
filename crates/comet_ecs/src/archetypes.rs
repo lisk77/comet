@@ -48,4 +48,12 @@ impl Archetypes {
 	pub fn contains_archetype(&self, components: &ComponentSet) -> bool {
 		self.archetypes.contains_key(components)
 	}
+
+	pub fn archetype_contains_entity(&self, entity_id: u32, components: &ComponentSet) -> bool {
+		if self.contains_archetype(components) {
+			let archetype = self.get_archetype(components).unwrap();
+			return archetype.contains(&entity_id);
+		}
+		false
+	}
 }

@@ -1,8 +1,6 @@
 use std::any::TypeId;
 use crate::{
-	Entity,
-	Component,
-	IdQueue,
+	entity, Component, Entity, IdQueue
 };
 use comet_log::*;
 use comet_structs::*;
@@ -153,18 +151,27 @@ impl Scene {
 
 	/// Registers a new component in the scene.
 	pub fn register_component<C: Component + 'static>(&mut self) {
-		self.components.register_component::<C>(self.entities.len());
-		self.create_archetype(ComponentSet::from_ids(vec![C::type_id()]));
-		info!("Registered component: {}", C::type_name());
+		if !self.components.contains(&C::type_id()) {
+			self.components.register_component::<C>(self.entities.len());
+			self.create_archetype(ComponentSet::from_ids(vec![C::type_id()]));
+			info!("Registered component: {}", C::type_name());
+			return;
+		}
+		warn!("Component {} is already registered!", C::type_name());
 	}
 
 	/// Deregisters a component from the scene.
 	pub fn deregister_component<C: Component + 'static>(&mut self) {
-		self.components.deregister_component::<C>();
-		info!("Deregistered component: {}", C::type_name());
+		if self.components.contains(&C::type_id()) {
+			self.components.deregister_component::<C>();
+			info!("Deregistered component: {}", C::type_name());
+			return;
+		}
+		warn!("Component {} was not registered!", C::type_name());
 	}
 
 	/// Adds a component to an entity by its ID and an instance of the component.
+	/// Overwrites the previous component if another component of the same type is added.
 	pub fn add_component<C: Component + 'static>(&mut self, entity_id: usize, component: C) {
 		self.components.set_component(entity_id, component);
 		let component_index = self.components.keys().iter_mut().position(|x| *x == C::type_id()).unwrap();
@@ -173,11 +180,23 @@ impl Scene {
 
 		if !self.archetypes.contains_archetype(&self.get_component_set(entity_id)) {
 			self.create_archetype(self.get_component_set(entity_id));
+			let powerset = ComponentSet::powerset(self.get_component_set(entity_id).to_vec());
+			for set in powerset {
+				let component_set = ComponentSet::from_ids(set.iter().cloned().collect());
+				if !self.archetypes.contains_archetype(&component_set) {
+					self.create_archetype(component_set.clone());
+					self.add_entity_to_archetype(entity_id as u32, component_set);
+				}
+				else if !self.archetypes.archetype_contains_entity(entity_id as u32, &component_set) {
+					self.add_entity_to_archetype(entity_id as u32, component_set);
+				}
+			}
 		}
 		self.add_entity_to_archetype(entity_id as u32, ComponentSet::from_ids(vec![C::type_id()]));
 		if self.get_component_set(entity_id) != ComponentSet::from_ids(vec![C::type_id()]) {
 			self.add_entity_to_archetype(entity_id as u32, self.get_component_set(entity_id));
 		}
+		debug!("{:?}", self.archetypes);
 		info!("Added component {} to entity {}!", C::type_name(), entity_id);
 	}
 

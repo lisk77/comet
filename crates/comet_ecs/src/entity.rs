@@ -8,11 +8,9 @@ pub struct Entity {
 
 impl Entity {
 	pub(crate) fn new(id: u32) -> Self {
-		let mut components = BitSet::new();
-		components.insert(0);
 		Self {
 			id,
-			components
+			components: BitSet::new()
 		}
 	}
 
