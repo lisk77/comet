@@ -196,7 +196,6 @@ impl Scene {
 		if self.get_component_set(entity_id) != ComponentSet::from_ids(vec![C::type_id()]) {
 			self.add_entity_to_archetype(entity_id as u32, self.get_component_set(entity_id));
 		}
-		debug!("{:?}", self.archetypes);
 		info!("Added component {} to entity {}!", C::type_name(), entity_id);
 	}
 
