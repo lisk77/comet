@@ -553,14 +553,14 @@ impl<'a> Renderer2D<'a> {
 	/// A function to automatically render all the entities of the `Scene` struct.
 	/// The entities must have the `Render2D` and `Transform2D` components to be rendered as well as set visible.
 	pub fn render_scene_2d(&mut self, scene: &Scene) {
-		let cameras = scene.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Camera2D::type_id()]));
+		let cameras = scene.get_entities_with(vec![Transform2D::type_id(), Camera2D::type_id()]);
 
 		if cameras.is_empty() {
 			return;
 		}
 
-		let entities =  scene.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), Render2D::type_id()]));
-		let texts = scene.get_entities_with(ComponentSet::from_ids(vec![Transform2D::type_id(), comet_ecs::Text::type_id()]));
+		let entities =  scene.get_entities_with(vec![Transform2D::type_id(), Render2D::type_id()]);
+		let texts = scene.get_entities_with(vec![Transform2D::type_id(), comet_ecs::Text::type_id()]);
 
 		self.setup_camera(cameras, scene);
 

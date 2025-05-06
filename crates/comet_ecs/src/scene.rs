@@ -220,16 +220,17 @@ impl Scene {
 	}
 
 	/// Returns a list of entities that have the given components.
-	pub fn get_entities_with(&self, components: ComponentSet) -> Vec<usize> {
-		if self.archetypes.contains_archetype(&components) {
-			return self.archetypes.get_archetype(&components).unwrap().clone().iter().map(|x| *x as usize).collect();
+	pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<usize> {
+		let component_set = ComponentSet::from_ids(components);
+    if self.archetypes.contains_archetype(&component_set) {
+			return self.archetypes.get_archetype(&component_set).unwrap().clone().iter().map(|x| *x as usize).collect();
 		}
 		Vec::new()
 	}
 
 	/// Deletes all entities that have the given components.
-	pub fn delete_entities_with(&mut self, components: ComponentSet) {
-		let entities = self.get_entities_with(components);
+	pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
+    let entities = self.get_entities_with(components);
 		for entity in entities {
 			self.delete_entity(entity);
 		}
@@ -237,7 +238,7 @@ impl Scene {
 
 	/// Iterates over all entities that have the given components and calls the given function.
 	pub fn foreach<C: Component, K: Component>(&mut self, func: fn(&mut C,&mut K)) {
-		let entities = self.get_entities_with(ComponentSet::from_ids(vec![C::type_id(), K::type_id()]));
+		let entities = self.get_entities_with(vec![C::type_id(), K::type_id()]);
 		for entity in entities {
 			let c_ptr = self.get_component_mut::<C>(entity).unwrap() as *mut C;
 			let k_ptr = self.get_component_mut::<K>(entity).unwrap() as *mut K;

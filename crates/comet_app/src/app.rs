@@ -1,7 +1,6 @@
-use std::any::{type_name, Any};
+use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
 use comet_ecs::{Camera2D, Color, Component, Entity, Render2D, Scene, Text, Transform2D, Transform3D};
-
 use winit::{
 	event::*,
 	event_loop::EventLoop,
@@ -174,11 +173,11 @@ impl App {
 		self.scene.get_component_mut::<C>(entity_id)
 	}
 
-	pub fn get_entities_with(&self, components: ComponentSet) -> Vec<usize> {
+	pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<usize> {
 		self.scene.get_entities_with(components)
 	}
 
-	pub fn delete_entities_with(&mut self, components: ComponentSet) {
+	pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
 		self.scene.delete_entities_with(components)
 	}
 
