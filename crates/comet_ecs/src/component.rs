@@ -2,7 +2,6 @@
 // You can use these components as is or as a reference to create your own components
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2D)
-
 use comet_math::m4;
 use crate::math::{
     v2,
@@ -73,6 +72,13 @@ pub struct Color {
 	g: f32,
 	b: f32,
 	a: f32
+}
+
+#[derive(Component)]
+pub struct Timer {
+	time_stack: f32,
+	interval: f32,
+	done: bool
 }
 
 // ##################################################
@@ -401,6 +407,10 @@ impl Text {
 		self.color
 	}
 
+	pub fn set_visibility(&mut self, visibility: bool) {
+		self.is_visible = visibility
+	}
+
 	pub fn is_visible(&self) -> bool {
 		self.is_visible
 	}
@@ -464,5 +474,27 @@ impl Color {
 			b: self.b as f64,
 			a: self.a as f64
 		}
+	}
+}
+
+impl Timer {
+	pub fn set_interval(&mut self, interval: f32) {
+		self.interval = interval
+	}
+
+	pub fn update_timer(&mut self, elapsed_time: f32) {
+		self.time_stack += elapsed_time;
+		if self.time_stack > self.interval {
+			self.done = true
+		}
+	}
+
+	pub fn is_done(&self) -> bool {
+		self.done
+	}
+
+	pub fn reset(&mut self) {
+		self.time_stack = 0.0;
+		self.done = false;
 	}
 }
