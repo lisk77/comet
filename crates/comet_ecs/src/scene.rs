@@ -84,7 +84,25 @@ impl Scene {
 	}
 
 	fn create_archetype(&mut self, components: ComponentSet) {
-		self.archetypes.create_archetype(components);
+		self.archetypes.create_archetype(components.clone());
+		
+		// Collect entities that match the component set first to avoid borrow checker issues
+		let mut matching_entities = Vec::new();
+		for (entity_id, entity_option) in self.entities.iter().enumerate() {
+			if let Some(_entity) = entity_option {
+				let entity_component_set = self.get_component_set(entity_id);
+				
+				// If the entity has all the required components (components is subset of entity's components)
+				if components.is_subset(&entity_component_set) {
+					matching_entities.push(entity_id as u32);
+				}
+			}
+		}
+		
+		// Add all matching entities to the archetype
+		for entity_id in matching_entities {
+			self.add_entity_to_archetype(entity_id, components.clone());
+		}
 	}
 
 	fn remove_archetype(&mut self, components: ComponentSet) {
@@ -173,36 +191,64 @@ impl Scene {
 	/// Adds a component to an entity by its ID and an instance of the component.
 	/// Overwrites the previous component if another component of the same type is added.
 	pub fn add_component<C: Component + 'static>(&mut self, entity_id: usize, component: C) {
+		let old_component_set = self.get_component_set(entity_id);
+		if !old_component_set.to_vec().is_empty() {
+			self.remove_entity_from_archetype_subsets(entity_id as u32, old_component_set);
+		}
+
 		self.components.set_component(entity_id, component);
 		let component_index = self.components.keys().iter_mut().position(|x| *x == C::type_id()).unwrap();
-
 		self.get_entity_mut(entity_id).unwrap().add_component(component_index);
 
-		if !self.archetypes.contains_archetype(&self.get_component_set(entity_id)) {
-			self.create_archetype(self.get_component_set(entity_id));
-			let powerset = ComponentSet::powerset(self.get_component_set(entity_id).to_vec());
-			for set in powerset {
-				let component_set = ComponentSet::from_ids(set.iter().cloned().collect());
-				if !self.archetypes.contains_archetype(&component_set) {
-					self.create_archetype(component_set.clone());
-					self.add_entity_to_archetype(entity_id as u32, component_set);
-				}
-				else if !self.archetypes.archetype_contains_entity(entity_id as u32, &component_set) {
-					self.add_entity_to_archetype(entity_id as u32, component_set);
-				}
+		let new_component_set = self.get_component_set(entity_id);
+
+		if !self.archetypes.contains_archetype(&new_component_set) {
+			self.create_archetype(new_component_set.clone());
+		}
+
+		let powerset = ComponentSet::powerset(new_component_set.to_vec());
+		
+		for subset in powerset {
+			let component_set = ComponentSet::from_ids(subset.iter().cloned().collect());
+			
+			if !self.archetypes.contains_archetype(&component_set) {
+				self.create_archetype(component_set.clone());
 			}
+			
+			self.add_entity_to_archetype(entity_id as u32, component_set);
 		}
-		self.add_entity_to_archetype(entity_id as u32, ComponentSet::from_ids(vec![C::type_id()]));
-		if self.get_component_set(entity_id) != ComponentSet::from_ids(vec![C::type_id()]) {
-			self.add_entity_to_archetype(entity_id as u32, self.get_component_set(entity_id));
-		}
+
 		info!("Added component {} to entity {}!", C::type_name(), entity_id);
 	}
 
-	/// Removes a component from an entity by its ID.
 	pub fn remove_component<C: Component + 'static>(&mut self, entity_id: usize) {
+		let old_component_set = self.get_component_set(entity_id);
+		self.remove_entity_from_archetype_subsets(entity_id as u32, old_component_set);
+
 		self.components.remove_component::<C>(entity_id);
-		self.remove_entity_from_archetype_subsets(entity_id as u32, self.get_component_set(entity_id));
+		let component_index = self.components.keys().iter().position(|x| *x == C::type_id()).unwrap();
+		self.get_entity_mut(entity_id).unwrap().remove_component(component_index);
+
+		let new_component_set = self.get_component_set(entity_id);
+
+		if !new_component_set.to_vec().is_empty() {
+			if !self.archetypes.contains_archetype(&new_component_set) {
+				self.create_archetype(new_component_set.clone());
+			}
+
+			let powerset = ComponentSet::powerset(new_component_set.to_vec());
+			
+			for subset in powerset {
+				let component_set = ComponentSet::from_ids(subset.iter().cloned().collect());
+				
+				if !self.archetypes.contains_archetype(&component_set) {
+					self.create_archetype(component_set.clone());
+				}
+				
+				self.add_entity_to_archetype(entity_id as u32, component_set);
+			}
+		}
+
 		info!("Removed component {} from entity {}!", C::type_name(), entity_id);
 	}
 
