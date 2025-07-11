@@ -572,9 +572,8 @@ impl<'a> Renderer2D<'a> {
 			let transform_component = scene.get_component::<Transform2D>(entity).unwrap();
 
 			if renderer_component.is_visible() {
-				let mut position = transform_component.position().clone();
-				position.set_x(position.x() / self.config().width as f32);
-				position.set_y(position.y() / self.config().height as f32);
+				let world_position = transform_component.position().clone();
+				let rotation_angle = transform_component.rotation().to_radians();
 
 				let mut t_region: Option<&TextureRegion> = None;
 				match self.get_texture_region(renderer_component.get_texture().to_string()) {
@@ -586,16 +585,43 @@ impl<'a> Renderer2D<'a> {
 				let region = t_region.unwrap();
 				let (dim_x, dim_y) = region.dimensions();
 
-				let (bound_x, bound_y) =
-					((dim_x as f32/ self.config().width as f32) * 0.5, (dim_y as f32/ self.config().height as f32) * 0.5);
+				let half_width = dim_x as f32 * 0.5;
+				let half_height = dim_y as f32 * 0.5;
 
 				let buffer_size = vertex_buffer.len() as u16;
 
+				let world_corners = [
+					(-half_width, half_height),
+					(-half_width, -half_height),
+					(half_width, -half_height),
+					(half_width, half_height),
+				];
+
+				let cos_angle = rotation_angle.cos();
+				let sin_angle = rotation_angle.sin();
+				
+				let mut rotated_world_corners = [(0.0f32, 0.0f32); 4];
+				for i in 0..4 {
+					let (x, y) = world_corners[i];
+					rotated_world_corners[i] = (
+						x * cos_angle - y * sin_angle + world_position.x(),
+						x * sin_angle + y * cos_angle + world_position.y()
+					);
+				}
+
+				let mut screen_corners = [(0.0f32, 0.0f32); 4];
+				for i in 0..4 {
+					screen_corners[i] = (
+						rotated_world_corners[i].0 / self.config().width as f32,
+						rotated_world_corners[i].1 / self.config().height as f32
+					);
+				}
+
 				vertex_buffer.append(&mut vec![
-					Vertex :: new ( [-bound_x + position.x(),  bound_y + position.y(), 0.0], [region.u0(), region.v0()], [1.0, 1.0, 1.0, 1.0] ),
-					Vertex :: new ( [-bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u0(), region.v1()], [1.0, 1.0, 1.0, 1.0] ),
-					Vertex :: new ( [ bound_x + position.x(), -bound_y + position.y(), 0.0], [region.u1(), region.v1()], [1.0, 1.0, 1.0, 1.0] ) ,
-					Vertex :: new ( [ bound_x + position.x(),  bound_y + position.y(), 0.0], [region.u1(), region.v0()], [1.0, 1.0, 1.0, 1.0] )
+					Vertex :: new ( [screen_corners[0].0, screen_corners[0].1, 0.0], [region.u0(), region.v0()], [1.0, 1.0, 1.0, 1.0] ),
+					Vertex :: new ( [screen_corners[1].0, screen_corners[1].1, 0.0], [region.u0(), region.v1()], [1.0, 1.0, 1.0, 1.0] ),
+					Vertex :: new ( [screen_corners[2].0, screen_corners[2].1, 0.0], [region.u1(), region.v1()], [1.0, 1.0, 1.0, 1.0] ) ,
+					Vertex :: new ( [screen_corners[3].0, screen_corners[3].1, 0.0], [region.u1(), region.v0()], [1.0, 1.0, 1.0, 1.0] )
 				]);
 
 				index_buffer.append(&mut vec![

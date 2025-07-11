@@ -161,6 +161,34 @@ impl Position2D {
 	}
 }
 
+impl Rotation2D {
+	pub fn new(angle: f32) -> Self {
+		Self {
+			theta: angle
+		}
+	}
+
+	pub fn angle(&self) -> f32 {
+		self.theta
+	}
+
+	pub fn set_angle(&mut self, angle: f32) {
+		self.theta = angle;
+	}
+
+	pub fn rotate(&mut self, delta_angle: f32) {
+		self.theta += delta_angle;
+	}
+
+	pub fn to_radians(&self) -> f32 {
+		self.theta.to_radians()
+	}
+
+	pub fn to_degrees(&self) -> f32 {
+		self.theta.to_degrees()
+	}
+}
+
 impl Position3D {
 	pub fn from_vec(vec: v3) -> Self {
 		Self {
@@ -254,7 +282,8 @@ impl Render for Render2D {
 
 	/// Use the actual file name of the texture instead of the path
 	/// e.g. "comet_icon.png" instead of "resources/textures/comet_icon.png"
-	/// The resource manager will already look in the resources/textures folder
+	/// The resource manager will already look in the resources/textures directory
+	/// This behavior will later be expanded so that it can be used with other project structures
 	fn set_texture(&mut self, texture: &'static str) {
 		self.texture_name = texture;
 	}
@@ -282,6 +311,14 @@ impl Transform2D {
 		let y = self.position().y() + displacement.y();
 		self.position_mut().set_x(x);
 		self.position_mut().set_y(y);
+	}
+
+	pub fn rotate(&mut self, delta_angle: f32) {
+		self.rotation_mut().rotate(delta_angle);
+	}
+
+	pub fn set_rotation(&mut self, angle: f32) {
+		self.rotation_mut().set_angle(angle);
 	}
 }
 
