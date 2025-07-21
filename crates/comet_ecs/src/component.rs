@@ -272,7 +272,7 @@ impl Render for Render2D {
     }
 
     fn get_texture(&self) -> String {
-        self.texture_name.clone().parse().unwrap()
+        self.texture_name.parse().unwrap()
     }
 
     /// Use the actual file name of the texture instead of the path
@@ -537,4 +537,3 @@ impl Timer {
         self.done = false;
     }
 }
-
