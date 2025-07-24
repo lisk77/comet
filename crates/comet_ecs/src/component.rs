@@ -227,8 +227,11 @@ impl Position3D {
 }
 
 impl Rectangle2D {
-    pub fn new(position: Position2D, size: v2) -> Self {
-        Self { position, size }
+    pub fn with_size(width: f32, height: f32) -> Self {
+        Self {
+            position: Position2D::from_vec(v2::new(0.0, 0.0)),
+            size: v2::new(width, height),
+        }
     }
 
     pub fn position(&self) -> Position2D {
@@ -259,6 +262,16 @@ impl Collider for Rectangle2D {
         let h2 = other.size().y();
 
         x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
+    }
+}
+
+impl Render2D {
+    pub fn with_texture(texture: &'static str) -> Self {
+        Self {
+            is_visible: true,
+            texture_name: texture,
+            scale: v2::new(1.0, 1.0),
+        }
     }
 }
 
