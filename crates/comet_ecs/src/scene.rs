@@ -215,16 +215,14 @@ impl Scene {
             self.create_archetype(new_component_set.clone());
         }
 
-        let powerset = ComponentSet::powerset(new_component_set.to_vec());
+        let subsets = ComponentSet::compute_subsets_up_to_size_3(new_component_set.to_vec());
 
-        for subset in powerset {
-            let component_set = ComponentSet::from_ids(subset.iter().cloned().collect());
-
-            if !self.archetypes.contains_archetype(&component_set) {
-                self.create_archetype(component_set.clone());
+        for subset in subsets {
+            if !self.archetypes.contains_archetype(&subset) {
+                self.create_archetype(subset.clone());
             }
 
-            self.add_entity_to_archetype(entity_id as u32, component_set);
+            self.add_entity_to_archetype(entity_id as u32, subset);
         }
 
         info!(
@@ -256,16 +254,14 @@ impl Scene {
                 self.create_archetype(new_component_set.clone());
             }
 
-            let powerset = ComponentSet::powerset(new_component_set.to_vec());
+            let subsets = ComponentSet::compute_subsets_up_to_size_3(new_component_set.to_vec());
 
-            for subset in powerset {
-                let component_set = ComponentSet::from_ids(subset.iter().cloned().collect());
-
-                if !self.archetypes.contains_archetype(&component_set) {
-                    self.create_archetype(component_set.clone());
+            for subset in subsets {
+                if !self.archetypes.contains_archetype(&subset) {
+                    self.create_archetype(subset.clone());
                 }
 
-                self.add_entity_to_archetype(entity_id as u32, component_set);
+                self.add_entity_to_archetype(entity_id as u32, subset);
             }
         }
 
@@ -295,6 +291,10 @@ impl Scene {
     /// Returns a list of entities that have the given components.
     pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<usize> {
         let component_set = ComponentSet::from_ids(components);
+        if component_set.size() > 3 {
+            error!("An entity query should only contain at most 3 different components!");
+            return Vec::new();
+        }
         if self.archetypes.contains_archetype(&component_set) {
             return self
                 .archetypes
@@ -316,7 +316,7 @@ impl Scene {
         }
     }
 
-    /// Iterates over all entities that have the given components and calls the given function.
+    /// Iterates over all entities that have the two given components and calls the given function.
     pub fn foreach<C: Component, K: Component>(&mut self, func: fn(&mut C, &mut K)) {
         let entities = self.get_entities_with(vec![C::type_id(), K::type_id()]);
         for entity in entities {

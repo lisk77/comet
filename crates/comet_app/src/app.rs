@@ -1,7 +1,5 @@
 use comet_colors::{Color as ColorTrait, LinearRgba};
-use comet_ecs::{
-    Camera2D, Color, Component, Entity, Render2D, Scene, Text, Transform2D, Transform3D,
-};
+use comet_ecs::{Camera2D, Component, Entity, Render2D, Scene, Text, Transform2D, Transform3D};
 use comet_input::keyboard::Key;
 use comet_log::*;
 use comet_renderer::renderer::Renderer;
