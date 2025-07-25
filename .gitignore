@@ -1,2 +1,4 @@
+/Cargo.lock
 /target
 /build.rs
+/src/main.rs
