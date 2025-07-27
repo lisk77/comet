@@ -1,5 +1,5 @@
 # ☄️ Comet
-a free and open source games framework
+a free and open source game engine
 
 > [!WARNING]
 > This project is in early development and is not yet ready for use.

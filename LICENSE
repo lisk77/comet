@@ -1,0 +1,58 @@
+COMET ENGINE LICENSE (CEL) v1.0
+
+Copyright (c) 2024-2025 lisk77
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of the Comet Engine (the “Engine”) and accompanying documentation, to use, study, and modify the Engine for internal, non-commercial purposes only, subject to the following terms and conditions:
+
+1. Definitions
+
+1.1. “Engine”
+The Engine means 
+(a) the original source code, headers, and build scripts published under this license, and 
+(b) any compiled object files, static libraries (.a/.lib), or shared libraries (.so/.dll/.dylib) produced by building that source, when those artifacts are distributed separately from a complete Game binary.
+
+1.2. “Game”
+A Game is any software application that:
+- incorporates or links the Engine code (via dynamic or static linking)
+- is distributed solely as a standalone executable, installer, or platform package (e.g., .exe, .app, .apk)
+- does not include the Engine’s source files nor the Engine’s raw object/library files within its distribution.
+
+1.3. “Engine Distribution”
+Any distribution of the Engine’s source files or its compiled libraries (object, static, or shared), whether for free or for a fee.
+
+1.4. “Game Distribution”
+Any distribution of a Game as defined in Section 1.2.
+
+1.5. “Contribution”
+Any original work of authorship, including modifications or additions, intentionally submitted to the Engine that, once incorporated, become part of the Engine. Such Contributions are licensed under this license (CEL v1.0).
+
+2. Engine distribution (source & libraries)
+
+2.1. You may distribute the Engine’s source code or compiled libraries only for free (no charge) and only under this exact license.
+
+2.2. You may modify the Engine, but any modified Engine source or libraries you distribute must likewise be free of charge and carry this same license.
+
+3. Game distribution & monetization
+
+3.1. You may distribute any Game under any terms you choose—whether for free or for a fee—provided that:
+a) You distribute the Game only as a standalone binary or installer.
+b) You do not include or redistribute the Engine’s source files or raw object/library files alongside your Game.
+
+3.2. You are free to license your Game’s own source code or keep it closed‑source—this license imposes no copyleft or attribution requirements on Game code or assets.
+
+4. Notice & attribution
+
+A copy of this license and a “Built with Comet Engine” credit in your README or “About” screen must accompany any free Engine Distribution (Section 2). No attribution or license text is required for Game Distributions (Section 3).
+
+5. No patent grant
+
+No patent rights are granted under this license. All patent rights in the Engine or in Contributions remain fully reserved by the Licensor and Contributors.
+
+6. Disclaimer of warranty
+
+The engine is provided “as is”, without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the authors be liable for any claim, damages, or other liability arising from or in connection with the engine or this license.
+
+7. Limitation of liability
+
+In no event shall the authors or contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise), arising in any way out of the use of the engine or in connection with this license.
+
