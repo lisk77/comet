@@ -1,11 +1,13 @@
 use crate::{InnerSpace, Point};
 
+/// Representation of a Bezier curve of degree n in any (2-4) dimensions.
 pub struct Bezier<V: InnerSpace> {
     points: Vec<V>,
     degree: usize,
 }
 
 impl<V: InnerSpace + Clone> Bezier<V> {
+    /// Creates a new Bezier curve with the given control points.
     pub fn new(points: Vec<V>) -> Self {
         let degree = points.len() - 1;
 

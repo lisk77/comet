@@ -32,26 +32,30 @@ pub trait NoiseGenerator {
     fn generate_image(&self) -> DynamicImage;
 }
 
+/// White noise generator.
 pub struct WhiteNoise {
     size: (usize, usize),
 }
 
 impl WhiteNoise {
-    /// Creates a white noise generator ideal for multiple uses.
+    /// Creates a white noise generator with the given parameters.
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             size: (width, height),
         }
     }
 
+    /// Sets the width of the noise image.
     pub fn set_width(&mut self, width: usize) {
         self.size.0 = width;
     }
 
+    /// Sets the height of the noise image.
     pub fn set_height(&mut self, height: usize) {
         self.size.1 = height;
     }
 
+    /// Sets the size of the noise image.
     pub fn set_size(&mut self, width: usize, height: usize) {
         self.size = (width, height);
     }
@@ -113,6 +117,7 @@ impl NoiseGenerator for WhiteNoise {
     }
 }
 
+/// Perlin noise generator.
 pub struct PerlinNoise {
     size: (usize, usize),
     frequency: f64,
@@ -120,6 +125,7 @@ pub struct PerlinNoise {
 }
 
 impl PerlinNoise {
+    /// Create a new Perlin noise generator with the given parameters.
     pub fn new(width: usize, height: usize, frequency: f64, seed: u32) -> Self {
         Self {
             size: (width, height),
@@ -128,22 +134,27 @@ impl PerlinNoise {
         }
     }
 
+    /// Set the width of the noise image.
     pub fn set_width(&mut self, width: usize) {
         self.size.0 = width;
     }
 
+    /// Set the height of the noise image.
     pub fn set_height(&mut self, height: usize) {
         self.size.1 = height;
     }
 
+    /// Set the size of the noise image.
     pub fn set_size(&mut self, width: usize, height: usize) {
         self.size = (width, height);
     }
 
+    /// Set the frequency of the noise.
     pub fn set_frequency(&mut self, frequency: f64) {
         self.frequency = frequency;
     }
 
+    /// Set the seed for the random number generator.
     pub fn set_seed(&mut self, seed: u32) {
         self.seed = seed;
     }
@@ -169,7 +180,7 @@ impl PerlinNoise {
         let mut noise = vec![0.0; self.size.0 * self.size.1];
         let mut amplitude = 1.0;
         let mut frequency = self.frequency;
-        let mut max_value = 0.0; // Used for normalization
+        let mut max_value = 0.0;
 
         for _ in 0..octaves {
             for y in 0..self.size.1 {
@@ -181,11 +192,10 @@ impl PerlinNoise {
                 }
             }
             max_value += amplitude;
-            amplitude *= persistence; // Reduce amplitude for next octave
-            frequency *= 2.0; // Double frequency for next octave
+            amplitude *= persistence;
+            frequency *= 2.0;
         }
 
-        // Normalize the noise to the range [0, 1]
         noise
             .iter_mut()
             .for_each(|value| *value /= max_value as f32);
@@ -250,6 +260,7 @@ impl PerlinNoise {
     }
 }
 
+/// Value noise generator.
 pub struct ValueNoise {
     size: (usize, usize),
     frequency: f64,
@@ -257,6 +268,7 @@ pub struct ValueNoise {
 }
 
 impl ValueNoise {
+    /// Create a new Perlin noise generator with the given parameters.
     pub fn new(width: usize, height: usize, frequency: f64, seed: u32) -> Self {
         Self {
             size: (width, height),
@@ -290,12 +302,12 @@ impl ValueNoise {
         )
     }
 
+    /// Generates value noise as a `Vec<f32>`. Size of the vector is `width * height`.
     pub fn generate(&self) -> Vec<f32> {
         let mut noise = Vec::with_capacity(self.size.0 * self.size.1);
         let mut max_amplitude = 0.0;
         let mut amplitude = 0.5;
 
-        // Calculate max amplitude for normalization
         for _ in 0..4 {
             max_amplitude += amplitude;
             amplitude *= 0.5;
@@ -311,17 +323,9 @@ impl ValueNoise {
                 let mut f = 0.0;
                 let mut amplitude = 0.5;
 
-                /*for _ in 0..4 {  // 4 octaves*/
                 f += amplitude * self.noise(uv);
-
-                // Double frequency for next octave
                 uv = (uv.0 * 2.0, uv.1 * 2.0);
-
-                // Reduce amplitude (persistence)
                 amplitude *= 0.5;
-                /*}*/
-
-                // Normalize and convert to [0, 1]
                 f = ((f / max_amplitude) + 1.0) * 0.5;
 
                 noise.push(f);
@@ -331,12 +335,12 @@ impl ValueNoise {
         noise
     }
 
+    /// Generates value noise with multiple octaves as a `Vec<f32>`.
     pub fn generate_with_octaves(&self, octaves: u32, persistence: f64) -> Vec<f32> {
         let mut noise = Vec::with_capacity(self.size.0 * self.size.1);
         let mut max_amplitude = 0.0;
         let mut amplitude = 1.0;
 
-        // Calculate max amplitude for normalization
         for _ in 0..octaves {
             max_amplitude += amplitude;
             amplitude *= persistence;
@@ -344,7 +348,6 @@ impl ValueNoise {
 
         for y in 0..self.size.1 {
             for x in 0..self.size.0 {
-                // Convert to UV space and scale by frequency
                 let mut uv = (
                     x as f32 / self.size.0 as f32 * self.frequency as f32,
                     y as f32 / self.size.1 as f32 * self.frequency as f32,
@@ -355,15 +358,10 @@ impl ValueNoise {
 
                 for _ in 0..octaves {
                     f += amplitude * self.noise(uv);
-
-                    // Double frequency for next octave
                     uv = (uv.0 * 2.0, uv.1 * 2.0);
-
-                    // Reduce amplitude (persistence)
                     amplitude *= persistence as f32;
                 }
 
-                // Normalize and convert to [0, 1]
                 f = ((f / max_amplitude as f32) + 1.0) * 0.5;
 
                 noise.push(f);

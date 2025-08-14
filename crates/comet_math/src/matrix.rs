@@ -9,6 +9,7 @@ trait LinearTransformation {
 // #                   MATRIX 2D                    #
 // ##################################################
 
+/// Representation of a 2x2 matrix.
 #[repr(C)]
 #[derive(Debug, PartialEq)]
 pub struct m2 {
@@ -19,6 +20,7 @@ pub struct m2 {
 }
 
 impl m2 {
+    /// The zero matrix.
     pub const ZERO: Self = Self {
         x00: 0.0,
         x01: 0.0,
@@ -26,6 +28,7 @@ impl m2 {
         x11: 0.0,
     };
 
+    /// The identity matrix.
     pub const IDENTITY: Self = Self {
         x00: 1.0,
         x01: 0.0,
@@ -33,10 +36,12 @@ impl m2 {
         x11: 1.0,
     };
 
+    /// Creates a new 2x2 matrix with the given elements.
     pub fn new(x00: f32, x01: f32, x10: f32, x11: f32) -> Self {
         Self { x00, x01, x10, x11 }
     }
 
+    /// Creates a new 2x2 matrix with the given vectors as its columns.
     pub fn from_cols(col1: v2, col2: v2) -> Self {
         Self {
             x00: col1.x(),
@@ -46,6 +51,7 @@ impl m2 {
         }
     }
 
+    /// Creates a new 2x2 matrix with the given vectors as its rows.
     pub fn from_rows(row1: v2, row2: v2) -> Self {
         Self {
             x00: row1.x(),
@@ -55,6 +61,7 @@ impl m2 {
         }
     }
 
+    /// Gets the element at the specified row and column.
     pub fn get(&self, row: usize, col: usize) -> Option<f32> {
         match (row, col) {
             (0, 0) => Some(self.x00),
@@ -65,6 +72,7 @@ impl m2 {
         }
     }
 
+    /// Sets the element at the specified row and column.
     pub fn set(&mut self, row: usize, col: usize, value: f32) {
         match (row, col) {
             (0, 0) => self.x00 = value,
@@ -75,6 +83,7 @@ impl m2 {
         }
     }
 
+    /// Gets the entire column at the specified index.
     pub fn col(&self, index: usize) -> Option<v2> {
         match index {
             0 => Some(v2::new(self.x00, self.x01)),
@@ -83,6 +92,7 @@ impl m2 {
         }
     }
 
+    /// Gets the entire row at the specified index.
     pub fn row(&self, index: usize) -> Option<v2> {
         match index {
             0 => Some(v2::new(self.x00, self.x10)),
@@ -91,6 +101,7 @@ impl m2 {
         }
     }
 
+    /// Returns the transpose of the matrix.
     pub fn transpose(&self) -> Self {
         Self {
             x00: self.x00,
@@ -100,6 +111,7 @@ impl m2 {
         }
     }
 
+    /// Returns a matrix with the same elements as the original matrix but in homogeneous form.
     pub fn to_homogeneous(&self) -> m3 {
         m3::new(
             self.x00, self.x01, 0.0, self.x10, self.x11, 0.0, 0.0, 0.0, 1.0,
@@ -193,6 +205,7 @@ impl Into<[[f32; 2]; 2]> for m2 {
 // #                   MATRIX 3D                    #
 // ##################################################
 
+/// Representation of a 3x3 matrix.
 #[repr(C)]
 #[derive(Debug, PartialEq)]
 pub struct m3 {
@@ -208,6 +221,7 @@ pub struct m3 {
 }
 
 impl m3 {
+    /// The zero matrix.
     pub const ZERO: Self = Self {
         x00: 0.0,
         x01: 0.0,
@@ -220,6 +234,7 @@ impl m3 {
         x22: 0.0,
     };
 
+    /// The identity matrix.
     pub const IDENTITY: Self = Self {
         x00: 1.0,
         x01: 0.0,
@@ -232,6 +247,7 @@ impl m3 {
         x22: 1.0,
     };
 
+    /// Creates a new 3x3 matrix with the given elements.
     pub fn new(
         x00: f32,
         x01: f32,
@@ -256,6 +272,7 @@ impl m3 {
         }
     }
 
+    /// Creates a new 3x3 matrix from the given columns.
     pub fn from_cols(col1: v3, col2: v3, col3: v3) -> Self {
         Self {
             x00: col1.x(),
@@ -270,6 +287,7 @@ impl m3 {
         }
     }
 
+    /// Creates a new 3x3 matrix from the given rows.
     pub fn from_rows(row1: v3, row2: v3, row3: v3) -> Self {
         Self {
             x00: row1.x(),
@@ -284,6 +302,7 @@ impl m3 {
         }
     }
 
+    /// Gets the element at the given row and column.
     pub fn get(&self, row: usize, col: usize) -> Option<f32> {
         match (row, col) {
             (0, 0) => Some(self.x00),
@@ -299,6 +318,7 @@ impl m3 {
         }
     }
 
+    /// Sets the element at the given row and column.
     pub fn set(&mut self, row: usize, col: usize, value: f32) {
         match (row, col) {
             (0, 0) => self.x00 = value,
@@ -314,6 +334,7 @@ impl m3 {
         }
     }
 
+    /// Gets the entire column at the given index.
     pub fn col(&self, index: usize) -> Option<v3> {
         match index {
             0 => Some(v3::new(self.x00, self.x01, self.x02)),
@@ -323,6 +344,7 @@ impl m3 {
         }
     }
 
+    /// Gets the entire row at the given index.
     pub fn row(&self, index: usize) -> Option<v3> {
         match index {
             0 => Some(v3::new(self.x00, self.x10, self.x20)),
@@ -332,6 +354,7 @@ impl m3 {
         }
     }
 
+    /// Returns the transpose of the matrix.
     pub fn transpose(&self) -> Self {
         Self {
             x00: self.x00,
@@ -346,6 +369,7 @@ impl m3 {
         }
     }
 
+    /// Returns a matrix with the same elements as the original matrix but in homogeneous form.
     pub fn to_homogeneous(&self) -> m4 {
         m4::new(
             self.x00, self.x01, self.x02, 0.0, self.x10, self.x11, self.x12, 0.0, self.x20,
@@ -470,6 +494,7 @@ impl Into<[[f32; 3]; 3]> for m3 {
 // #                   MATRIX 4D                    #
 // ##################################################
 
+/// Representation of a 4x4 matrix.
 #[repr(C)]
 #[derive(Debug, PartialEq)]
 pub struct m4 {
@@ -492,6 +517,7 @@ pub struct m4 {
 }
 
 impl m4 {
+    /// The zero matrix.
     pub const ZERO: Self = Self {
         x00: 0.0,
         x01: 0.0,
@@ -511,6 +537,7 @@ impl m4 {
         x33: 0.0,
     };
 
+    /// The identity matrix.
     pub const IDENTITY: Self = Self {
         x00: 1.0,
         x01: 0.0,
@@ -530,6 +557,7 @@ impl m4 {
         x33: 1.0,
     };
 
+    /// The OpenGL conversion matrix.
     pub const OPENGL_CONV: Self = Self {
         x00: 1.0,
         x01: 0.0,
@@ -549,6 +577,7 @@ impl m4 {
         x33: 1.0,
     };
 
+    /// Creates a new matrix with the given elements.
     pub fn new(
         x00: f32,
         x01: f32,
@@ -587,6 +616,7 @@ impl m4 {
         }
     }
 
+    /// Creates a new matrix from the given columns.
     pub fn from_cols(col1: v4, col2: v4, col3: v4, col4: v4) -> Self {
         Self {
             x00: col1.x(),
@@ -608,6 +638,7 @@ impl m4 {
         }
     }
 
+    /// Creates a new matrix from the given rows.
     pub fn from_rows(row1: v4, row2: v4, row3: v4, row4: v4) -> Self {
         Self {
             x00: row1.x(),
@@ -629,6 +660,7 @@ impl m4 {
         }
     }
 
+    /// Gets the element at the given row and column.
     pub fn get(&self, row: usize, col: usize) -> Option<f32> {
         match (row, col) {
             (0, 0) => Some(self.x00),
@@ -651,6 +683,7 @@ impl m4 {
         }
     }
 
+    /// Sets the element at the given row and column.
     pub fn set(&mut self, row: usize, col: usize, value: f32) {
         match (row, col) {
             (0, 0) => self.x00 = value,
@@ -673,6 +706,7 @@ impl m4 {
         }
     }
 
+    /// Gets the entire column at the given index.
     pub fn col(&self, index: usize) -> Option<v4> {
         match index {
             0 => Some(v4::new(self.x00, self.x01, self.x02, self.x03)),
@@ -683,6 +717,7 @@ impl m4 {
         }
     }
 
+    /// Gets the entire row at the given index.
     pub fn row(&self, index: usize) -> Option<v4> {
         match index {
             0 => Some(v4::new(self.x00, self.x10, self.x20, self.x30)),
@@ -693,6 +728,7 @@ impl m4 {
         }
     }
 
+    /// Returns the transpose of the matrix.
     pub fn transpose(&self) -> Self {
         Self {
             x00: self.x00,
@@ -714,6 +750,7 @@ impl m4 {
         }
     }
 
+    /// Generates the orthographic projection matrix.
     pub fn orthographic_projection(
         left: f32,
         right: f32,

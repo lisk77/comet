@@ -29,7 +29,7 @@ pub trait InnerSpace:
 // #                   VECTOR 2D                    #
 // ##################################################
 
-/// Representation of a 2D Vector
+/// Representation of a 2D vector
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -40,30 +40,39 @@ pub struct v2 {
 }
 
 impl v2 {
+    /// The unit vector along the x-axis.
     pub const X: v2 = v2 { x: 1.0, y: 0.0 };
+    /// The unit vector along the y-axis.
     pub const Y: v2 = v2 { x: 0.0, y: 1.0 };
+    /// The zero vector.
     pub const ZERO: v2 = v2 { x: 0.0, y: 0.0 };
 
+    /// Creates a new vector with the given components.
     pub const fn new(x: f32, y: f32) -> Self {
         v2 { x, y }
     }
 
+    /// Creates a new vector from a point.
     pub fn from_point(p: p2) -> Self {
         Self { x: p.x(), y: p.y() }
     }
 
+    /// Gets the x-component of the vector.
     pub fn x(&self) -> f32 {
         self.x
     }
 
+    /// Gets the y-component of the vector.
     pub fn y(&self) -> f32 {
         self.y
     }
 
+    /// Sets the x-component of the vector.
     pub fn set_x(&mut self, new_x: f32) {
         self.x = new_x;
     }
 
+    /// Sets the y-component of the vector.
     pub fn set_y(&mut self, new_y: f32) {
         self.y = new_y;
     }
@@ -164,7 +173,7 @@ impl Into<v2> for [f32; 2] {
     }
 }
 
-/// Representation of a 2D integer Vector
+/// Representation of a 2D integer vector
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -175,14 +184,19 @@ pub struct v2i {
 }
 
 impl v2i {
+    /// The unit vector in the x direction.
     pub const X: v2i = v2i { x: 1, y: 0 };
+    /// The unit vector in the y direction.
     pub const Y: v2i = v2i { x: 0, y: 1 };
+    /// The zero vector.
     pub const ZERO: v2i = v2i { x: 0, y: 0 };
 
+    /// Creates a new vector with the given components.
     pub const fn new(x: i64, y: i64) -> Self {
         v2i { x, y }
     }
 
+    /// Creates a new vector from a point.
     pub fn from_point(p: p2) -> Self {
         Self {
             x: p.x() as i64,
@@ -190,10 +204,12 @@ impl v2i {
         }
     }
 
+    /// Creates a 2D point from the vector.
     pub fn as_point(&self) -> p2 {
         p2::new(self.x as f32, self.y as f32)
     }
 
+    /// Creates a integer 2D vector from a floating point 2D vector.
     pub fn from_vec2(v: v2) -> Self {
         Self {
             x: v.x as i64,
@@ -201,6 +217,7 @@ impl v2i {
         }
     }
 
+    /// Creates a floating point 2D vector from the integer vector.
     pub fn as_vec2(&self) -> v2 {
         v2 {
             x: self.x as f32,
@@ -208,26 +225,32 @@ impl v2i {
         }
     }
 
+    /// Gets the x component of the vector.
     pub fn x(&self) -> i64 {
         self.x
     }
 
+    /// Gets the y component of the vector.
     pub fn y(&self) -> i64 {
         self.y
     }
 
+    /// Sets the x component of the vector.
     pub fn set_x(&mut self, new_x: i64) {
         self.x = new_x;
     }
 
+    /// Sets the y component of the vector.
     pub fn set_y(&mut self, new_y: i64) {
         self.y = new_y;
     }
 
+    /// Gets the length of the vector.
     pub fn length(&self) -> i64 {
         ((self.x * self.x + self.y * self.y) as f32).sqrt() as i64
     }
 
+    /// Calculates the normalized version of the vector.
     pub fn normalize(&self) -> Self {
         let factor = 1.0 / self.length() as f32;
         v2i {
@@ -236,6 +259,8 @@ impl v2i {
         }
     }
 
+    /// Swizzles the vector components.
+    /// (x,y) -> (x,x)
     pub fn xx(&self) -> Self {
         Self {
             x: self.x,
@@ -243,6 +268,8 @@ impl v2i {
         }
     }
 
+    /// Swizzles the vector components.
+    /// (x,y) -> (x,y)
     pub fn xy(&self) -> Self {
         Self {
             x: self.x,
@@ -250,6 +277,8 @@ impl v2i {
         }
     }
 
+    /// Swizzles the vector components.
+    /// (x,y) -> (y,x)
     pub fn yx(&self) -> Self {
         Self {
             x: self.y,
@@ -257,6 +286,8 @@ impl v2i {
         }
     }
 
+    /// Swizzles the vector components.
+    /// (x,y) -> (y,y)
     pub fn yy(&self) -> Self {
         Self {
             x: self.y,
@@ -390,7 +421,7 @@ impl Into<[f32; 2]> for v2i {
 // #                   VECTOR 3D                    #
 // ##################################################
 
-/// Representation of a 3D Vector
+/// Representation of a 3D vector
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -402,31 +433,37 @@ pub struct v3 {
 }
 
 impl v3 {
+    /// The unit vector along the x-axis.
     pub const X: v3 = v3 {
         x: 1.0,
         y: 0.0,
         z: 0.0,
     };
+    /// The unit vector along the y-axis.
     pub const Y: v3 = v3 {
         x: 0.0,
         y: 1.0,
         z: 0.0,
     };
+    /// The unit vector along the z-axis.
     pub const Z: v3 = v3 {
         x: 0.0,
         y: 0.0,
         z: 1.0,
     };
+    /// The zero vector.
     pub const ZERO: v3 = v3 {
         x: 0.0,
         y: 0.0,
         z: 0.0,
     };
 
+    /// Creates a new vector with the given components.
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         v3 { x, y, z }
     }
 
+    /// Creates a new vector from a point.
     pub fn from_point(p: p3) -> Self {
         Self {
             x: p.x(),
@@ -435,30 +472,37 @@ impl v3 {
         }
     }
 
+    /// Creates a new point from a vector.
     pub fn as_point(&self) -> p3 {
         p3::new(self.x as f32, self.y as f32, self.z as f32)
     }
 
+    /// Gets the x-component of the vector.
     pub fn x(&self) -> f32 {
         self.x
     }
 
+    /// Gets the y-component of the vector.
     pub fn y(&self) -> f32 {
         self.y
     }
 
+    /// Gets the z-component of the vector.
     pub fn z(&self) -> f32 {
         self.z
     }
 
+    /// Sets the x-component of the vector.
     pub fn set_x(&mut self, new_x: f32) {
         self.x = new_x;
     }
 
+    /// Sets the y-component of the vector.
     pub fn set_y(&mut self, new_y: f32) {
         self.y = new_y;
     }
 
+    /// Sets the z-component of the vector.
     pub fn set_z(&mut self, new_z: f32) {
         self.z = new_z;
     }
@@ -574,6 +618,7 @@ impl Into<v3> for [f32; 3] {
     }
 }
 
+/// Representation of a 3D integer vector
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -585,15 +630,21 @@ pub struct v3i {
 }
 
 impl v3i {
+    /// The unit vector in the x-direction.
     pub const X: v3i = v3i { x: 1, y: 0, z: 0 };
+    /// The unit vector in the y-direction.
     pub const Y: v3i = v3i { x: 0, y: 1, z: 0 };
+    /// The unit vector in the z-direction.
     pub const Z: v3i = v3i { x: 0, y: 0, z: 1 };
+    /// The zero vector.
     pub const ZERO: v3i = v3i { x: 0, y: 0, z: 0 };
 
+    /// Creates a new vector with the given components.
     pub const fn new(x: i64, y: i64, z: i64) -> Self {
         v3i { x, y, z }
     }
 
+    /// Creates a new vector from a point.
     pub fn from_point(p: p3) -> Self {
         Self {
             x: p.x() as i64,
@@ -602,34 +653,42 @@ impl v3i {
         }
     }
 
+    /// Gets the x-component of the vector.
     pub fn x(&self) -> i64 {
         self.x
     }
 
+    /// Gets the y-component of the vector.
     pub fn y(&self) -> i64 {
         self.y
     }
 
+    /// Gets the z-component of the vector.
     pub fn z(&self) -> i64 {
         self.z
     }
 
+    /// Sets the x-component of the vector.
     pub fn set_x(&mut self, new_x: i64) {
         self.x = new_x;
     }
 
+    /// Sets the y-component of the vector.
     pub fn set_y(&mut self, new_y: i64) {
         self.y = new_y;
     }
 
+    /// Sets the z-component of the vector.
     pub fn set_z(&mut self, new_z: i64) {
         self.z = new_z;
     }
 
+    /// Calculates the length of the vector.
     pub fn length(&self) -> i64 {
         ((self.x * self.x + self.y * self.y + self.z * self.z) as f32).sqrt() as i64
     }
 
+    /// Normalizes the vector.
     pub fn normalize(&self) -> Self {
         let factor = 1 / self.length();
         v3i {
@@ -763,7 +822,7 @@ impl From<v3> for v3i {
 // #                   VECTOR 4D                    #
 // ##################################################
 
-/// Representation of a 4D Vector
+/// Representation of a 4D vector
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -776,24 +835,31 @@ pub struct v4 {
 }
 
 impl v4 {
+    /// The unit vector along the x-axis.
     pub const X: v4 = v4 {
         x: 1.0,
         y: 0.0,
         z: 0.0,
         w: 0.0,
     };
+
+    /// The unit vector along the y-axis.
     pub const Y: v4 = v4 {
         x: 0.0,
         y: 1.0,
         z: 0.0,
         w: 0.0,
     };
+
+    /// The unit vector along the z-axis.
     pub const Z: v4 = v4 {
         x: 0.0,
         y: 0.0,
         z: 1.0,
         w: 0.0,
     };
+
+    /// The unit vector along the w-axis.
     pub const W: v4 = v4 {
         x: 0.0,
         y: 0.0,
@@ -801,6 +867,7 @@ impl v4 {
         w: 1.0,
     };
 
+    /// The zero vector.
     pub const ZERO: v4 = v4 {
         x: 0.0,
         y: 0.0,
@@ -808,38 +875,47 @@ impl v4 {
         w: 0.0,
     };
 
+    /// Creates a new vector with the given components.
     pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         v4 { x, y, z, w }
     }
 
+    /// Gets the x-component of the vector.
     pub fn x(&self) -> f32 {
         self.x
     }
 
+    /// Gets the y-component of the vector.
     pub fn y(&self) -> f32 {
         self.y
     }
 
+    /// Gets the z-component of the vector.
     pub fn z(&self) -> f32 {
         self.z
     }
 
+    /// Gets the w-component of the vector.
     pub fn w(&self) -> f32 {
         self.w
     }
 
+    /// Sets the x-component of the vector.
     pub fn set_x(&mut self, new_x: f32) {
         self.x = new_x;
     }
 
+    /// Sets the y-component of the vector.
     pub fn set_y(&mut self, new_y: f32) {
         self.y = new_y;
     }
 
+    /// Sets the z-component of the vector.
     pub fn set_z(&mut self, new_z: f32) {
         self.z = new_z;
     }
 
+    /// Sets the w-component of the vector.
     pub fn set_w(&mut self, new_w: f32) {
         self.w = new_w;
     }

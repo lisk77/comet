@@ -1,5 +1,3 @@
-use rand::seq::index::IndexVecIntoIter;
-
 use crate::vector::{v2, v3};
 use crate::InnerSpace;
 
@@ -8,6 +6,7 @@ pub trait Point {
     fn to_vec(&self) -> impl InnerSpace;
 }
 
+/// Representation of a 2D point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct p2 {
     x: f32,
@@ -15,23 +14,28 @@ pub struct p2 {
 }
 
 impl p2 {
+    /// Creates a new 2D point with the given elements.
     pub fn new(x: f32, y: f32) -> Self {
         p2 { x, y }
     }
 
+    /// Creates a new 2D point from a 2D vector.
     pub fn from_vec(v: v2) -> Self {
         Self { x: v.x(), y: v.y() }
     }
 
+    /// Returns the x-component of the point.
     pub fn x(&self) -> f32 {
         self.x
     }
 
+    /// Returns the y-component of the point.
     pub fn y(&self) -> f32 {
         self.y
     }
 }
 
+/// Representation of a 3D point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct p3 {
     x: f32,
@@ -40,10 +44,12 @@ pub struct p3 {
 }
 
 impl p3 {
+    /// Creates a new 3D point with the given elements.
     pub fn new(x: f32, y: f32, z: f32) -> Self {
         p3 { x, y, z }
     }
 
+    /// Creates a new 3D point from a 3D vector.
     pub fn from_vec(v: v3) -> Self {
         Self {
             x: v.x(),
@@ -52,14 +58,17 @@ impl p3 {
         }
     }
 
+    /// Returns the x-component of the point.
     pub fn x(&self) -> f32 {
         self.x
     }
 
+    /// Returns the y-component of the point.
     pub fn y(&self) -> f32 {
         self.y
     }
 
+    /// Returns the z-component of the point.
     pub fn z(&self) -> f32 {
         self.z
     }
