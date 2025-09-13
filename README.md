@@ -1,4 +1,5 @@
 # ☄️ Comet
+
 a free and open source game engine
 
 > [!WARNING]
@@ -116,45 +117,3 @@ fn main() -> Result<()> {
 }
 
 ```
-## Todo
-(not ordered by importance)
-
-- [ ] (out of the box) Rendering
-  - [ ] 2D
-    - [x] texture rendering
-    - [x] scene rendering
-    - [ ] text rendering
-  - [ ] 3D
-  - [ ] flexible camera system
-    - [x] 2D
-      - [x] general Camera2D component
-      - [x] priority system
-    - [ ] 3D
-      - [ ] general Camera3D component
-      - [ ] priority system
-  - [ ] Particles
-  - [ ] Post-processing
-- [ ] Math
-  - [x] Vectors
-  - [x] Matrices
-  - [ ] Quaternions
-  - [x] Interpolation
-  - [ ] Bezier curves
-  - [x] Easing functions
-  - [ ] Noise
-  - [ ] Ray-casting
-  - [ ] Pathfinding
-- [ ] ECS
-  - [x] Components
-  - [x] Entities
-  - [x] Archetypes
-  - [ ] Scene
-    - [x] general management
-    - [ ] saving
-    - [ ] loading
-- [ ] Input
-- [ ] Sound
-- [ ] Physics
-- [x] Basic Plugin System
-  - [x] Custom Renderer
-  - [x] Custom Game State
