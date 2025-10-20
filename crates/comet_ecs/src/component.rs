@@ -237,9 +237,11 @@ impl Rectangle2D {
     pub fn position(&self) -> Position2D {
         self.position
     }
+
     pub fn set_position(&mut self, position: Position2D) {
         self.position = position;
     }
+
     pub fn size(&self) -> v2 {
         self.size
     }
@@ -251,17 +253,13 @@ impl Rectangle2D {
 
 impl Collider for Rectangle2D {
     fn is_colliding(&self, other: &Self) -> bool {
-        let x1 = self.position().x();
-        let y1 = self.position().y();
-        let w1 = self.size().x();
-        let h1 = self.size().y();
+        let half_size1 = self.size() * 0.5;
+        let half_size2 = other.size() * 0.5;
 
-        let x2 = other.position().x();
-        let y2 = other.position().y();
-        let w2 = other.size().x();
-        let h2 = other.size().y();
+        let dx = (self.position().x() - other.position().x()).abs();
+        let dy = (self.position().y() - other.position().y()).abs();
 
-        x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
+        dx < (half_size1.x() + half_size2.x()) && dy < (half_size1.y() + half_size2.y())
     }
 }
 
