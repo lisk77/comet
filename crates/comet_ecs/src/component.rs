@@ -2,6 +2,7 @@
 // You can use these components as is or as a reference to create your own components
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2D)
+// They are intended to work with the base suite of systems provided by the engine.
 use crate::math::{v2, v3};
 use crate::{Entity, Scene};
 use comet_colors::Color as ColorTrait;
@@ -76,6 +77,15 @@ pub struct Timer {
     time_stack: f32,
     interval: f32,
     done: bool,
+}
+
+#[derive(Component)]
+pub struct AudioSource {
+    name: &'static str,
+    path: Option<&'static str>,
+    looped: bool,
+    volume: f32,
+    pitch: f32,
 }
 
 // ##################################################
@@ -270,6 +280,14 @@ impl Render2D {
             texture_name: texture,
             scale: v2::new(1.0, 1.0),
         }
+    }
+
+    pub fn scale(&self) -> v2 {
+        self.scale
+    }
+
+    pub fn set_scale(&mut self, scale: v2) {
+        self.scale = scale;
     }
 }
 
@@ -546,5 +564,49 @@ impl Timer {
     pub fn reset(&mut self) {
         self.time_stack = 0.0;
         self.done = false;
+    }
+}
+
+impl AudioSource {
+    pub fn new(name: &'static str, path: Option<&'static str>) -> Self {
+        Self {
+            name,
+            path,
+            looped: false,
+            volume: 1.0,
+            pitch: 1.0,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        self.name
+    }
+
+    pub fn path(&self) -> Option<&str> {
+        self.path
+    }
+
+    pub fn looped(&self) -> bool {
+        self.looped
+    }
+
+    pub fn volume(&self) -> f32 {
+        self.volume
+    }
+
+    pub fn pitch(&self) -> f32 {
+        self.pitch
+    }
+
+    pub fn set_looped(&mut self, looped: bool) {
+        self.looped = looped;
+    }
+
+    pub fn set_volume(&mut self, volume: f32) {
+        self.volume = volume.clamp(0.0, 1.0);
+    }
+
+    pub fn set_pitch(&mut self, pitch: f32) {
+        self.pitch = pitch;
     }
 }

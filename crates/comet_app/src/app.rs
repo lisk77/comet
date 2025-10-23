@@ -3,6 +3,7 @@ use comet_ecs::{Camera2D, Component, Entity, Render2D, Scene, Text, Transform2D,
 use comet_input::keyboard::Key;
 use comet_log::*;
 use comet_renderer::renderer::Renderer;
+use comet_sound::*;
 use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
 use winit::dpi::LogicalSize;
@@ -30,6 +31,7 @@ pub struct App {
     delta_time: f32,
     update_timer: f32,
     game_state: Option<Box<dyn Any>>,
+    audio: Box<dyn Audio>,
     scene: Scene,
     fullscreen: bool,
     should_quit: bool,
@@ -47,6 +49,7 @@ impl App {
             delta_time: 0.0,
             update_timer: 0.0166667,
             game_state: None,
+            audio: Box::new(KiraAudio::new()),
             scene: Scene::new(),
             fullscreen: false,
             should_quit: false,
@@ -244,6 +247,38 @@ impl App {
     /// Checks if a prefab with the given name exists.
     pub fn has_prefab(&self, name: &str) -> bool {
         self.scene.has_prefab(name)
+    }
+
+    pub fn load_audio(&mut self, name: &str, path: &str) {
+        self.audio.load(name, path);
+    }
+
+    pub fn play_audio(&mut self, name: &str, looped: bool) {
+        self.audio.play(name, looped);
+    }
+
+    pub fn pause_audio(&mut self, name: &str) {
+        self.audio.pause(name);
+    }
+
+    pub fn stop_audio(&mut self, name: &str) {
+        self.audio.stop(name);
+    }
+
+    pub fn stop_all_audio(&mut self) {
+        self.audio.stop_all();
+    }
+
+    pub fn update_audio(&mut self, dt: f32) {
+        self.audio.update(dt);
+    }
+
+    pub fn is_playing(&self, name: &str) -> bool {
+        self.audio.is_playing(name)
+    }
+
+    pub fn set_volume(&mut self, name: &str, volume: f32) {
+        self.audio.set_volume(name, volume);
     }
 
     /// Stops the event loop and with that quits the `App`.

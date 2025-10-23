@@ -11,6 +11,7 @@ comet_colors = { path = "../comet_colors" }
 comet_log = { path = "../comet_log" }
 comet_input = { path = "../comet_input" }
 comet_structs = { path = "../comet_structs" }
+comet_sound = { path = "../comet_sound" }
 
 winit = { version = "0.29", features = ["rwh_05"] }
 pollster = "0.3"
