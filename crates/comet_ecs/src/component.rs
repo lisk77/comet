@@ -46,6 +46,7 @@ pub struct Render2D {
     is_visible: bool,
     texture_name: &'static str,
     scale: v2,
+    draw_index: u32,
 }
 
 #[derive(Component)]
@@ -62,6 +63,7 @@ pub struct Text {
     font_size: f32,
     color: Color,
     is_visible: bool,
+    bounds: v2,
 }
 
 #[derive(Component)]
@@ -274,11 +276,21 @@ impl Collider for Rectangle2D {
 }
 
 impl Render2D {
+    pub fn new(texture: &'static str, is_visible: bool, scale: v2, draw_index: u32) -> Self {
+        Self {
+            is_visible,
+            texture_name: texture,
+            scale,
+            draw_index,
+        }
+    }
+
     pub fn with_texture(texture: &'static str) -> Self {
         Self {
             is_visible: true,
             texture_name: texture,
             scale: v2::new(1.0, 1.0),
+            draw_index: 0,
         }
     }
 
@@ -288,6 +300,14 @@ impl Render2D {
 
     pub fn set_scale(&mut self, scale: v2) {
         self.scale = scale;
+    }
+
+    pub fn draw_index(&self) -> u32 {
+        self.draw_index
+    }
+
+    pub fn set_draw_index(&mut self, index: u32) {
+        self.draw_index = index
     }
 }
 
@@ -449,6 +469,7 @@ impl Text {
             font_size,
             color: Color::from_wgpu_color(color.to_wgpu()),
             is_visible,
+            bounds: v2::ZERO,
         }
     }
 

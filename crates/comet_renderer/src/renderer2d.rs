@@ -686,7 +686,15 @@ impl<'a> Renderer2D<'a> {
             return;
         }
 
-        let entities = scene.get_entities_with(vec![Transform2D::type_id(), Render2D::type_id()]);
+        let mut entities =
+            scene.get_entities_with(vec![Transform2D::type_id(), Render2D::type_id()]);
+
+        entities.sort_by(|&a, &b| {
+            let ra = scene.get_component::<Render2D>(a).unwrap();
+            let rb = scene.get_component::<Render2D>(b).unwrap();
+            ra.draw_index().cmp(&rb.draw_index())
+        });
+
         let texts =
             scene.get_entities_with(vec![Transform2D::type_id(), comet_ecs::Text::type_id()]);
 
@@ -713,8 +721,9 @@ impl<'a> Renderer2D<'a> {
                 let region = t_region.unwrap();
                 let (dim_x, dim_y) = region.dimensions();
 
-                let half_width = dim_x as f32 * 0.5;
-                let half_height = dim_y as f32 * 0.5;
+                let scale = renderer_component.scale();
+                let half_width = dim_x as f32 * 0.5 * scale.x();
+                let half_height = dim_y as f32 * 0.5 * scale.y();
 
                 let buffer_size = vertex_buffer.len() as u16;
 
