@@ -139,6 +139,11 @@ impl App {
         &self.scene
     }
 
+    /// Retrieves a mutable reference to the current `Scene` in the `App`
+    pub fn scene_mut(&mut self) -> &mut Scene {
+        &mut self.scene
+    }
+
     /// Retrieves a reference to the `InputManager`.
     pub fn input_manager(&self) -> &InputManager {
         &self.input_manager

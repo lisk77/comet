@@ -483,6 +483,7 @@ impl<'a> Renderer2D<'a> {
         size: f32,
         position: p2,
         color: wgpu::Color,
+        bounds: &mut v2,
     ) -> (Vec<Vertex>, Vec<u16>) {
         let vert_color = [
             color.r as f32,
@@ -495,24 +496,18 @@ impl<'a> Renderer2D<'a> {
             position.x() / self.config.width as f32,
             position.y() / self.config.height as f32,
         );
-        let scale_factor = size
-            / self
-                .graphic_resource_manager
-                .fonts()
-                .iter()
-                .find(|f| f.name() == font)
-                .unwrap()
-                .size();
 
-        let line_height = (self
+        let font_data = self
             .graphic_resource_manager
             .fonts()
             .iter()
             .find(|f| f.name() == font)
-            .unwrap()
-            .line_height()
-            / self.config.height as f32)
-            * scale_factor;
+            .unwrap();
+
+        let scale_factor = size / font_data.size();
+
+        let line_height = (font_data.line_height() / self.config.height as f32) * scale_factor;
+
         let lines = text
             .split("\n")
             .map(|s| {
@@ -525,9 +520,27 @@ impl<'a> Renderer2D<'a> {
             })
             .collect::<Vec<String>>();
 
+        let mut max_line_width_px = 0.0;
+        let mut total_height_px = 0.0;
+
+        for line in &lines {
+            let mut line_width_px = 0.0;
+            for c in line.chars() {
+                if let Some(region) = font_data.get_glyph(c) {
+                    line_width_px += region.advance();
+                }
+            }
+            if line_width_px > max_line_width_px {
+                max_line_width_px = line_width_px;
+            }
+            total_height_px += font_data.line_height();
+        }
+
+        bounds.set_x((max_line_width_px / self.config.width as f32) * scale_factor);
+        bounds.set_y((total_height_px / self.config.height as f32) * scale_factor);
+
         let mut x_offset = 0.0;
         let mut y_offset = 0.0;
-
         let mut vertex_data = Vec::new();
         let mut index_data = Vec::new();
 
@@ -679,7 +692,7 @@ impl<'a> Renderer2D<'a> {
 
     /// A function to automatically render all the entities of the `Scene` struct.
     /// The entities must have the `Render2D` and `Transform2D` components to be rendered as well as set visible.
-    pub fn render_scene_2d(&mut self, scene: &Scene) {
+    pub fn render_scene_2d(&mut self, scene: &mut Scene) {
         let cameras = scene.get_entities_with(vec![Transform2D::type_id(), Camera2D::type_id()]);
 
         if cameras.is_empty() {
@@ -789,24 +802,36 @@ impl<'a> Renderer2D<'a> {
         }
 
         for text in texts {
-            let component = scene.get_component::<Text>(text).unwrap();
-            let transform = scene.get_component::<Transform2D>(text).unwrap();
+            if let Some(component) = scene.get_component_mut::<Text>(text) {
+                if component.is_visible() {
+                    let font = component.font().to_string();
+                    let size = component.font_size();
+                    let color = component.color().to_wgpu();
+                    let content = component.content().to_string();
 
-            if component.is_visible() {
-                let (vertices, indices) = self.add_text_to_buffers(
-                    component.content().to_string(),
-                    component.font().to_string(),
-                    component.font_size(),
-                    p2::from_vec(transform.position().as_vec()),
-                    component.color().to_wgpu(),
-                );
-                let draw = self
-                    .draw_info
-                    .iter_mut()
-                    .find(|d| d.name() == &format!("{}", component.font()))
-                    .unwrap();
-                draw.update_vertex_buffer(&self.device, &self.queue, vertices);
-                draw.update_index_buffer(&self.device, &self.queue, indices);
+                    let transform = scene.get_component::<Transform2D>(text).unwrap();
+
+                    let mut bounds = v2::ZERO;
+                    let (vertices, indices) = self.add_text_to_buffers(
+                        content,
+                        font.clone(),
+                        size,
+                        p2::from_vec(transform.position().as_vec()),
+                        color,
+                        &mut bounds,
+                    );
+
+                    let component = scene.get_component_mut::<Text>(text).unwrap();
+                    component.set_bounds(bounds);
+
+                    let draw = self
+                        .draw_info
+                        .iter_mut()
+                        .find(|d| d.name() == &format!("{}", font))
+                        .unwrap();
+                    draw.update_vertex_buffer(&self.device, &self.queue, vertices);
+                    draw.update_index_buffer(&self.device, &self.queue, indices);
+                }
             }
         }
 

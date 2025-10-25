@@ -508,6 +508,14 @@ impl Text {
     pub fn is_visible(&self) -> bool {
         self.is_visible
     }
+
+    pub fn bounds(&self) -> v2 {
+        self.bounds
+    }
+
+    pub fn set_bounds(&mut self, bounds: v2) {
+        self.bounds = bounds
+    }
 }
 
 impl Color {
