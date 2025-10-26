@@ -13,15 +13,13 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
     let e0 = app.new_entity();
     app.add_component(e0, Transform2D::new());
 
-    let mut render = Render2D::new();
-    render.set_visibility(true);
-    render.set_texture("./res/textures/comet_icon.png");
+    let render = Render2D::with_texture("res/textures/comet_icon.png");
 
     app.add_component(e0, render);
 }
 
 fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
-    renderer.render_scene_2d(app.scene())
+    renderer.render_scene_2d(app.scene_mut())
 }
 
 fn main() {

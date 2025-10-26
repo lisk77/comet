@@ -14,9 +14,7 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
 
     app.add_component(e1, Transform2D::new());
 
-    let mut renderer2d = Render2D::new();
-    renderer2d.set_texture(r"res/textures/comet_icon.png");
-    renderer2d.set_visibility(true);
+    let mut renderer2d = Render2D::with_texture("res/textures/comet_icon.png");
 
     app.add_component(e1, renderer2d);
 }
@@ -24,7 +22,7 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
 fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
     handle_input(app, dt);
 
-    renderer.render_scene_2d(app.scene());
+    renderer.render_scene_2d(app.scene_mut());
 }
 
 fn handle_input(app: &mut App, dt: f32) {

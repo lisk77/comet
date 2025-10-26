@@ -34,7 +34,7 @@ fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
     transform.position_mut().set_x(-((size.width - 50) as f32));
     transform.position_mut().set_y((size.height - 100) as f32);
 
-    renderer.render_scene_2d(app.scene());
+    renderer.render_scene_2d(app.scene_mut());
 }
 
 fn main() {
