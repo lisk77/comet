@@ -140,6 +140,14 @@ impl<'a> Renderer for Renderer2D_<'a> {
         self.render_context.resize(new_size)
     }
 
+    fn scale_factor(&self) -> f64 {
+        todo!()
+    }
+
+    fn set_scale_factor(&mut self, scale_factor: f64) {
+        todo!()
+    }
+
     fn update(&mut self) -> f32 {
         self.render_context.update()
     }
