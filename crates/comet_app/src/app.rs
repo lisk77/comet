@@ -381,6 +381,9 @@ impl App {
                             WindowEvent::Resized(physical_size) => {
                                 renderer.resize(*physical_size);
                             }
+                            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                                renderer.set_scale_factor(*scale_factor);
+                            }
                             WindowEvent::RedrawRequested => {
                                 window.request_redraw();
                                 match renderer.render() {

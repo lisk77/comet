@@ -26,6 +26,7 @@ pub struct Renderer2D<'a> {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
+    scale_factor: f64,
     universal_render_pipeline: wgpu::RenderPipeline,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     texture_sampler: wgpu::Sampler,
@@ -43,6 +44,7 @@ pub struct Renderer2D<'a> {
 impl<'a> Renderer2D<'a> {
     pub fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Renderer2D<'a> {
         let size = window.inner_size(); //PhysicalSize::<u32>::new(1920, 1080);
+        let scale_factor = window.scale_factor();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -258,6 +260,7 @@ impl<'a> Renderer2D<'a> {
             queue,
             config,
             size,
+            scale_factor,
             universal_render_pipeline,
             texture_bind_group_layout,
             texture_sampler,
@@ -292,6 +295,14 @@ impl<'a> Renderer2D<'a> {
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
         }
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor
+    }
+
+    pub fn set_scale_factor(&mut self, scale_factor: f64) {
+        self.scale_factor = scale_factor
     }
 
     pub fn add_draw_call(&mut self, draw_call: String, texture: Texture) {
@@ -917,6 +928,14 @@ impl<'a> Renderer for Renderer2D<'a> {
 
     fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.resize(new_size)
+    }
+
+    fn scale_factor(&self) -> f64 {
+        self.scale_factor()
+    }
+
+    fn set_scale_factor(&mut self, scale_factor: f64) {
+        self.set_scale_factor(scale_factor);
     }
 
     fn update(&mut self) -> f32 {
