@@ -1,5 +1,5 @@
 use crate::renderer::Renderer;
-use crate::{camera::CameraManager, render_context::RenderContext};
+use crate::{camera::CameraManager, render_context::RenderContext, render_pass::RenderPass};
 use comet_colors::Color;
 use comet_resources::graphic_resource_manager::GraphicResourceManager;
 use std::sync::Arc;
@@ -9,6 +9,8 @@ pub struct Renderer2D<'a> {
     render_context: RenderContext<'a>,
     resource_manager: GraphicResourceManager,
     camera_manager: CameraManager,
+    render_passes: Vec<RenderPass>,
+    last_frame_time: std::time::Instant,
     delta_time: f32,
 }
 
@@ -18,6 +20,8 @@ impl<'a> Renderer for Renderer2D<'a> {
             render_context: RenderContext::new(window, clear_color),
             resource_manager: GraphicResourceManager::new(),
             camera_manager: CameraManager::new(),
+            render_passes: Vec::new(),
+            last_frame_time: std::time::Instant::now(),
             delta_time: 0.0,
         }
     }
@@ -44,11 +48,35 @@ impl<'a> Renderer for Renderer2D<'a> {
     }
 
     fn update(&mut self) -> f32 {
-        todo!()
+        let now = std::time::Instant::now();
+        self.delta_time = now.duration_since(self.last_frame_time).as_secs_f32();
+        self.last_frame_time = now;
+        self.delta_time
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        todo!()
+        let output = self.render_context.surface().get_current_texture()?;
+        let output_view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder =
+            self.render_context
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
+
+        for pass in &self.render_passes {
+            (pass.execute)(&mut self.render_context, &mut encoder, &output_view);
+        }
+
+        self.render_context
+            .queue()
+            .submit(std::iter::once(encoder.finish()));
+
+        output.present();
+
+        Ok(())
     }
 }
-

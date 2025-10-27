@@ -1,5 +1,6 @@
+use crate::{batch::Batch, render_resources::RenderResources};
 use comet_colors::Color;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
 pub struct RenderContext<'a> {
@@ -10,6 +11,9 @@ pub struct RenderContext<'a> {
     size: PhysicalSize<u32>,
     scale_factor: f64,
     clear_color: wgpu::Color,
+    render_pipelines: HashMap<String, wgpu::RenderPipeline>,
+    batches: HashMap<String, Batch>,
+    resources: RenderResources,
 }
 
 impl<'a> RenderContext<'a> {
@@ -37,7 +41,7 @@ impl<'a> RenderContext<'a> {
                 required_limits: wgpu::Limits::default(),
                 memory_hints: Default::default(),
             },
-            None, // Trace path
+            None,
         ))
         .unwrap();
 
@@ -77,6 +81,9 @@ impl<'a> RenderContext<'a> {
             size,
             scale_factor,
             clear_color,
+            render_pipelines: HashMap::new(),
+            batches: HashMap::new(),
+            resources: RenderResources::new(),
         }
     }
 
@@ -122,5 +129,21 @@ impl<'a> RenderContext<'a> {
 
     pub fn clear_color(&self) -> wgpu::Color {
         self.clear_color
+    }
+
+    pub fn get_pipeline(&self, label: String) -> Option<&wgpu::RenderPipeline> {
+        self.render_pipelines.get(&label)
+    }
+
+    pub fn get_batch(&self, label: String) -> Option<&Batch> {
+        self.batches.get(&label)
+    }
+
+    pub fn resources(&self) -> &RenderResources {
+        &self.resources
+    }
+
+    pub fn resources_mut(&mut self) -> &mut RenderResources {
+        &mut self.resources
     }
 }
