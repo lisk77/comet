@@ -1,5 +1,6 @@
+use comet_ecs::{Camera2D, Transform2D};
 use comet_log::fatal;
-use comet_math::{m4, p3, v2, v3};
+use comet_math::{m4, v2, v3};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -36,6 +37,46 @@ impl CameraManager {
 
     pub fn get_camera(&self) -> &RenderCamera {
         self.cameras.get(self.active_camera).unwrap()
+    }
+
+    pub fn update_from_scene(&mut self, scene: &comet_ecs::Scene, camera_entities: Vec<usize>) {
+        self.cameras.clear();
+
+        let mut cameras_with_priority: Vec<(RenderCamera, u8)> = Vec::new();
+
+        for entity in camera_entities {
+            let camera_component = scene.get_component::<Camera2D>(entity).unwrap();
+            let transform_component = scene.get_component::<Transform2D>(entity).unwrap();
+
+            let render_cam = RenderCamera::new(
+                camera_component.zoom(),
+                camera_component.dimensions(),
+                v3::new(
+                    transform_component.position().as_vec().x(),
+                    transform_component.position().as_vec().y(),
+                    0.0,
+                ),
+            );
+
+            cameras_with_priority.push((render_cam, camera_component.priority()));
+        }
+
+        if cameras_with_priority.is_empty() {
+            return;
+        }
+
+        // sort by priority, lower = more important
+        cameras_with_priority.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        // store only the cameras
+        self.cameras = cameras_with_priority.into_iter().map(|(c, _)| c).collect();
+
+        // always use the first as active
+        self.active_camera = 0;
+    }
+
+    pub fn has_active_camera(&self) -> bool {
+        !self.cameras.is_empty()
     }
 }
 
@@ -343,4 +384,3 @@ impl CameraController {
         }
     }
 }*/
-

@@ -1,5 +1,6 @@
 use crate::{batch::Batch, render_resources::RenderResources};
 use comet_colors::Color;
+use comet_resources::Vertex;
 use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -57,7 +58,7 @@ impl<'a> RenderContext<'a> {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -131,12 +132,42 @@ impl<'a> RenderContext<'a> {
         self.clear_color
     }
 
+    pub fn insert_pipeline(&mut self, label: String, pipeline: wgpu::RenderPipeline) {
+        self.render_pipelines.insert(label, pipeline);
+    }
+
     pub fn get_pipeline(&self, label: String) -> Option<&wgpu::RenderPipeline> {
         self.render_pipelines.get(&label)
     }
 
     pub fn get_batch(&self, label: String) -> Option<&Batch> {
         self.batches.get(&label)
+    }
+
+    pub fn get_batch_mut(&mut self, label: String) -> Option<&mut Batch> {
+        self.batches.get_mut(&label)
+    }
+
+    pub fn new_batch(&mut self, label: String, vertex_data: Vec<Vertex>, index_data: Vec<u16>) {
+        self.batches.insert(
+            label.clone(),
+            Batch::new(label, &self.device, vertex_data, index_data),
+        );
+    }
+
+    pub fn update_batch_buffers(
+        &mut self,
+        label: String,
+        vertex_data: Vec<Vertex>,
+        index_data: Vec<u16>,
+    ) {
+        if let Some(batch) = self.batches.get_mut(&label) {
+            batch.update_vertex_buffer(&self.device, &self.queue, vertex_data);
+            batch.update_index_buffer(&self.device, &self.queue, index_data);
+        } else {
+            let batch = Batch::new(label.clone(), &self.device, vertex_data, index_data);
+            self.batches.insert(label, batch);
+        }
     }
 
     pub fn resources(&self) -> &RenderResources {

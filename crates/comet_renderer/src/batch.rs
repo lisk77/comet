@@ -1,10 +1,9 @@
-use comet_resources::{Texture, Vertex};
+use comet_resources::Vertex;
 use wgpu::util::DeviceExt;
-use wgpu::{BindGroupLayout, BufferUsages, Device};
+use wgpu::{BufferUsages, Device};
 
 pub struct Batch {
     label: String,
-    texture: wgpu::BindGroup,
     vertex_data: Vec<Vertex>,
     index_data: Vec<u16>,
     vertex_buffer: wgpu::Buffer,
@@ -16,27 +15,9 @@ impl Batch {
     pub fn new(
         label: String,
         device: &Device,
-        texture: &Texture,
-        texture_bind_group_layout: &BindGroupLayout,
-        texture_sampler: &wgpu::Sampler,
         vertex_data: Vec<Vertex>,
         index_data: Vec<u16>,
     ) -> Self {
-        let texture_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture_sampler),
-                },
-            ],
-            label: Some(format!("{} Texture", label).as_str()),
-        });
-
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(format!("{} Vertex Buffer", &label).as_str()),
             contents: bytemuck::cast_slice(&vertex_data),
@@ -53,17 +34,12 @@ impl Batch {
 
         Self {
             label,
-            texture: texture_bind,
             vertex_data,
             index_data,
             vertex_buffer,
             index_buffer,
             num_indices,
         }
-    }
-
-    pub fn texture(&self) -> &wgpu::BindGroup {
-        &self.texture
     }
 
     pub fn vertex_buffer(&self) -> &wgpu::Buffer {
@@ -143,22 +119,5 @@ impl Batch {
                 self.index_data = index_data;
             }
         }
-    }
-
-    pub fn set_texture(&mut self, device: &Device, layout: &BindGroupLayout, texture: &Texture) {
-        self.texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
-                },
-            ],
-            label: Some(format!("{} Texture Bind Group", self.label).as_str()),
-        });
     }
 }
