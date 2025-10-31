@@ -2,7 +2,7 @@ use comet::prelude::*;
 
 fn setup(app: &mut App, renderer: &mut Renderer2D) {
     // Initialize the texture atlas
-    renderer.initialize_atlas();
+    renderer.init_atlas();
 
     // Register components
     app.register_component::<Position2D>();

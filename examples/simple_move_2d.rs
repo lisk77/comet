@@ -4,7 +4,7 @@ use winit_input_helper::WinitInputHelper;
 
 fn setup(app: &mut App, renderer: &mut Renderer2D) {
     // Takes all the textures from res/textures and puts them into a texture atlas
-    renderer.initialize_atlas();
+    renderer.init_atlas();
 
     let camera = app.new_entity();
     app.add_component(camera, Transform2D::new());
@@ -14,7 +14,7 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
 
     app.add_component(e1, Transform2D::new());
 
-    let mut renderer2d = Render2D::with_texture("res/textures/comet_icon.png");
+    let renderer2d = Render2D::with_texture("res/textures/comet_icon.png");
 
     app.add_component(e1, renderer2d);
 }
