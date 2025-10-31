@@ -26,6 +26,30 @@ impl RenderResources {
         self.bind_group_layouts.get(label)
     }
 
+    pub fn replace_bind_group_layout(
+        &mut self,
+        label: String,
+        pos: usize,
+        bind_group_layout: Arc<wgpu::BindGroupLayout>,
+    ) {
+        match self.bind_group_layouts.get_mut(&label) {
+            None => {
+                error!("Render pass {} does not exist", label);
+                return;
+            }
+            Some(v) => {
+                if v.len() <= pos {
+                    error!(
+                        "Position {} is out of bounds for the bind group layouts of render pass {}",
+                        pos, label
+                    );
+                    return;
+                }
+                v[pos] = bind_group_layout;
+            }
+        }
+    }
+
     pub fn get_buffer(&self, label: &str) -> Option<&Vec<Arc<wgpu::Buffer>>> {
         self.buffers.get(label)
     }
