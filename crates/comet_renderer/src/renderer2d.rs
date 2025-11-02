@@ -1,19 +1,59 @@
 use crate::renderer::Renderer;
 use crate::{
-    camera::{CameraManager, RenderCamera},
+    camera::CameraManager,
     render_context::RenderContext,
-    render_pass::{universal_execute, RenderPass},
+    render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
 };
 use comet_colors::Color;
-use comet_ecs::{Camera, Camera2D, Component, Render, Render2D, Transform2D};
+use comet_ecs::{Component, Render, Render2D, Transform2D};
 use comet_log::{debug, error, info};
-use comet_math::v3;
 use comet_resources::{
-    graphic_resource_manager::GraphicResourceManager, texture_atlas::TextureRegion, Texture, Vertex,
+    font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
+
+const BASE_2D_SHADER_SRC: &str = r#"
+struct CameraUniform {
+    view_proj: mat4x4<f32>,
+};
+
+@group(1) @binding(0)
+var<uniform> camera: CameraUniform;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) tex_coords: vec2<f32>,
+    @location(2) color: vec4<f32>,
+}
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) tex_coords: vec2<f32>,
+    @location(1) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(model: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.tex_coords = model.tex_coords;
+    out.color = model.color;
+    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
+    return out;
+}
+
+@group(0) @binding(0)
+var t_diffuse: texture_2d<f32>;
+@group(0) @binding(1)
+var s_diffuse: sampler;
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let sample_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    return sample_color * in.color;
+}
+"#;
 
 pub struct Renderer2D<'a> {
     render_context: RenderContext<'a>,
@@ -55,7 +95,6 @@ impl<'a> Renderer2D<'a> {
                 &wgpu::BindGroupLayoutDescriptor {
                     label: Some("Texture Bind Group Layout"),
                     entries: &[
-                        // Texture view (binding = 0)
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -66,7 +105,6 @@ impl<'a> Renderer2D<'a> {
                             },
                             count: None,
                         },
-                        // Sampler (binding = 1)
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -84,13 +122,13 @@ impl<'a> Renderer2D<'a> {
                     address_mode_u: wgpu::AddressMode::ClampToEdge,
                     address_mode_v: wgpu::AddressMode::ClampToEdge,
                     address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Linear,
-                    min_filter: wgpu::FilterMode::Linear,
-                    mipmap_filter: wgpu::FilterMode::Linear,
+                    mag_filter: wgpu::FilterMode::Nearest,
+                    min_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::FilterMode::Nearest,
                     lod_min_clamp: 0.0,
                     lod_max_clamp: 100.0,
                     compare: None,
-                    anisotropy_clamp: 16,
+                    anisotropy_clamp: 1,
                     border_color: None,
                     ..Default::default()
                 });
@@ -114,8 +152,8 @@ impl<'a> Renderer2D<'a> {
 
         self.new_render_pass(
             "Universal".to_string(),
-            Box::new(universal_execute),
-            "res/shaders/base2d.wgsl",
+            Box::new(universal_clear_execute),
+            BASE_2D_SHADER_SRC,
             None,
             &Texture::from_image(
                 self.render_context.device(),
@@ -125,11 +163,202 @@ impl<'a> Renderer2D<'a> {
                 false,
             )
             .unwrap(),
-            texture_bind_group_layout,
+            texture_bind_group_layout.clone(),
             texture_sampler,
             Vec::new(),
             &[camera_bind_group_layout],
         );
+
+        let atlas_texture = Texture::from_image(
+            self.render_context.device(),
+            self.render_context.queue(),
+            self.resource_manager.texture_atlas().atlas(),
+            Some("Universal Updated"),
+            false,
+        )
+        .unwrap();
+
+        let texture_sampler =
+            self.render_context
+                .device()
+                .create_sampler(&wgpu::SamplerDescriptor {
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: wgpu::FilterMode::Nearest,
+                    min_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    lod_min_clamp: 0.0,
+                    lod_max_clamp: 100.0,
+                    compare: None,
+                    anisotropy_clamp: 1,
+                    border_color: None,
+                    ..Default::default()
+                });
+
+        let new_bind_group = Arc::new(self.render_context.device().create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&atlas_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                    },
+                ],
+                label: Some("Universal Texture Bind Group (Updated)"),
+            },
+        ));
+
+        self.render_context.resources_mut().replace_bind_group(
+            "Universal".to_string(),
+            0,
+            new_bind_group,
+        );
+    }
+
+    pub fn load_font(&mut self, path: &str, size: f32) {
+        info!("Loading font from {}", path);
+
+        let font = Font::new(path, size);
+        self.resource_manager.fonts_mut().push(font);
+
+        let fonts = self.resource_manager.fonts();
+        let merged_atlas = TextureAtlas::from_fonts(fonts);
+        self.resource_manager.set_font_atlas(merged_atlas.clone());
+
+        let font_texture = Texture::from_image(
+            self.render_context.device(),
+            self.render_context.queue(),
+            merged_atlas.atlas(),
+            Some("FontAtlas"),
+            false,
+        )
+        .expect("Failed to create GPU texture for font atlas");
+
+        let texture_bind_group_layout =
+            Arc::new(self.render_context.device().create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Font Texture Bind Group Layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
+                },
+            ));
+
+        let texture_sampler =
+            self.render_context
+                .device()
+                .create_sampler(&wgpu::SamplerDescriptor {
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: wgpu::FilterMode::Nearest,
+                    min_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    ..Default::default()
+                });
+
+        let font_bind_group = Arc::new(self.render_context.device().create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&font_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                    },
+                ],
+                label: Some("Font Bind Group"),
+            },
+        ));
+
+        let camera_bind_group_layout =
+            Arc::new(self.render_context.device().create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Font Camera Bind Group Layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                },
+            ));
+
+        self.new_render_pass(
+            "Font".to_string(),
+            Box::new(universal_load_execute),
+            BASE_2D_SHADER_SRC,
+            None,
+            &font_texture,
+            texture_bind_group_layout.clone(),
+            texture_sampler,
+            vec![],
+            &[camera_bind_group_layout],
+        );
+
+        let camera_group_clone = {
+            self.render_context
+                .resources()
+                .get_bind_groups("Universal")
+                .and_then(|groups| groups.get(1))
+                .cloned()
+        };
+
+        let resources = self.render_context.resources_mut();
+
+        if let Some(groups) = resources.get_bind_groups("Font") {
+            if groups.is_empty() {
+                resources.insert_bind_group("Font".into(), font_bind_group.clone());
+            } else {
+                resources.replace_bind_group("Font".into(), 0, font_bind_group.clone());
+            }
+        } else {
+            resources.insert_bind_group("Font".into(), font_bind_group.clone());
+        }
+
+        if let Some(camera_group) = camera_group_clone {
+            let has_camera = resources
+                .get_bind_groups("Font")
+                .map(|v| v.len() > 1)
+                .unwrap_or(false);
+
+            if has_camera {
+                resources.replace_bind_group("Font".into(), 1, camera_group);
+            } else {
+                resources.insert_bind_group("Font".into(), camera_group);
+            }
+        } else {
+            debug!("Font pass created with its own layout, waiting for camera bind group to be set later.");
+        }
+
+        info!("Font {} successfully loaded into renderer", path);
     }
 
     pub fn new_render_pass(
@@ -150,11 +379,17 @@ impl<'a> Renderer2D<'a> {
     ) {
         info!("Creating render pass {}", label);
 
-        if let Err(e) = self.resource_manager.load_shader(
-            shader_stage,
-            shader_path,
-            self.render_context.device(),
-        ) {
+        if let Err(e) = self
+            .resource_manager
+            .load_shader(self.render_context.device(), shader_stage, shader_path)
+            .or_else(|_| {
+                self.resource_manager.load_shader_from_string(
+                    self.render_context.device(),
+                    format!("{} Shader", label.clone()).as_str(),
+                    shader_path,
+                )
+            })
+        {
             error!("Aborting render pass creation: {}", e);
             return;
         }
@@ -192,7 +427,14 @@ impl<'a> Renderer2D<'a> {
                 push_constant_ranges: &[],
             });
 
-            let shader_module = self.resource_manager.get_shader(shader_path).unwrap();
+            let shader_module = self
+                .resource_manager
+                .get_shader(shader_path)
+                .unwrap_or_else(|| {
+                    self.resource_manager
+                        .get_shader(format!("{} Shader", label.clone()).as_str())
+                        .unwrap()
+                });
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(&format!("{} Render Pipeline", label)),
                 layout: Some(&pipeline_layout),
@@ -262,7 +504,9 @@ impl<'a> Renderer2D<'a> {
         self.render_passes
             .push(RenderPass::new(label.clone(), execute));
 
-        self.render_context.new_batch(label, Vec::new(), Vec::new());
+        self.render_context
+            .new_batch(label.clone(), Vec::new(), Vec::new());
+        info!("Created render pass {}!", label)
     }
 
     fn get_project_root() -> std::io::Result<std::path::PathBuf> {
@@ -281,6 +525,159 @@ impl<'a> Renderer2D<'a> {
             std::io::ErrorKind::NotFound,
             "Ran out of places to find Cargo.toml",
         ))
+    }
+
+    fn get_texture_region(&self, texture_path: String) -> Option<&TextureRegion> {
+        if !self
+            .resource_manager
+            .texture_atlas()
+            .textures()
+            .contains_key(&texture_path)
+        {
+            error!("Texture {} not found in atlas", &texture_path);
+        }
+        self.resource_manager
+            .texture_atlas()
+            .textures()
+            .get(&texture_path)
+    }
+
+    fn get_glyph_region(&self, glyph: char, font: String) -> &TextureRegion {
+        let font_atlas = self
+            .resource_manager
+            .fonts()
+            .iter()
+            .find(|f| f.name() == font)
+            .unwrap();
+        font_atlas.get_glyph(glyph).unwrap()
+    }
+
+    pub fn add_text_to_buffers(
+        &self,
+        text: String,
+        font: String,
+        size: f32,
+        position: comet_math::v2,
+        color: wgpu::Color,
+        bounds: &mut comet_math::v2,
+    ) -> (Vec<Vertex>, Vec<u16>) {
+        let vert_color = [
+            color.r as f32,
+            color.g as f32,
+            color.b as f32,
+            color.a as f32,
+        ];
+
+        let config = self.render_context.config();
+
+        let screen_position = comet_math::v2::new(
+            position.x() / config.width as f32,
+            position.y() / config.height as f32,
+        );
+
+        let font_data = self
+            .resource_manager
+            .fonts()
+            .iter()
+            .find(|f| f.name() == font)
+            .unwrap_or_else(|| panic!("Font '{}' not found in resource manager", font));
+
+        let scale_factor = size / font_data.size();
+        let line_height = (font_data.line_height() / config.height as f32) * scale_factor;
+
+        let lines = text
+            .split('\n')
+            .map(|s| {
+                s.chars()
+                    .map(|c| if c == '\t' { ' ' } else { c })
+                    .collect::<String>()
+            })
+            .collect::<Vec<String>>();
+
+        let mut max_line_width_px = 0.0;
+        let mut total_height_px = 0.0;
+
+        for line in &lines {
+            let mut line_width_px = 0.0;
+            for c in line.chars() {
+                if let Some(region) = font_data.get_glyph(c) {
+                    line_width_px += region.advance();
+                }
+            }
+            if line_width_px > max_line_width_px {
+                max_line_width_px = line_width_px;
+            }
+            total_height_px += font_data.line_height();
+        }
+
+        bounds.set_x((max_line_width_px / config.width as f32) * scale_factor);
+        bounds.set_y((total_height_px / config.height as f32) * scale_factor);
+
+        let mut x_offset = 0.0;
+        let mut y_offset = 0.0;
+        let mut vertex_data = Vec::new();
+        let mut index_data = Vec::new();
+
+        for line in lines {
+            for c in line.chars() {
+                let region = self.get_glyph_region(c, font.clone());
+
+                let (dim_x, dim_y) = region.dimensions();
+                let w = (dim_x as f32 / config.width as f32) * scale_factor;
+                let h = (dim_y as f32 / config.height as f32) * scale_factor;
+
+                let offset_x_px = (region.offset_x() / config.width as f32) * scale_factor;
+                let offset_y_px = (region.offset_y() / config.height as f32) * scale_factor;
+
+                let glyph_left = screen_position.x() + x_offset + offset_x_px;
+                let glyph_top = screen_position.y() - offset_y_px - y_offset;
+                let glyph_right = glyph_left + w;
+                let glyph_bottom = glyph_top - h;
+
+                let vertices = vec![
+                    Vertex::new(
+                        [glyph_left, glyph_top, 0.0],
+                        [region.u0(), region.v0()],
+                        vert_color,
+                    ),
+                    Vertex::new(
+                        [glyph_left, glyph_bottom, 0.0],
+                        [region.u0(), region.v1()],
+                        vert_color,
+                    ),
+                    Vertex::new(
+                        [glyph_right, glyph_bottom, 0.0],
+                        [region.u1(), region.v1()],
+                        vert_color,
+                    ),
+                    Vertex::new(
+                        [glyph_right, glyph_top, 0.0],
+                        [region.u1(), region.v0()],
+                        vert_color,
+                    ),
+                ];
+
+                let buffer_size = vertex_data.len() as u16;
+                let indices = vec![
+                    buffer_size,
+                    buffer_size + 1,
+                    buffer_size + 3,
+                    buffer_size + 1,
+                    buffer_size + 2,
+                    buffer_size + 3,
+                ];
+
+                x_offset += (region.advance() / config.width as f32) * scale_factor;
+
+                vertex_data.extend(vertices);
+                index_data.extend(indices);
+            }
+
+            y_offset += line_height;
+            x_offset = 0.0;
+        }
+
+        (vertex_data, index_data)
     }
 
     pub fn render_scene_2d(&mut self, scene: &mut comet_ecs::Scene) {
@@ -304,6 +701,11 @@ impl<'a> Renderer2D<'a> {
             ra.draw_index().cmp(&rb.draw_index())
         });
 
+        let texts = scene.get_entities_with(vec![
+            comet_ecs::Transform2D::type_id(),
+            comet_ecs::Text::type_id(),
+        ]);
+
         self.setup_camera(scene, cameras);
 
         let mut vertex_buffer: Vec<Vertex> = Vec::new();
@@ -317,16 +719,13 @@ impl<'a> Renderer2D<'a> {
                 let world_position = transform_component.position().clone();
                 let rotation_angle = transform_component.rotation().to_radians();
 
-                let mut t_region: Option<&TextureRegion> = None;
-                match self.get_texture_region(renderer_component.get_texture().to_string()) {
-                    Some(texture_region) => {
-                        t_region = Some(texture_region);
-                    }
-                    None => continue,
-                }
-                let region = t_region.unwrap();
-                let (dim_x, dim_y) = region.dimensions();
+                let region =
+                    match self.get_texture_region(renderer_component.get_texture().to_string()) {
+                        Some(r) => r,
+                        None => continue,
+                    };
 
+                let (dim_x, dim_y) = region.dimensions();
                 let scale = renderer_component.scale();
                 let half_width = dim_x as f32 * 0.5 * scale.x();
                 let half_height = dim_y as f32 * 0.5 * scale.y();
@@ -343,24 +742,27 @@ impl<'a> Renderer2D<'a> {
                 let cos_angle = rotation_angle.cos();
                 let sin_angle = rotation_angle.sin();
 
-                let mut rotated_world_corners = [(0.0f32, 0.0f32); 4];
-                for i in 0..4 {
-                    let (x, y) = world_corners[i];
-                    rotated_world_corners[i] = (
-                        x * cos_angle - y * sin_angle + world_position.x(),
-                        x * sin_angle + y * cos_angle + world_position.y(),
-                    );
-                }
+                let rotated_world_corners: Vec<(f32, f32)> = world_corners
+                    .iter()
+                    .map(|(x, y)| {
+                        (
+                            x * cos_angle - y * sin_angle + world_position.x(),
+                            x * sin_angle + y * cos_angle + world_position.y(),
+                        )
+                    })
+                    .collect();
 
-                let mut screen_corners = [(0.0f32, 0.0f32); 4];
-                for i in 0..4 {
-                    screen_corners[i] = (
-                        rotated_world_corners[i].0 / self.render_context.config().width as f32,
-                        rotated_world_corners[i].1 / self.render_context.config().height as f32,
-                    );
-                }
+                let screen_corners: Vec<(f32, f32)> = rotated_world_corners
+                    .iter()
+                    .map(|(x, y)| {
+                        (
+                            *x / self.render_context.config().width as f32,
+                            *y / self.render_context.config().height as f32,
+                        )
+                    })
+                    .collect();
 
-                vertex_buffer.append(&mut vec![
+                vertex_buffer.extend_from_slice(&[
                     Vertex::new(
                         [screen_corners[0].0, screen_corners[0].1, 0.0],
                         [region.u0(), region.v0()],
@@ -383,7 +785,7 @@ impl<'a> Renderer2D<'a> {
                     ),
                 ]);
 
-                index_buffer.append(&mut vec![
+                index_buffer.extend_from_slice(&[
                     0 + buffer_size,
                     1 + buffer_size,
                     3 + buffer_size,
@@ -399,21 +801,42 @@ impl<'a> Renderer2D<'a> {
             vertex_buffer,
             index_buffer,
         );
-    }
 
-    pub fn get_texture_region(&self, texture_path: String) -> Option<&TextureRegion> {
-        if !self
-            .resource_manager
-            .texture_atlas()
-            .textures()
-            .contains_key(&texture_path)
-        {
-            error!("Texture {} not found in atlas", &texture_path);
+        for text_entity in texts {
+            let position = {
+                let transform = scene
+                    .get_component::<comet_ecs::Transform2D>(text_entity)
+                    .unwrap();
+                comet_math::v2::new(transform.position().x(), transform.position().y())
+            };
+
+            if let Some(text_component) = scene.get_component_mut::<comet_ecs::Text>(text_entity) {
+                if !text_component.is_visible() {
+                    continue;
+                }
+
+                let font = text_component.font().to_string();
+                let size = text_component.font_size();
+                let color = text_component.color().to_wgpu();
+                let content = text_component.content().to_string();
+
+                let mut bounds = comet_math::v2::ZERO;
+
+                let (vertices, indices) = self.add_text_to_buffers(
+                    content,
+                    font.clone(),
+                    size,
+                    position,
+                    color,
+                    &mut bounds,
+                );
+
+                text_component.set_bounds(bounds);
+
+                self.render_context
+                    .update_batch_buffers("Font".to_string(), vertices, indices);
+            }
         }
-        self.resource_manager
-            .texture_atlas()
-            .textures()
-            .get(&texture_path)
     }
 
     fn setup_camera(&mut self, scene: &comet_ecs::Scene, cameras: Vec<usize>) {
@@ -441,12 +864,20 @@ impl<'a> Renderer2D<'a> {
             },
         ));
 
-        let layout = self
+        let layout = match self
             .render_context
             .resources()
             .get_bind_group_layout("Universal")
-            .unwrap()[1]
-            .clone();
+            .and_then(|layouts| layouts.get(1))
+        {
+            Some(l) => l.clone(),
+            None => {
+                error!(
+                    "Camera bind group layout missing for 'Universal' pass. Call init_atlas first."
+                );
+                return;
+            }
+        };
 
         let bind_group = Arc::new(self.render_context.device().create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -462,16 +893,30 @@ impl<'a> Renderer2D<'a> {
         let resources = self.render_context.resources_mut();
 
         match resources.get_buffer("Universal") {
-            None => resources.insert_buffer("Universal".to_string(), buffer),
-            Some(_) => resources.replace_buffer("Universal".to_string(), 0, buffer),
+            None => resources.insert_buffer("Universal".into(), buffer.clone()),
+            Some(_) => resources.replace_buffer("Universal".into(), 0, buffer.clone()),
         }
 
-        if let Some(v) = resources.get_bind_groups("Universal") {
-            if v.len() < 2 {
-                resources.insert_bind_group("Universal".to_string(), bind_group);
+        if let Some(groups) = resources.get_bind_groups("Universal") {
+            if groups.len() < 2 {
+                resources.insert_bind_group("Universal".into(), bind_group.clone());
             } else {
-                resources.replace_bind_group("Universal".to_string(), 1, bind_group);
+                resources.replace_bind_group("Universal".into(), 1, bind_group.clone());
             }
+        } else {
+            resources.insert_bind_group("Universal".into(), bind_group.clone());
+        }
+
+        if let Some(groups) = resources.get_bind_groups("Font") {
+            if groups.len() < 2 {
+                resources.insert_bind_group("Font".into(), bind_group.clone());
+            } else {
+                resources.replace_bind_group("Font".into(), 1, bind_group.clone());
+            }
+        }
+
+        if resources.get_bind_group_layout("Font").is_none() {
+            debug!("Font pass not initialized yet; skipping Font camera bind group setup.");
         }
     }
 }
