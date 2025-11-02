@@ -2,16 +2,12 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields};
+use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
-// This is the procedural macro for `derive(MyTrait)`
 #[proc_macro_derive(Component)]
-pub fn my_trait_derive(input: TokenStream) -> TokenStream {
-    // Parse the input tokens into a syntax tree (AST)
+pub fn component_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    // Get the name of the struct
-    let name = &input.ident;
     let name = &input.ident;
 
     let fields = if let Data::Struct(data) = &input.data {
@@ -33,19 +29,21 @@ pub fn my_trait_derive(input: TokenStream) -> TokenStream {
 
     let default_fields = if let Data::Struct(data) = &input.data {
         match &data.fields {
-            Fields::Named(fields) => {
-                // Generate code to assign each field a default value
-                fields.named.iter().map(|field| {
+            Fields::Named(fields) => fields
+                .named
+                .iter()
+                .map(|field| {
                     let field_name = &field.ident;
                     quote! { #field_name: Default::default() }
-                }).collect::<Vec<_>>()
-            },
-            Fields::Unnamed(fields) => {
-                // Generate default values for tuple structs
-                fields.unnamed.iter().map(|_field| {
+                })
+                .collect::<Vec<_>>(),
+            Fields::Unnamed(fields) => fields
+                .unnamed
+                .iter()
+                .map(|_field| {
                     quote! { Default::default() }
-                }).collect::<Vec<_>>()
-            },
+                })
+                .collect::<Vec<_>>(),
             Fields::Unit => Vec::new(),
         }
     } else {
@@ -59,13 +57,6 @@ pub fn my_trait_derive(input: TokenStream) -> TokenStream {
         }
     });
 
-    for field in &fields {
-        if !is_copy_field(&field) {
-            panic!("All fields in the struct must implement Copy");
-        }
-    }
-
-    // Generate the implementation of MyTrait for the given struct
     let expanded = quote! {
         impl Component for #name {
             fn new() -> Self {
@@ -83,7 +74,6 @@ pub fn my_trait_derive(input: TokenStream) -> TokenStream {
 
         impl Default for #name {
             fn default() -> Self {
-                // Construct the struct with default values
                 Self {
                     #(#default_fields),*
                 }
@@ -115,16 +105,5 @@ pub fn my_trait_derive(input: TokenStream) -> TokenStream {
         }
     };
 
-    // Convert the generated code into a TokenStream and return it
     TokenStream::from(expanded)
-}
-
-
-fn is_copy_field(field: &syn::Field) -> bool {
-    // Logic to check if the field type implements Copy (this is simplified)
-    // You might need more sophisticated logic to check the actual type of the field.
-    let field_type = &field.ty;
-    // Implement a check for Copy trait for the field type if needed
-    // Return true if it implements Copy; false otherwise
-    true // Assuming it does, just for simplicity
 }

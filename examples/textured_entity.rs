@@ -18,6 +18,7 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
     app.add_component(e0, render);
 }
 
+#[allow(unused_variables)]
 fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
     renderer.render_scene_2d(app.scene_mut())
 }

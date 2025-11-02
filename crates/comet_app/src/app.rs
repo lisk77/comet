@@ -33,7 +33,6 @@ pub struct App {
     game_state: Option<Box<dyn Any>>,
     audio: Box<dyn Audio>,
     scene: Scene,
-    fullscreen: bool,
     should_quit: bool,
 }
 
@@ -51,7 +50,6 @@ impl App {
             game_state: None,
             audio: Box::new(KiraAudio::new()),
             scene: Scene::new(),
-            fullscreen: false,
             should_quit: false,
         }
     }
@@ -372,6 +370,7 @@ impl App {
                         }
                     }
 
+                    #[allow(unused_variables)]
                     match event {
                         Event::WindowEvent {
                             ref event,

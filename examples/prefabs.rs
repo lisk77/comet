@@ -43,6 +43,7 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
     }
 }
 
+#[allow(unused_variables)]
 fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {}
 
 fn main() {

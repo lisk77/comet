@@ -334,7 +334,7 @@ impl TextureAtlas {
             for glyph_name in glyph_names {
                 let region = font.glyphs().textures().get(&glyph_name).unwrap();
 
-                let (u0, v0, u1, v1) = (region.u0(), region.v0(), region.u1(), region.v1());
+                let (u0, v0) = (region.u0(), region.v0());
                 let (width, height) = region.dimensions();
 
                 let src_x = (u0 * font.glyphs().atlas().width() as f32) as u32;

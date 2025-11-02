@@ -1,5 +1,4 @@
 use comet_ecs::{Camera2D, Transform2D};
-use comet_log::fatal;
 use comet_math::{m4, v2, v3};
 
 pub struct CameraManager {
@@ -12,16 +11,6 @@ impl CameraManager {
         Self {
             cameras: Vec::new(),
             active_camera: 0,
-        }
-    }
-
-    pub fn set_cameras(&mut self, cameras: Vec<RenderCamera>) {
-        self.cameras = cameras
-    }
-
-    pub fn set_active(&mut self, active: usize) {
-        if active >= self.cameras.len() {
-            fatal!("Active camera index is out of range of the RenderCamera array!")
         }
     }
 
