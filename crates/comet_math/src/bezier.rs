@@ -1,4 +1,4 @@
-use crate::{InnerSpace, Point};
+use crate::InnerSpace;
 
 /// Representation of a Bezier curve of degree n in any (2-4) dimensions.
 pub struct Bezier<V: InnerSpace> {

@@ -323,9 +323,12 @@ impl ValueNoise {
                 let mut f = 0.0;
                 let mut amplitude = 0.5;
 
-                f += amplitude * self.noise(uv);
-                uv = (uv.0 * 2.0, uv.1 * 2.0);
-                amplitude *= 0.5;
+                for _ in 0..4 {
+                    f += amplitude * self.noise(uv);
+                    uv = (uv.0 * 2.0, uv.1 * 2.0);
+                    amplitude *= 0.5;
+                }
+
                 f = ((f / max_amplitude) + 1.0) * 0.5;
 
                 noise.push(f);

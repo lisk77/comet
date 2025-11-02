@@ -1,6 +1,9 @@
-use crate::point::{p2, p3};
-use crate::quaternion::Quat;
-use crate::Point;
+use crate::{
+    point::{p2, p3},
+    quaternion::Quat,
+    Point,
+};
+use serde::{Deserialize, Serialize};
 use std::ops::*;
 
 pub trait InnerSpace:
@@ -31,8 +34,7 @@ pub trait InnerSpace:
 
 /// Representation of a 2D vector
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
 pub struct v2 {
     x: f32,
@@ -175,8 +177,7 @@ impl Into<v2> for [f32; 2] {
 
 /// Representation of a 2D integer vector
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
 pub struct v2i {
     x: i64,
@@ -423,8 +424,7 @@ impl Into<[f32; 2]> for v2i {
 
 /// Representation of a 3D vector
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
 pub struct v3 {
     pub x: f32,
@@ -620,8 +620,7 @@ impl Into<v3> for [f32; 3] {
 
 /// Representation of a 3D integer vector
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
 pub struct v3i {
     pub x: i64,
@@ -824,8 +823,7 @@ impl From<v3> for v3i {
 
 /// Representation of a 4D vector
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
 pub struct v4 {
     x: f32,

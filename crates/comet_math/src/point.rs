@@ -7,6 +7,7 @@ pub trait Point {
 }
 
 /// Representation of a 2D point.
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct p2 {
     x: f32,
@@ -36,6 +37,7 @@ impl p2 {
 }
 
 /// Representation of a 3D point.
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct p3 {
     x: f32,
@@ -81,7 +83,7 @@ impl Point for p2 {
         Self { x, y }
     }
 
-    fn to_vec(&self) -> v2 {
+    fn to_vec(&self) -> impl InnerSpace {
         v2::new(self.x, self.y)
     }
 }
@@ -93,20 +95,8 @@ impl Point for p3 {
         Self { x, y, z }
     }
 
-    fn to_vec(&self) -> v3 {
+    fn to_vec(&self) -> impl InnerSpace {
         v3::new(self.x, self.y, self.z)
-    }
-}
-
-impl Into<v2> for p2 {
-    fn into(self) -> v2 {
-        self.to_vec()
-    }
-}
-
-impl Into<v3> for p3 {
-    fn into(self) -> v3 {
-        self.to_vec()
     }
 }
 

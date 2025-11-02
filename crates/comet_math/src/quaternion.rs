@@ -11,6 +11,7 @@ pub struct Quat {
 
 impl Quat {
     /// The zero quaternion.
+    #[allow(unused)]
     const ZERO: Self = Self {
         s: 0.0,
         v: v3 {

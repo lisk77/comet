@@ -118,7 +118,7 @@ impl Div for Polynomial {
         let divisor = other.coefficients.clone();
         while dividend.len() >= divisor.len() {
             let mut quotient = vec![0.0; dividend.len() - divisor.len() + 1];
-            let mut i = dividend.len() - divisor.len();
+            let i = dividend.len() - divisor.len();
             quotient[i] = dividend.last().unwrap() / divisor.last().unwrap();
             for (j, &d) in divisor.iter().enumerate() {
                 dividend[i + j] -= quotient[i] * d;
