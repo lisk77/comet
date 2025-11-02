@@ -1,6 +1,7 @@
 use comet::prelude::*;
 
 fn setup(app: &mut App, renderer: &mut Renderer2D) {
+    renderer.init_atlas();
     // Loading the font from the res/fonts directory with a rendered size of 77px
     renderer.load_font("./res/fonts/PressStart2P-Regular.ttf", 77.0);
 

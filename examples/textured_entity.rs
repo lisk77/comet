@@ -2,7 +2,7 @@ use comet::prelude::*;
 
 fn setup(app: &mut App, renderer: &mut Renderer2D) {
     // Creating a texture atlas from the provided textures in the vector
-    renderer.set_texture_atlas_by_paths(vec!["./res/textures/comet_icon.png".to_string()]);
+    renderer.init_atlas_by_paths(vec!["./res/textures/comet_icon.png".to_string()]);
 
     // Creating a camera entity
     let cam = app.new_entity();
