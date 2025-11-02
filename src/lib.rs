@@ -69,6 +69,6 @@ pub mod prelude {
     pub use comet_input::keyboard::Key;
     pub use comet_log::*;
     pub use comet_math::*;
-    pub use comet_renderer::renderer2d::Renderer2D;
+    pub use comet_renderer::{renderer::Renderer, renderer2d::Renderer2D};
     pub use winit_input_helper::WinitInputHelper as InputManager;
 }
