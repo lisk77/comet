@@ -354,8 +354,6 @@ impl<'a> Renderer2D<'a> {
             } else {
                 resources.insert_bind_group("Font".into(), camera_group);
             }
-        } else {
-            debug!("Font pass created with its own layout, waiting for camera bind group to be set later.");
         }
 
         info!("Font {} successfully loaded into renderer", path);
