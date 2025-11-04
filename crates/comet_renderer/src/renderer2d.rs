@@ -1,12 +1,12 @@
-use crate::renderer::Renderer;
 use crate::{
     camera::CameraManager,
     render_context::RenderContext,
     render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
+    renderer::Renderer,
 };
 use comet_colors::Color;
 use comet_ecs::{Component, Render, Render2D, Transform2D};
-use comet_log::{debug, error, info};
+use comet_log::*;
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
@@ -541,13 +541,28 @@ impl<'a> Renderer2D<'a> {
     }
 
     fn get_glyph_region(&self, glyph: char, font: String) -> &TextureRegion {
-        let font_atlas = self
-            .resource_manager
-            .fonts()
-            .iter()
-            .find(|f| f.name() == font)
-            .unwrap();
-        font_atlas.get_glyph(glyph).unwrap()
+        let key = format!("{}::{}", font, glyph);
+
+        match self.resource_manager.font_atlas().textures().get(&key) {
+            Some(region) => region,
+            None => {
+                warn!(
+                    "Missing glyph for character '{}' in font '{}', using fallback.",
+                    glyph, font
+                );
+                let fallback_key = format!("{}:: ", font);
+                self.resource_manager
+                    .font_atlas()
+                    .textures()
+                    .get(&fallback_key)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "No fallback glyph available (space also missing) for font '{}'",
+                            font
+                        )
+                    })
+            }
+        }
     }
 
     pub fn add_text_to_buffers(

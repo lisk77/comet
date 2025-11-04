@@ -6,10 +6,7 @@ use crate::{
     Texture,
 };
 use comet_log::info;
-use wgpu::{
-    naga::{self, ShaderStage},
-    Device, Queue, ShaderModule,
-};
+use wgpu::{naga::ShaderStage, Device, Queue, ShaderModule};
 
 pub struct GraphicResourceManager {
     texture_atlas: TextureAtlas,
@@ -127,7 +124,7 @@ impl GraphicResourceManager {
                         source: wgpu::ShaderSource::Glsl {
                             shader: shader_source.into(),
                             stage,
-                            defines: naga::FastHashMap::default(),
+                            defines: Default::default(),
                         },
                     })
                 } else {
