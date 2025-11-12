@@ -149,6 +149,17 @@ impl Mul<v2> for f32 {
     }
 }
 
+impl Mul<v2> for v2 {
+    type Output = v2;
+
+    fn mul(self, other: v2) -> v2 {
+        v2 {
+            x: self.x * other.x,
+            y: self.y * other.y,
+        }
+    }
+}
+
 impl Div<f32> for v2 {
     type Output = v2;
 
@@ -388,6 +399,17 @@ impl Mul<f32> for v2i {
     }
 }
 
+impl Mul<v2i> for v2i {
+    type Output = v2i;
+
+    fn mul(self, other: v2i) -> v2i {
+        v2i {
+            x: self.x * other.x,
+            y: self.y * other.y,
+        }
+    }
+}
+
 impl From<v2i> for v2 {
     fn from(v: v2i) -> v2 {
         v2 {
@@ -580,6 +602,18 @@ impl Mul<v3> for f32 {
             x: self * other.x,
             y: self * other.y,
             z: self * other.z,
+        }
+    }
+}
+
+impl Mul<v3> for v3 {
+    type Output = v3;
+
+    fn mul(self, other: v3) -> v3 {
+        v3 {
+            x: self.x * other.x,
+            y: self.y * other.y,
+            z: self.z * other.z,
         }
     }
 }
@@ -797,6 +831,18 @@ impl Mul<f32> for v3i {
     }
 }
 
+impl Mul<v3i> for v3i {
+    type Output = v3i;
+
+    fn mul(self, other: v3i) -> v3i {
+        v3i {
+            x: self.x * other.x,
+            y: self.y * other.y,
+            z: self.z * other.z,
+        }
+    }
+}
+
 impl From<v3i> for v3 {
     fn from(v: v3i) -> v3 {
         v3 {
@@ -998,6 +1044,19 @@ impl Mul<v4> for f32 {
             y: self * other.y,
             z: self * other.z,
             w: self * other.w,
+        }
+    }
+}
+
+impl Mul<v4> for v4 {
+    type Output = v4;
+
+    fn mul(self, other: v4) -> v4 {
+        v4 {
+            x: self.x * other.x,
+            y: self.y * other.y,
+            z: self.z * other.z,
+            w: self.w * other.w,
         }
     }
 }
