@@ -4,9 +4,10 @@ use crate::{
     render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
     renderer::Renderer,
 };
-use comet_colors::Color;
+use comet_colors::{sRgba, Color};
 use comet_ecs::{Component, Render, Render2D, Transform2D};
 use comet_log::*;
+use comet_math::v2;
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
@@ -563,6 +564,15 @@ impl<'a> Renderer2D<'a> {
                     })
             }
         }
+    }
+
+    pub fn precompute_text_bounds(&self, text: String, font: String, size: f32) -> v2 {
+        let mut bounds = v2::ZERO;
+
+        let _ =
+            self.add_text_to_buffers(text, font, size, v2::ZERO, wgpu::Color::WHITE, &mut bounds);
+
+        bounds
     }
 
     pub fn add_text_to_buffers(
