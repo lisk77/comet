@@ -387,7 +387,19 @@ impl App {
                                 window.request_redraw();
                                 match renderer.render() {
                                     Ok(_) => {}
-                                    Err(e) => error!("Error rendering: {}", e),
+                                    Err(
+                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+                                    ) => {
+                                        let size = renderer.size();
+                                        renderer.resize(size);
+                                    }
+                                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                                        error!("Out of memory!");
+                                        elwt.exit();
+                                    }
+                                    Err(wgpu::SurfaceError::Timeout) => {
+                                        warn!("Surface timeout - skipping frame");
+                                    }
                                 }
                             }
                             _ => {}
