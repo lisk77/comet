@@ -9,7 +9,7 @@ use std::sync::Arc;
 use winit::dpi::LogicalSize;
 use winit::{
     event::*,
-    event_loop::EventLoop,
+    event_loop::{ControlFlow, EventLoop},
     window::{Icon, Window},
 };
 use winit_input_helper::WinitInputHelper as InputManager;
@@ -349,26 +349,17 @@ impl App {
             setup(&mut self, &mut renderer);
 
             let mut time_stack = 0.0;
+            let mut window_focused = true;
+            let mut window_occluded = false;
 
             info!("Starting event loop!");
             event_loop
                 .run(|event, elwt| {
-                    self.delta_time = renderer.update();
-
                     if self.should_quit {
                         elwt.exit()
                     }
 
                     self.input_manager.update(&event);
-
-                    if self.dt() != f32::INFINITY {
-                        time_stack += self.delta_time;
-                        while time_stack > self.update_timer {
-                            let time = self.dt();
-                            update(&mut self, &mut renderer, time);
-                            time_stack -= self.update_timer;
-                        }
-                    }
 
                     #[allow(unused_variables)]
                     match event {
@@ -377,6 +368,18 @@ impl App {
                             window_id,
                         } => match event {
                             WindowEvent::CloseRequested {} => elwt.exit(),
+                            WindowEvent::Focused(focused) => {
+                                window_focused = *focused;
+                                if window_focused && !window_occluded {
+                                    window.request_redraw();
+                                }
+                            }
+                            WindowEvent::Occluded(occluded) => {
+                                window_occluded = *occluded;
+                                if window_focused && !window_occluded {
+                                    window.request_redraw();
+                                }
+                            }
                             WindowEvent::Resized(physical_size) => {
                                 renderer.resize(*physical_size);
                             }
@@ -384,26 +387,45 @@ impl App {
                                 renderer.set_scale_factor(*scale_factor);
                             }
                             WindowEvent::RedrawRequested => {
-                                window.request_redraw();
-                                match renderer.render() {
-                                    Ok(_) => {}
-                                    Err(
-                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
-                                    ) => {
-                                        let size = renderer.size();
-                                        renderer.resize(size);
-                                    }
-                                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                                        error!("Out of memory!");
-                                        elwt.exit();
-                                    }
-                                    Err(wgpu::SurfaceError::Timeout) => {
-                                        warn!("Surface timeout - skipping frame");
+                                if window_focused && !window_occluded {
+                                    match renderer.render() {
+                                        Ok(_) => {}
+                                        Err(
+                                            wgpu::SurfaceError::Lost
+                                            | wgpu::SurfaceError::Outdated,
+                                        ) => {
+                                            let size = renderer.size();
+                                            renderer.resize(size);
+                                        }
+                                        Err(wgpu::SurfaceError::OutOfMemory) => {
+                                            error!("Out of memory!");
+                                            elwt.exit();
+                                        }
+                                        Err(wgpu::SurfaceError::Timeout) => {
+                                            warn!("Surface timeout - skipping frame");
+                                        }
                                     }
                                 }
                             }
                             _ => {}
                         },
+                        Event::AboutToWait => {
+                            elwt.set_control_flow(ControlFlow::Poll);
+                            self.delta_time = renderer.update();
+
+                            if self.dt() != f32::INFINITY {
+                                time_stack += self.delta_time;
+                                while time_stack > self.update_timer {
+                                    let time = self.dt();
+                                    update(&mut self, &mut renderer, time);
+                                    time_stack -= self.update_timer;
+                                }
+                            }
+
+                            if window_focused && !window_occluded {
+                                window.request_redraw();
+                            }
+                        }
                         _ => {}
                     }
                 })
