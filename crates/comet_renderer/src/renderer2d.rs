@@ -4,10 +4,10 @@ use crate::{
     render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
     renderer::Renderer,
 };
-use comet_colors::{sRgba, Color};
+use comet_colors::Color;
 use comet_ecs::{Component, Render, Render2D, Transform2D};
 use comet_log::*;
-use comet_math::v2;
+use comet_math::{m4, v2};
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
@@ -500,6 +500,36 @@ impl<'a> Renderer2D<'a> {
             resources.insert_sampler(label.clone(), texture_sampler);
         }
 
+        if let Some(camera_layout) = extra_bind_group_layouts.get(0) {
+            let device = self.render_context.device();
+
+            let identity: [[f32; 4]; 4] = m4::IDENTITY.into();
+            let cam_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("{} Default Camera Buffer", label)),
+                contents: bytemuck::cast_slice(&[identity]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+            let default_camera_bg =
+                Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(&format!("{} Default Camera Bind Group", label)),
+                    layout: camera_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: cam_buffer.as_entire_binding(),
+                    }],
+                }));
+
+            let resources = self.render_context.resources_mut();
+            resources.insert_buffer(label.clone(), Arc::new(cam_buffer));
+            resources.insert_bind_group(label.clone(), default_camera_bg);
+        } else {
+            warn!(
+                    "Render pass '{}' created without camera layout — skipping default camera bind group",
+                    label
+                );
+        }
+
         self.render_passes
             .push(RenderPass::new(label.clone(), execute));
 
@@ -775,34 +805,34 @@ impl<'a> Renderer2D<'a> {
                     })
                     .collect();
 
-                let screen_corners: Vec<(f32, f32)> = rotated_world_corners
+                let snapped_screen_corners: Vec<(f32, f32)> = rotated_world_corners
                     .iter()
                     .map(|(x, y)| {
                         (
-                            *x / self.render_context.config().width as f32,
-                            *y / self.render_context.config().height as f32,
+                            x.round() / self.render_context.config().width as f32,
+                            y.round() / self.render_context.config().height as f32,
                         )
                     })
                     .collect();
 
                 vertex_buffer.extend_from_slice(&[
                     Vertex::new(
-                        [screen_corners[0].0, screen_corners[0].1, 0.0],
+                        [snapped_screen_corners[0].0, snapped_screen_corners[0].1, 0.0],
                         [region.u0(), region.v0()],
                         [1.0, 1.0, 1.0, 1.0],
                     ),
                     Vertex::new(
-                        [screen_corners[1].0, screen_corners[1].1, 0.0],
+                        [snapped_screen_corners[1].0, snapped_screen_corners[1].1, 0.0],
                         [region.u0(), region.v1()],
                         [1.0, 1.0, 1.0, 1.0],
                     ),
                     Vertex::new(
-                        [screen_corners[2].0, screen_corners[2].1, 0.0],
+                        [snapped_screen_corners[2].0, snapped_screen_corners[2].1, 0.0],
                         [region.u1(), region.v1()],
                         [1.0, 1.0, 1.0, 1.0],
                     ),
                     Vertex::new(
-                        [screen_corners[3].0, screen_corners[3].1, 0.0],
+                        [snapped_screen_corners[3].0, snapped_screen_corners[3].1, 0.0],
                         [region.u1(), region.v0()],
                         [1.0, 1.0, 1.0, 1.0],
                     ),
