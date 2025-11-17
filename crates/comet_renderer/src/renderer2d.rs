@@ -562,6 +562,7 @@ impl<'a> Renderer2D<'a> {
             .textures()
             .contains_key(texture_path)
         {
+            #[cfg(comet_debug)]
             error!("Texture {} not found in atlas", texture_path);
         }
         self.resource_manager
@@ -570,12 +571,13 @@ impl<'a> Renderer2D<'a> {
             .get(texture_path)
     }
 
-    fn get_glyph_region(&self, glyph: char, font: String) -> &TextureRegion {
+    fn get_glyph_region(&self, glyph: char, font: &str) -> &TextureRegion {
         let key = format!("{}::{}", font, glyph);
 
         match self.resource_manager.font_atlas().textures().get(&key) {
             Some(region) => region,
             None => {
+                #[cfg(comet_debug)]
                 warn!(
                     "Missing glyph for character '{}' in font '{}', using fallback.",
                     glyph, font
@@ -586,7 +588,7 @@ impl<'a> Renderer2D<'a> {
                     .textures()
                     .get(&fallback_key)
                     .unwrap_or_else(|| {
-                        panic!(
+                        fatal!(
                             "No fallback glyph available (space also missing) for font '{}'",
                             font
                         )
@@ -595,7 +597,7 @@ impl<'a> Renderer2D<'a> {
         }
     }
 
-    pub fn precompute_text_bounds(&self, text: String, font: String, size: f32) -> v2 {
+    pub fn precompute_text_bounds(&self, text: &str, font: &str, size: f32) -> v2 {
         let mut bounds = v2::ZERO;
 
         let _ =
@@ -606,8 +608,8 @@ impl<'a> Renderer2D<'a> {
 
     pub fn add_text_to_buffers(
         &self,
-        text: String,
-        font: String,
+        text: &str,
+        font: &str,
         size: f32,
         position: comet_math::v2,
         color: wgpu::Color,
@@ -672,7 +674,7 @@ impl<'a> Renderer2D<'a> {
 
         for line in lines {
             for c in line.chars() {
-                let region = self.get_glyph_region(c, font.clone());
+                let region = self.get_glyph_region(c, font);
 
                 let (dim_x, dim_y) = region.dimensions();
                 let w = (dim_x as f32 / config.width as f32) * scale_factor;
@@ -794,25 +796,54 @@ impl<'a> Renderer2D<'a> {
                 let cos_angle = rotation_angle.cos();
                 let sin_angle = rotation_angle.sin();
 
-                let rotated_world_corners: Vec<(f32, f32)> = world_corners
-                    .iter()
-                    .map(|(x, y)| {
-                        (
-                            x * cos_angle - y * sin_angle + world_position.x(),
-                            x * sin_angle + y * cos_angle + world_position.y(),
-                        )
-                    })
-                    .collect();
+                let rotated_world_corners = [
+                    (
+                        world_corners[0].0 * cos_angle - world_corners[0].1 * sin_angle
+                            + world_position.x(),
+                        world_corners[0].0 * sin_angle + world_corners[0].1 * cos_angle
+                            + world_position.y(),
+                    ),
+                    (
+                        world_corners[1].0 * cos_angle - world_corners[1].1 * sin_angle
+                            + world_position.x(),
+                        world_corners[1].0 * sin_angle + world_corners[1].1 * cos_angle
+                            + world_position.y(),
+                    ),
+                    (
+                        world_corners[2].0 * cos_angle - world_corners[2].1 * sin_angle
+                            + world_position.x(),
+                        world_corners[2].0 * sin_angle + world_corners[2].1 * cos_angle
+                            + world_position.y(),
+                    ),
+                    (
+                        world_corners[3].0 * cos_angle - world_corners[3].1 * sin_angle
+                            + world_position.x(),
+                        world_corners[3].0 * sin_angle + world_corners[3].1 * cos_angle
+                            + world_position.y(),
+                    ),
+                ];
 
-                let snapped_screen_corners: Vec<(f32, f32)> = rotated_world_corners
-                    .iter()
-                    .map(|(x, y)| {
-                        (
-                            x.round() / self.render_context.config().width as f32,
-                            y.round() / self.render_context.config().height as f32,
-                        )
-                    })
-                    .collect();
+                let inv_width = 1.0 / self.render_context.config().width as f32;
+                let inv_height = 1.0 / self.render_context.config().height as f32;
+
+                let snapped_screen_corners = [
+                    (
+                        rotated_world_corners[0].0.round() * inv_width,
+                        rotated_world_corners[0].1.round() * inv_height,
+                    ),
+                    (
+                        rotated_world_corners[1].0.round() * inv_width,
+                        rotated_world_corners[1].1.round() * inv_height,
+                    ),
+                    (
+                        rotated_world_corners[2].0.round() * inv_width,
+                        rotated_world_corners[2].1.round() * inv_height,
+                    ),
+                    (
+                        rotated_world_corners[3].0.round() * inv_width,
+                        rotated_world_corners[3].1.round() * inv_height,
+                    ),
+                ];
 
                 vertex_buffer.extend_from_slice(&[
                     Vertex::new(
@@ -867,16 +898,16 @@ impl<'a> Renderer2D<'a> {
                     continue;
                 }
 
-                let font = text_component.font().to_string();
+                let font = text_component.font();
                 let size = text_component.font_size();
                 let color = text_component.color().to_wgpu();
-                let content = text_component.content().to_string();
+                let content = text_component.content();
 
                 let mut bounds = comet_math::v2::ZERO;
 
                 let (vertices, indices) = self.add_text_to_buffers(
                     content,
-                    font.clone(),
+                    font,
                     size,
                     position,
                     color,
@@ -968,6 +999,7 @@ impl<'a> Renderer2D<'a> {
         }
 
         if resources.get_bind_group_layout("Font").is_none() {
+            #[cfg(comet_debug)]
             debug!("Font pass not initialized yet; skipping Font camera bind group setup.");
         }
     }
