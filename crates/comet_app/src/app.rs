@@ -370,15 +370,9 @@ impl App {
                             WindowEvent::CloseRequested {} => elwt.exit(),
                             WindowEvent::Focused(focused) => {
                                 window_focused = *focused;
-                                if window_focused && !window_occluded {
-                                    window.request_redraw();
-                                }
                             }
                             WindowEvent::Occluded(occluded) => {
                                 window_occluded = *occluded;
-                                if window_focused && !window_occluded {
-                                    window.request_redraw();
-                                }
                             }
                             WindowEvent::Resized(physical_size) => {
                                 renderer.resize(*physical_size);
@@ -410,7 +404,6 @@ impl App {
                             _ => {}
                         },
                         Event::AboutToWait => {
-                            elwt.set_control_flow(ControlFlow::Poll);
                             self.delta_time = renderer.update();
 
                             if self.dt() != f32::INFINITY {
@@ -424,6 +417,14 @@ impl App {
 
                             if window_focused && !window_occluded {
                                 window.request_redraw();
+                            }
+
+                            if self.dt().is_finite() {
+                                let next_frame = std::time::Instant::now()
+                                    + std::time::Duration::from_secs_f32(self.update_timer);
+                                elwt.set_control_flow(ControlFlow::WaitUntil(next_frame));
+                            } else {
+                                elwt.set_control_flow(ControlFlow::Wait);
                             }
                         }
                         _ => {}
