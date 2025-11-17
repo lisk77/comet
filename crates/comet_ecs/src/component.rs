@@ -131,7 +131,7 @@ pub trait Collider {
 pub trait Render {
     fn is_visible(&self) -> bool;
     fn set_visibility(&mut self, is_visible: bool);
-    fn get_texture(&self) -> String;
+    fn get_texture(&self) -> &str;
     fn set_texture(&mut self, texture: &'static str);
 }
 
@@ -320,8 +320,8 @@ impl Render for Render2D {
         self.is_visible = is_visible;
     }
 
-    fn get_texture(&self) -> String {
-        self.texture_name.parse().unwrap()
+    fn get_texture(&self) -> &str {
+        self.texture_name
     }
 
     /// Use the actual file name of the texture instead of the path

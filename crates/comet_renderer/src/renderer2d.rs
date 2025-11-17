@@ -555,19 +555,19 @@ impl<'a> Renderer2D<'a> {
         ))
     }
 
-    fn get_texture_region(&self, texture_path: String) -> Option<&TextureRegion> {
+    fn get_texture_region(&self, texture_path: &str) -> Option<&TextureRegion> {
         if !self
             .resource_manager
             .texture_atlas()
             .textures()
-            .contains_key(&texture_path)
+            .contains_key(texture_path)
         {
-            error!("Texture {} not found in atlas", &texture_path);
+            error!("Texture {} not found in atlas", texture_path);
         }
         self.resource_manager
             .texture_atlas()
             .textures()
-            .get(&texture_path)
+            .get(texture_path)
     }
 
     fn get_glyph_region(&self, glyph: char, font: String) -> &TextureRegion {
@@ -772,7 +772,7 @@ impl<'a> Renderer2D<'a> {
                 let rotation_angle = transform_component.rotation().to_radians();
 
                 let region =
-                    match self.get_texture_region(renderer_component.get_texture().to_string()) {
+                    match self.get_texture_region(renderer_component.get_texture()) {
                         Some(r) => r,
                         None => continue,
                     };
