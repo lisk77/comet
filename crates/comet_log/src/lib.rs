@@ -57,7 +57,7 @@ macro_rules! error {
 
 #[macro_export]
 macro_rules! fatal {
-    ($fmt:expr $(, $args:expr)*) => {
+    ($fmt:expr $(, $args:expr)*) => {{
         eprintln!(
             "{} [{}::{}] [{}] : {}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
@@ -66,7 +66,8 @@ macro_rules! fatal {
             "\x1b[41mFATAL\x1b[0m",
             format!($fmt $(, $args)*)
         );
-    };
+        std::process::exit(1)
+    }};
 }
 
 #[macro_export]
