@@ -84,7 +84,6 @@ impl<'a> Renderer2D<'a> {
             paths.push(texture_path.clone() + path.unwrap().file_name().to_str().unwrap());
         }
 
-        self.resource_manager.create_texture_atlas(paths.clone());
         self.init_atlas_by_paths(paths);
     }
 
