@@ -357,18 +357,25 @@ impl Scene {
             return;
         }
 
-        let entities = self.get_entities_with(vec![C::type_id(), K::type_id()]);
-        for entity in entities {
-            let (c_set, k_set) = self
-                .components
-                .get_two_mut(&C::type_id(), &K::type_id());
+        let required = ComponentSet::from_ids(vec![C::type_id(), K::type_id()]);
+        let (c_set, k_set) = self
+            .components
+            .get_two_mut(&C::type_id(), &K::type_id());
 
-            let idx = entity.index as usize;
-            let c_opt = c_set.and_then(|set| set.get_mut::<C>(idx));
-            let k_opt = k_set.and_then(|set| set.get_mut::<K>(idx));
-
-            if let (Some(c), Some(k)) = (c_opt, k_opt) {
-                func(c, k);
+        if let (Some(c_store), Some(k_store)) = (c_set, k_set) {
+            for archetype_set in self.archetypes.component_sets() {
+                if required.is_subset(archetype_set) {
+                    if let Some(entities) = self.archetypes.get_archetype(archetype_set) {
+                        for &idx in entities {
+                            let idx = idx as usize;
+                            if let (Some(c), Some(k)) =
+                                (c_store.get_mut::<C>(idx), k_store.get_mut::<K>(idx))
+                            {
+                                func(c, k);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
