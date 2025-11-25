@@ -112,9 +112,7 @@ impl Scene {
         self.remove_entity_from_archetype(entity_id.index, self.get_component_set(idx));
         self.entities[idx] = None;
         info!("Deleted entity! ID: {}", entity_id.index);
-        for (_, value) in self.components.iter_mut() {
-            value.remove::<u8>(idx);
-        }
+        self.components.remove_entity(idx);
         if let Some(gen) = self.generations.get_mut(idx) {
             *gen = gen.wrapping_add(1);
         }

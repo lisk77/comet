@@ -55,4 +55,11 @@ impl ComponentStorage {
             None
         }
     }
+
+    /// Removes all components belonging to the given entity index.
+    pub fn remove_entity(&mut self, index: usize) {
+        for (_, value) in self.iter_mut() {
+            value.remove_any(index);
+        }
+    }
 }

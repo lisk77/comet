@@ -272,6 +272,17 @@ impl Column {
         }
     }
 
+    /// Remove an element without knowing its concrete type. Drops in place.
+    pub fn remove_any(&mut self, index: usize) {
+        if index >= self.data.len() {
+            return;
+        }
+        unsafe {
+            let ptr = self.data.swap_remove_and_forget_unchecked(index);
+            (self.data.drop)(ptr);
+        }
+    }
+
     /// Overwrites an existing element in place, dropping the previous value.
     pub fn set<T: 'static>(&mut self, index: usize, item: T) -> Option<()> {
         assert_eq!(TypeId::of::<T>(), TypeId::of::<T>(), "Type mismatch");
