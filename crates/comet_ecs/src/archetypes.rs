@@ -1,9 +1,9 @@
 use comet_structs::ComponentSet;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct Archetypes {
-    archetypes: HashMap<ComponentSet, HashSet<u32>>,
+    archetypes: HashMap<ComponentSet, Vec<u32>>,
 }
 
 impl Archetypes {
@@ -13,27 +13,31 @@ impl Archetypes {
         }
     }
 
-    pub fn component_sets(&self) -> Vec<ComponentSet> {
-        self.archetypes.keys().cloned().collect()
+    pub fn component_sets(&self) -> impl Iterator<Item = &ComponentSet> {
+        self.archetypes.keys()
     }
 
     pub fn create_archetype(&mut self, components: ComponentSet) {
-        self.archetypes.insert(components, HashSet::new());
+        self.archetypes.entry(components).or_insert_with(Vec::new);
     }
 
-    pub fn get_archetype(&self, components: &ComponentSet) -> Option<&HashSet<u32>> {
+    pub fn get_archetype(&self, components: &ComponentSet) -> Option<&Vec<u32>> {
         self.archetypes.get(components)
     }
 
     pub fn add_entity_to_archetype(&mut self, components: &ComponentSet, entity: u32) {
         if let Some(archetype) = self.archetypes.get_mut(components) {
-            archetype.insert(entity);
+            if !archetype.iter().any(|&e| e == entity) {
+                archetype.push(entity);
+            }
         }
     }
 
     pub fn remove_entity_from_archetype(&mut self, components: &ComponentSet, entity: u32) {
         if let Some(archetype) = self.archetypes.get_mut(components) {
-            archetype.retain(|&id| id != entity);
+            if let Some(pos) = archetype.iter().position(|&id| id == entity) {
+                archetype.swap_remove(pos);
+            }
         }
     }
 

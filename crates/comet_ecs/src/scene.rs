@@ -319,8 +319,8 @@ impl Scene {
         let mut result = Vec::new();
 
         for archetype_set in self.archetypes.component_sets() {
-            if component_set.is_subset(&archetype_set) {
-                if let Some(entities) = self.archetypes.get_archetype(&archetype_set) {
+            if component_set.is_subset(archetype_set) {
+                if let Some(entities) = self.archetypes.get_archetype(archetype_set) {
                     for index in entities.iter() {
                         if let Some(gen) = self.generations.get(*index as usize) {
                             if self
