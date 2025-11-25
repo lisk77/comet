@@ -28,6 +28,12 @@ impl SparseSet {
         }
 
         if let Some(page_vec) = &mut self.sparse[page] {
+            // If there is already a mapping, overwrite the existing dense value instead of pushing.
+            if let Some(sparse_index) = page_vec[index % self.page_size] {
+                let _ = self.dense.set::<T>(sparse_index, value);
+                return;
+            }
+
             page_vec[index % self.page_size] = Some(self.dense.data.len());
         }
 

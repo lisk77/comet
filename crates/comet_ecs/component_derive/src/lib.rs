@@ -27,6 +27,13 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
         }
     });
 
+    let clone_fields = fields.iter().map(|field| {
+        let field_name = &field.ident;
+        quote! {
+            #field_name: self.#field_name.clone()
+        }
+    });
+
     let default_fields = if let Data::Struct(data) = &input.data {
         match &data.fields {
             Fields::Named(fields) => fields
@@ -83,12 +90,10 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
         impl Clone for #name {
             fn clone(&self) -> Self {
                 Self {
-                    ..*self
+                    #(#clone_fields),*
                 }
             }
         }
-
-        impl Copy for #name {}
 
         impl std::fmt::Debug for #name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

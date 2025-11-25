@@ -11,6 +11,7 @@ use comet_math::{m4, v2};
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
@@ -61,6 +62,7 @@ pub struct Renderer2D<'a> {
     resource_manager: GraphicResourceManager,
     camera_manager: CameraManager,
     render_passes: Vec<RenderPass>,
+    cached_render_entities: Vec<usize>,
     last_frame_time: std::time::Instant,
     delta_time: f32,
 }
@@ -744,16 +746,44 @@ impl<'a> Renderer2D<'a> {
             return;
         }
 
-        let mut entities = scene.get_entities_with(vec![
+        let unsorted_entities = scene.get_entities_with(vec![
             comet_ecs::Transform2D::type_id(),
             comet_ecs::Render2D::type_id(),
         ]);
 
-        entities.sort_by(|&a, &b| {
-            let ra = scene.get_component::<comet_ecs::Render2D>(a).unwrap();
-            let rb = scene.get_component::<comet_ecs::Render2D>(b).unwrap();
-            ra.draw_index().cmp(&rb.draw_index())
-        });
+        let mut dirty_sort = self.cached_render_entities.len() != unsorted_entities.len();
+
+        if !dirty_sort {
+            let unsorted_set: HashSet<usize> = unsorted_entities.iter().copied().collect();
+            dirty_sort = self
+                .cached_render_entities
+                .iter()
+                .any(|e| !unsorted_set.contains(e));
+        }
+
+        if !dirty_sort {
+            dirty_sort = !self.cached_render_entities.windows(2).all(|w| {
+                let a = scene
+                    .get_component::<comet_ecs::Render2D>(w[0])
+                    .map(|r| r.draw_index());
+                let b = scene
+                    .get_component::<comet_ecs::Render2D>(w[1])
+                    .map(|r| r.draw_index());
+                matches!((a, b), (Some(da), Some(db)) if da <= db)
+            });
+        }
+
+        if dirty_sort {
+            let mut entities = unsorted_entities;
+            entities.sort_by(|&a, &b| {
+                let ra = scene.get_component::<comet_ecs::Render2D>(a).unwrap();
+                let rb = scene.get_component::<comet_ecs::Render2D>(b).unwrap();
+                ra.draw_index().cmp(&rb.draw_index())
+            });
+            self.cached_render_entities = entities;
+        }
+
+        let entities = self.cached_render_entities.clone();
 
         let texts = scene.get_entities_with(vec![
             comet_ecs::Transform2D::type_id(),
@@ -1012,6 +1042,7 @@ impl<'a> Renderer for Renderer2D<'a> {
             resource_manager: GraphicResourceManager::new(),
             camera_manager: CameraManager::new(),
             render_passes: Vec::new(),
+            cached_render_entities: Vec::new(),
             last_frame_time: std::time::Instant::now(),
             delta_time: 0.0,
         }

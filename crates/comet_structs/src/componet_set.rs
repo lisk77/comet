@@ -67,6 +67,10 @@ impl ComponentSet {
         self.set.is_subset(&other.set)
     }
 
+    pub fn is_superset(&self, other: &ComponentSet) -> bool {
+        self.set.is_superset(&other.set)
+    }
+
     pub fn to_vec(&self) -> Vec<TypeId> {
         self.set.iter().cloned().collect()
     }

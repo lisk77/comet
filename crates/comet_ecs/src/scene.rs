@@ -65,20 +65,17 @@ impl Scene {
 
     /// Gets an immutable reference to an entity by its ID.
     pub fn get_entity(&self, entity_id: usize) -> Option<&Entity> {
-        self.entities.get(entity_id).unwrap().as_ref()
+        self.entities.get(entity_id).and_then(|e| e.as_ref())
     }
 
     /// Gets a mutable reference to an entity by its ID.
     pub fn get_entity_mut(&mut self, entity_id: usize) -> Option<&mut Entity> {
-        self.entities.get_mut(entity_id).unwrap().as_mut()
+        self.entities.get_mut(entity_id).and_then(|e| e.as_mut())
     }
 
     /// Deletes an entity by its ID.
     pub fn delete_entity(&mut self, entity_id: usize) {
-        self.remove_entity_from_archetype_subsets(
-            entity_id as u32,
-            self.get_component_set(entity_id),
-        );
+        self.remove_entity_from_archetype(entity_id as u32, self.get_component_set(entity_id));
         self.entities[entity_id] = None;
         info!("Deleted entity! ID: {}", entity_id);
         for (_, value) in self.components.iter_mut() {
@@ -107,24 +104,6 @@ impl Scene {
         }
     }
 
-    fn get_keys(&self, components: ComponentSet) -> Vec<ComponentSet> {
-        let component_sets = self.archetypes.component_sets();
-        component_sets
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &ref elem)| {
-                if elem.is_subset(&components) {
-                    Some(i)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<usize>>()
-            .iter()
-            .map(|index| component_sets[*index].clone())
-            .collect::<Vec<ComponentSet>>()
-    }
-
     fn add_entity_to_archetype(&mut self, entity_id: u32, components: ComponentSet) {
         self.archetypes
             .add_entity_to_archetype(&components, entity_id);
@@ -133,18 +112,6 @@ impl Scene {
     fn remove_entity_from_archetype(&mut self, entity_id: u32, components: ComponentSet) {
         self.archetypes
             .remove_entity_from_archetype(&components, entity_id);
-    }
-
-    fn remove_entity_from_archetype_subsets(&mut self, entity_id: u32, components: ComponentSet) {
-        let keys = self.get_keys(components);
-
-        for key in keys {
-            self.remove_entity_from_archetype(entity_id, key.clone());
-            if self.archetypes.get_archetype(&key).unwrap().len() == 0 {
-                self.archetypes.remove_archetype(&key);
-            }
-        }
-        info!("Removed entity {} from all archetypes!", entity_id);
     }
 
     fn get_component_set(&self, entity_id: usize) -> ComponentSet {
@@ -195,19 +162,28 @@ impl Scene {
     pub fn add_component<C: Component + 'static>(&mut self, entity_id: usize, component: C) {
         let old_component_set = self.get_component_set(entity_id);
         if !old_component_set.to_vec().is_empty() {
-            self.remove_entity_from_archetype_subsets(entity_id as u32, old_component_set);
+            self.remove_entity_from_archetype(entity_id as u32, old_component_set);
         }
 
         self.components.set_component(entity_id, component);
-        let component_index = self
+        if let Some(component_index) = self
             .components
             .keys()
-            .iter_mut()
+            .iter()
             .position(|x| *x == C::type_id())
-            .unwrap();
-        self.get_entity_mut(entity_id)
-            .unwrap()
-            .add_component(component_index);
+        {
+            if let Some(entity) = self.get_entity_mut(entity_id) {
+                entity.add_component(component_index);
+            } else {
+                error!("Attempted to add component to non-existent entity {}", entity_id);
+            }
+        } else {
+            error!(
+                "Component {} not registered, cannot add to entity {}",
+                C::type_name(),
+                entity_id
+            );
+        }
 
         let new_component_set = self.get_component_set(entity_id);
 
@@ -215,15 +191,7 @@ impl Scene {
             self.create_archetype(new_component_set.clone());
         }
 
-        let subsets = ComponentSet::compute_subsets_up_to_size_3(new_component_set.to_vec());
-
-        for subset in subsets {
-            if !self.archetypes.contains_archetype(&subset) {
-                self.create_archetype(subset.clone());
-            }
-
-            self.add_entity_to_archetype(entity_id as u32, subset);
-        }
+        self.add_entity_to_archetype(entity_id as u32, new_component_set);
 
         info!(
             "Added component {} to entity {}!",
@@ -234,18 +202,19 @@ impl Scene {
 
     pub fn remove_component<C: Component + 'static>(&mut self, entity_id: usize) {
         let old_component_set = self.get_component_set(entity_id);
-        self.remove_entity_from_archetype_subsets(entity_id as u32, old_component_set);
+        self.remove_entity_from_archetype(entity_id as u32, old_component_set);
 
         self.components.remove_component::<C>(entity_id);
-        let component_index = self
+        if let Some(component_index) = self
             .components
             .keys()
             .iter()
             .position(|x| *x == C::type_id())
-            .unwrap();
-        self.get_entity_mut(entity_id)
-            .unwrap()
-            .remove_component(component_index);
+        {
+            if let Some(entity) = self.get_entity_mut(entity_id) {
+                entity.remove_component(component_index);
+            }
+        }
 
         let new_component_set = self.get_component_set(entity_id);
 
@@ -254,15 +223,7 @@ impl Scene {
                 self.create_archetype(new_component_set.clone());
             }
 
-            let subsets = ComponentSet::compute_subsets_up_to_size_3(new_component_set.to_vec());
-
-            for subset in subsets {
-                if !self.archetypes.contains_archetype(&subset) {
-                    self.create_archetype(subset.clone());
-                }
-
-                self.add_entity_to_archetype(entity_id as u32, subset);
-            }
+            self.add_entity_to_archetype(entity_id as u32, new_component_set);
         }
 
         info!(
@@ -291,21 +252,17 @@ impl Scene {
     /// Returns a list of entities that have the given components.
     pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<usize> {
         let component_set = ComponentSet::from_ids(components);
-        if component_set.size() > 3 {
-            error!("An entity query should only contain at most 3 different components!");
-            return Vec::new();
+        let mut result = Vec::new();
+
+        for archetype_set in self.archetypes.component_sets() {
+            if component_set.is_subset(&archetype_set) {
+                if let Some(entities) = self.archetypes.get_archetype(&archetype_set) {
+                    result.extend(entities.iter().map(|x| *x as usize));
+                }
+            }
         }
-        if self.archetypes.contains_archetype(&component_set) {
-            return self
-                .archetypes
-                .get_archetype(&component_set)
-                .unwrap()
-                .clone()
-                .iter()
-                .map(|x| *x as usize)
-                .collect();
-        }
-        Vec::new()
+
+        result
     }
 
     /// Deletes all entities that have the given components.
@@ -317,14 +274,23 @@ impl Scene {
     }
 
     /// Iterates over all entities that have the two given components and calls the given function.
-    pub fn foreach<C: Component, K: Component>(&mut self, func: fn(&mut C, &mut K)) {
+    pub fn foreach<C: Component, K: Component>(&mut self, mut func: impl FnMut(&mut C, &mut K)) {
+        if std::any::TypeId::of::<C>() == std::any::TypeId::of::<K>() {
+            error!("foreach called with identical component types");
+            return;
+        }
+
         let entities = self.get_entities_with(vec![C::type_id(), K::type_id()]);
         for entity in entities {
-            let c_ptr = self.get_component_mut::<C>(entity).unwrap() as *mut C;
-            let k_ptr = self.get_component_mut::<K>(entity).unwrap() as *mut K;
+            let (c_set, k_set) = self
+                .components
+                .get_two_mut(&C::type_id(), &K::type_id());
 
-            unsafe {
-                func(&mut *c_ptr, &mut *k_ptr);
+            let c_opt = c_set.and_then(|set| set.get_mut::<C>(entity));
+            let k_opt = k_set.and_then(|set| set.get_mut::<K>(entity));
+
+            if let (Some(c), Some(k)) = (c_opt, k_opt) {
+                func(c, k);
             }
         }
     }

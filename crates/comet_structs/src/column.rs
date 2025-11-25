@@ -272,6 +272,22 @@ impl Column {
         }
     }
 
+    /// Overwrites an existing element in place, dropping the previous value.
+    pub fn set<T: 'static>(&mut self, index: usize, item: T) -> Option<()> {
+        assert_eq!(TypeId::of::<T>(), TypeId::of::<T>(), "Type mismatch");
+        if index >= self.data.len() {
+            return None;
+        }
+
+        unsafe {
+            let ptr = self.data.get_unchecked_mut(index) as *mut T;
+            ptr::drop_in_place(ptr);
+            ptr::write(ptr, item);
+        }
+
+        Some(())
+    }
+
     pub fn swap(&mut self, index1: usize, index2: usize) {
         assert!(
             index1 < self.data.len() && index2 < self.data.len(),

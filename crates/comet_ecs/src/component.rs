@@ -5,6 +5,7 @@
 // They are intended to work with the base suite of systems provided by the engine.
 use crate::math::{v2, v3};
 use crate::{Entity, Scene};
+use comet_log::*;
 use comet_colors::Color as ColorTrait;
 use comet_math::m4;
 use component_derive::Component;
@@ -110,10 +111,13 @@ pub struct Transform3D {
 // #                    TRAITS                      #
 // ##################################################
 
-pub trait Component: Send + Sync + PartialEq + Default + 'static {
+pub trait Component: Send + Sync + 'static {
     fn new() -> Self
     where
-        Self: Sized;
+        Self: Sized + Default,
+    {
+        Default::default()
+    }
 
     fn type_id() -> std::any::TypeId {
         std::any::TypeId::of::<Self>()
@@ -136,7 +140,7 @@ pub trait Render {
 }
 
 pub trait Camera {
-    fn get_visible_entities(&self, camera_position: Position2D, scene: Scene) -> Vec<Entity>;
+    fn get_visible_entities(&self, camera_position: &Position2D, scene: &Scene) -> Vec<Entity>;
     fn get_projection_matrix(&self) -> m4;
 }
 
@@ -246,8 +250,8 @@ impl Rectangle2D {
         }
     }
 
-    pub fn position(&self) -> Position2D {
-        self.position
+    pub fn position(&self) -> &Position2D {
+        &self.position
     }
 
     pub fn set_position(&mut self, position: Position2D) {
@@ -417,7 +421,7 @@ impl Camera2D {
         self.priority = priority;
     }
 
-    pub fn in_view_frustum(&self, camera_pos: Position2D, entity: Position2D) -> bool {
+    pub fn in_view_frustum(&self, camera_pos: &Position2D, entity: &Position2D) -> bool {
         let left = camera_pos.x() - self.zoom;
         let right = camera_pos.x() + self.zoom;
         let bottom = camera_pos.y() - self.zoom;
@@ -428,18 +432,17 @@ impl Camera2D {
 }
 
 impl Camera for Camera2D {
-    fn get_visible_entities(&self, camera_position: Position2D, scene: Scene) -> Vec<Entity> {
+    fn get_visible_entities(&self, camera_position: &Position2D, scene: &Scene) -> Vec<Entity> {
         let entities = scene.entities();
         let mut visible_entities = Vec::new();
         for entity in entities {
-            if self.in_view_frustum(
-                camera_position,
-                *scene
-                    .get_component::<Transform2D>(*entity.clone().unwrap().id() as usize)
-                    .unwrap()
-                    .position(),
-            ) {
-                visible_entities.push(entity.clone().unwrap());
+            let id = *entity.clone().unwrap().id() as usize;
+            if let Some(transform) = scene.get_component::<Transform2D>(id) {
+                if self.in_view_frustum(camera_position, transform.position()) {
+                    visible_entities.push(entity.clone().unwrap());
+                }
+            } else {
+                error!("Entity {} missing Transform2D", id);
             }
         }
         visible_entities
@@ -498,7 +501,7 @@ impl Text {
     }
 
     pub fn color(&self) -> Color {
-        self.color
+        self.color.clone()
     }
 
     pub fn set_visibility(&mut self, visibility: bool) {
