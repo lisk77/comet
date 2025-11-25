@@ -62,7 +62,7 @@ pub struct Renderer2D<'a> {
     resource_manager: GraphicResourceManager,
     camera_manager: CameraManager,
     render_passes: Vec<RenderPass>,
-    cached_render_entities: Vec<usize>,
+    cached_render_entities: Vec<comet_ecs::EntityId>,
     last_frame_time: std::time::Instant,
     delta_time: f32,
 }
@@ -754,7 +754,8 @@ impl<'a> Renderer2D<'a> {
         let mut dirty_sort = self.cached_render_entities.len() != unsorted_entities.len();
 
         if !dirty_sort {
-            let unsorted_set: HashSet<usize> = unsorted_entities.iter().copied().collect();
+            let unsorted_set: HashSet<comet_ecs::EntityId> =
+                unsorted_entities.iter().copied().collect();
             dirty_sort = self
                 .cached_render_entities
                 .iter()
@@ -952,7 +953,7 @@ impl<'a> Renderer2D<'a> {
         }
     }
 
-    fn setup_camera(&mut self, scene: &comet_ecs::Scene, cameras: Vec<usize>) {
+    fn setup_camera(&mut self, scene: &comet_ecs::Scene, cameras: Vec<comet_ecs::EntityId>) {
         if cameras.is_empty() {
             return;
         }

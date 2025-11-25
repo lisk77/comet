@@ -436,13 +436,15 @@ impl Camera for Camera2D {
         let entities = scene.entities();
         let mut visible_entities = Vec::new();
         for entity in entities {
-            let id = *entity.clone().unwrap().id() as usize;
-            if let Some(transform) = scene.get_component::<Transform2D>(id) {
-                if self.in_view_frustum(camera_position, transform.position()) {
-                    visible_entities.push(entity.clone().unwrap());
+            if let Some(ent) = entity.clone() {
+                let id = ent.id();
+                if let Some(transform) = scene.get_component::<Transform2D>(id) {
+                    if self.in_view_frustum(camera_position, transform.position()) {
+                        visible_entities.push(ent);
+                    }
+                } else {
+                    error!("Entity {} missing Transform2D", id.index);
                 }
-            } else {
-                error!("Entity {} missing Transform2D", id);
             }
         }
         visible_entities

@@ -1,6 +1,6 @@
 use crate::archetypes::Archetypes;
 use crate::prefabs::PrefabManager;
-use crate::{Component, Entity, IdQueue};
+use crate::{Component, Entity, EntityId, IdQueue};
 use comet_log::*;
 use comet_structs::*;
 use std::any::TypeId;
@@ -8,6 +8,7 @@ use std::any::TypeId;
 pub struct Scene {
     id_queue: IdQueue,
     next_id: u32,
+    generations: Vec<u32>,
     entities: Vec<Option<Entity>>,
     components: ComponentStorage,
     archetypes: Archetypes,
@@ -19,6 +20,7 @@ impl Scene {
         Self {
             id_queue: IdQueue::new(),
             next_id: 0,
+            generations: Vec::new(),
             entities: Vec::new(),
             components: ComponentStorage::new(),
             archetypes: Archetypes::new(),
@@ -43,45 +45,80 @@ impl Scene {
         }
     }
 
+    fn is_alive(&self, id: EntityId) -> bool {
+        self.generations
+            .get(id.index as usize)
+            .is_some_and(|g| *g == id.gen)
+            && self
+                .entities
+                .get(id.index as usize)
+                .is_some_and(|e| e.is_some())
+    }
+
     /// Retuns the `Vec` of `Option<Entity>` which contains all the entities in the current Scene.
     pub fn entities(&self) -> &Vec<Option<Entity>> {
         &self.entities
     }
 
     /// Creates a new entity and returns its ID.
-    pub fn new_entity(&mut self) -> u32 {
-        let id = self.next_id;
-        if (self.next_id as usize) >= self.entities.len() {
-            self.entities.push(Some(Entity::new(self.next_id)));
-            self.get_next_id();
-            info!("Created entity! ID: {}", id);
-            return id;
+    pub fn new_entity(&mut self) -> EntityId {
+        let index = self.next_id;
+        let gen = if (index as usize) >= self.generations.len() {
+            self.generations.push(0);
+            0
+        } else {
+            self.generations[index as usize]
+        };
+
+        if (index as usize) >= self.entities.len() {
+            self.entities.push(Some(Entity::new(index, gen)));
+        } else {
+            self.entities[index as usize] = Some(Entity::new(index, gen));
         }
-        self.entities[self.next_id as usize] = Some(Entity::new(self.next_id));
+
+        let id = EntityId { index, gen };
         self.get_next_id();
-        info!("Created entity! ID: {}", id);
+        info!("Created entity! ID: {} (gen {})", id.index, id.gen);
         id
     }
 
     /// Gets an immutable reference to an entity by its ID.
-    pub fn get_entity(&self, entity_id: usize) -> Option<&Entity> {
-        self.entities.get(entity_id).and_then(|e| e.as_ref())
+    pub fn get_entity(&self, entity_id: EntityId) -> Option<&Entity> {
+        if !self.is_alive(entity_id) {
+            return None;
+        }
+        self.entities
+            .get(entity_id.index as usize)
+            .and_then(|e| e.as_ref())
     }
 
     /// Gets a mutable reference to an entity by its ID.
-    pub fn get_entity_mut(&mut self, entity_id: usize) -> Option<&mut Entity> {
-        self.entities.get_mut(entity_id).and_then(|e| e.as_mut())
+    pub fn get_entity_mut(&mut self, entity_id: EntityId) -> Option<&mut Entity> {
+        if !self.is_alive(entity_id) {
+            return None;
+        }
+        self.entities
+            .get_mut(entity_id.index as usize)
+            .and_then(|e| e.as_mut())
     }
 
     /// Deletes an entity by its ID.
-    pub fn delete_entity(&mut self, entity_id: usize) {
-        self.remove_entity_from_archetype(entity_id as u32, self.get_component_set(entity_id));
-        self.entities[entity_id] = None;
-        info!("Deleted entity! ID: {}", entity_id);
-        for (_, value) in self.components.iter_mut() {
-            value.remove::<u8>(entity_id);
+    pub fn delete_entity(&mut self, entity_id: EntityId) {
+        if !self.is_alive(entity_id) {
+            return;
         }
-        self.id_queue.sorted_enqueue(entity_id as u32);
+
+        let idx = entity_id.index as usize;
+        self.remove_entity_from_archetype(entity_id.index, self.get_component_set(idx));
+        self.entities[idx] = None;
+        info!("Deleted entity! ID: {}", entity_id.index);
+        for (_, value) in self.components.iter_mut() {
+            value.remove::<u8>(idx);
+        }
+        if let Some(gen) = self.generations.get_mut(idx) {
+            *gen = gen.wrapping_add(1);
+        }
+        self.id_queue.sorted_enqueue(entity_id.index);
         self.get_next_id();
     }
 
@@ -159,13 +196,23 @@ impl Scene {
 
     /// Adds a component to an entity by its ID and an instance of the component.
     /// Overwrites the previous component if another component of the same type is added.
-    pub fn add_component<C: Component + 'static>(&mut self, entity_id: usize, component: C) {
-        let old_component_set = self.get_component_set(entity_id);
-        if !old_component_set.to_vec().is_empty() {
-            self.remove_entity_from_archetype(entity_id as u32, old_component_set);
+    pub fn add_component<C: Component + 'static>(&mut self, entity_id: EntityId, component: C) {
+        if !self.is_alive(entity_id) {
+            error!(
+                "Attempted to add component {} to dead entity {}",
+                C::type_name(),
+                entity_id.index
+            );
+            return;
         }
 
-        self.components.set_component(entity_id, component);
+        let old_component_set = self.get_component_set(entity_id.index as usize);
+        if !old_component_set.to_vec().is_empty() {
+            self.remove_entity_from_archetype(entity_id.index, old_component_set);
+        }
+
+        self.components
+            .set_component(entity_id.index as usize, component);
         if let Some(component_index) = self
             .components
             .keys()
@@ -175,36 +222,43 @@ impl Scene {
             if let Some(entity) = self.get_entity_mut(entity_id) {
                 entity.add_component(component_index);
             } else {
-                error!("Attempted to add component to non-existent entity {}", entity_id);
+                error!(
+                    "Attempted to add component to non-existent entity {}",
+                    entity_id.index
+                );
             }
         } else {
             error!(
                 "Component {} not registered, cannot add to entity {}",
                 C::type_name(),
-                entity_id
+                entity_id.index
             );
         }
 
-        let new_component_set = self.get_component_set(entity_id);
+        let new_component_set = self.get_component_set(entity_id.index as usize);
 
         if !self.archetypes.contains_archetype(&new_component_set) {
             self.create_archetype(new_component_set.clone());
         }
 
-        self.add_entity_to_archetype(entity_id as u32, new_component_set);
+        self.add_entity_to_archetype(entity_id.index, new_component_set);
 
         info!(
             "Added component {} to entity {}!",
             C::type_name(),
-            entity_id
+            entity_id.index
         );
     }
 
-    pub fn remove_component<C: Component + 'static>(&mut self, entity_id: usize) {
-        let old_component_set = self.get_component_set(entity_id);
-        self.remove_entity_from_archetype(entity_id as u32, old_component_set);
+    pub fn remove_component<C: Component + 'static>(&mut self, entity_id: EntityId) {
+        if !self.is_alive(entity_id) {
+            return;
+        }
+        let old_component_set = self.get_component_set(entity_id.index as usize);
+        self.remove_entity_from_archetype(entity_id.index, old_component_set);
 
-        self.components.remove_component::<C>(entity_id);
+        self.components
+            .remove_component::<C>(entity_id.index as usize);
         if let Some(component_index) = self
             .components
             .keys()
@@ -216,48 +270,73 @@ impl Scene {
             }
         }
 
-        let new_component_set = self.get_component_set(entity_id);
+        let new_component_set = self.get_component_set(entity_id.index as usize);
 
         if !new_component_set.to_vec().is_empty() {
             if !self.archetypes.contains_archetype(&new_component_set) {
                 self.create_archetype(new_component_set.clone());
             }
 
-            self.add_entity_to_archetype(entity_id as u32, new_component_set);
+            self.add_entity_to_archetype(entity_id.index, new_component_set);
         }
 
         info!(
             "Removed component {} from entity {}!",
             C::type_name(),
-            entity_id
+            entity_id.index
         );
     }
 
     /// Returns a reference to a component of an entity by its ID.
-    pub fn get_component<C: Component + 'static>(&self, entity_id: usize) -> Option<&C> {
-        self.components.get_component::<C>(entity_id)
+    pub fn get_component<C: Component + 'static>(&self, entity_id: EntityId) -> Option<&C> {
+        if !self.is_alive(entity_id) {
+            return None;
+        }
+        self.components
+            .get_component::<C>(entity_id.index as usize)
     }
 
     pub fn get_component_mut<C: Component + 'static>(
         &mut self,
-        entity_id: usize,
+        entity_id: EntityId,
     ) -> Option<&mut C> {
-        self.components.get_component_mut::<C>(entity_id)
+        if !self.is_alive(entity_id) {
+            return None;
+        }
+        self.components
+            .get_component_mut::<C>(entity_id.index as usize)
     }
 
-    pub fn has<C: Component + 'static>(&self, entity_id: usize) -> bool {
-        self.components.get_component::<C>(entity_id).is_some()
+    pub fn has<C: Component + 'static>(&self, entity_id: EntityId) -> bool {
+        self.is_alive(entity_id)
+            && self
+                .components
+                .get_component::<C>(entity_id.index as usize)
+                .is_some()
     }
 
     /// Returns a list of entities that have the given components.
-    pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<usize> {
+    pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<EntityId> {
         let component_set = ComponentSet::from_ids(components);
         let mut result = Vec::new();
 
         for archetype_set in self.archetypes.component_sets() {
             if component_set.is_subset(&archetype_set) {
                 if let Some(entities) = self.archetypes.get_archetype(&archetype_set) {
-                    result.extend(entities.iter().map(|x| *x as usize));
+                    for index in entities.iter() {
+                        if let Some(gen) = self.generations.get(*index as usize) {
+                            if self
+                                .entities
+                                .get(*index as usize)
+                                .is_some_and(|e| e.is_some())
+                            {
+                                result.push(EntityId {
+                                    index: *index,
+                                    gen: *gen,
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -286,8 +365,9 @@ impl Scene {
                 .components
                 .get_two_mut(&C::type_id(), &K::type_id());
 
-            let c_opt = c_set.and_then(|set| set.get_mut::<C>(entity));
-            let k_opt = k_set.and_then(|set| set.get_mut::<K>(entity));
+            let idx = entity.index as usize;
+            let c_opt = c_set.and_then(|set| set.get_mut::<C>(idx));
+            let k_opt = k_set.and_then(|set| set.get_mut::<K>(idx));
 
             if let (Some(c), Some(k)) = (c_opt, k_opt) {
                 func(c, k);
@@ -301,7 +381,7 @@ impl Scene {
     }
 
     /// Spawns a prefab with the given name.
-    pub fn spawn_prefab(&mut self, name: &str) -> Option<usize> {
+    pub fn spawn_prefab(&mut self, name: &str) -> Option<EntityId> {
         if self.prefabs.has_prefab(name) {
             if let Some(factory) = self.prefabs.prefabs.get(&name.to_string()) {
                 let factory = *factory; // Copy the function pointer

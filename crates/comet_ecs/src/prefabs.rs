@@ -1,6 +1,6 @@
 use comet_structs::FlatMap;
 
-pub type PrefabFactory = fn(&mut crate::Scene) -> usize;
+pub type PrefabFactory = fn(&mut crate::Scene) -> crate::EntityId;
 
 pub(crate) struct PrefabManager {
     pub(crate) prefabs: FlatMap<String, PrefabFactory>,
@@ -26,8 +26,8 @@ impl PrefabManager {
 macro_rules! register_prefab {
     ($scene:expr, $name:expr, $($component:expr),* $(,)?) => {
         {
-            fn prefab_factory(scene: &mut $crate::Scene) -> usize {
-                let entity = scene.new_entity() as usize;
+            fn prefab_factory(scene: &mut $crate::Scene) -> $crate::EntityId {
+                let entity = scene.new_entity();
                 $(
                     scene.add_component(entity, $component);
                 )*

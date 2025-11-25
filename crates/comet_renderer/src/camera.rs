@@ -18,7 +18,11 @@ impl CameraManager {
         self.cameras.get(self.active_camera).unwrap()
     }
 
-    pub fn update_from_scene(&mut self, scene: &comet_ecs::Scene, camera_entities: Vec<usize>) {
+    pub fn update_from_scene(
+        &mut self,
+        scene: &comet_ecs::Scene,
+        camera_entities: Vec<comet_ecs::EntityId>,
+    ) {
         self.cameras.clear();
 
         let mut cameras_with_priority: Vec<(RenderCamera, u8)> = Vec::new();
