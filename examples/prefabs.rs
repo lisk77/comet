@@ -4,7 +4,7 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
     // Initialize the texture atlas
     renderer.init_atlas();
 
-    // Register components
+    // Register needed components
     app.register_component::<Position2D>();
     app.register_component::<Color>();
 
@@ -13,33 +13,33 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
         app,
         "player",
         Position2D::from_vec(v2::new(0.0, 0.0)),
-        Color::new(0.0, 1.0, 0.0, 1.0) // Green player
+        Color::new(0.0, 1.0, 0.0, 1.0)
     );
 
     register_prefab!(
         app,
         "enemy",
         Position2D::from_vec(v2::new(5.0, 5.0)),
-        Color::new(1.0, 0.0, 0.0, 1.0) // Red enemy
+        Color::new(1.0, 0.0, 0.0, 1.0)
     );
 
     register_prefab!(
         app,
         "pickup",
         Position2D::from_vec(v2::new(-5.0, -5.0)),
-        Color::new(1.0, 1.0, 0.0, 1.0) // Yellow pickup
+        Color::new(1.0, 1.0, 0.0, 1.0)
     );
 
     if let Some(player_id) = app.spawn_prefab("player") {
-        debug!("Spawned player with ID: {}", player_id);
+        debug!("Spawned player with ID: {:?}", player_id);
     }
 
     if let Some(enemy_id) = app.spawn_prefab("enemy") {
-        debug!("Spawned enemy with ID: {}", enemy_id);
+        debug!("Spawned enemy with ID: {:?}", enemy_id);
     }
 
     if let Some(pickup_id) = app.spawn_prefab("pickup") {
-        debug!("Spawned pickup with ID: {}", pickup_id);
+        debug!("Spawned pickup with ID: {:?}", pickup_id);
     }
 }
 

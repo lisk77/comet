@@ -33,7 +33,8 @@ fn handle_input(app: &mut App, dt: f32) {
     {
         update_position(
             app.input_manager().clone(),
-            app.get_component_mut::<Transform2D>(1).unwrap(),
+            app.get_component_mut::<Transform2D>(EntityId { index: 1, gen: 0 })
+                .unwrap(),
             dt,
         );
     }
