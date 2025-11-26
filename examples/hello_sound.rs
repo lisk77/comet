@@ -1,4 +1,5 @@
 use comet::prelude::*;
+use comet_sound::Audio;
 
 fn setup(app: &mut App, _renderer: &mut Renderer2D) {
     app.load_audio("startup", "res/sounds/hit.ogg");
@@ -19,5 +20,7 @@ fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
 fn main() {
     App::new()
         .with_title("Comet Audio Example")
+        // This can be used to add your own sound engine to the engine
+        .with_audio(Box::new(comet_sound::KiraAudio::new())) // to
         .run::<Renderer2D>(setup, update);
 }

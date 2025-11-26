@@ -111,6 +111,11 @@ impl App {
         self
     }
 
+    pub fn with_audio(mut self, audio_system: Box<dyn Audio>) -> Self {
+        self.audio = audio_system;
+        self
+    }
+
     fn load_icon(path: &std::path::Path) -> Option<Icon> {
         let image = match image::open(path) {
             Ok(image) => image,
@@ -387,8 +392,7 @@ impl App {
                                     match renderer.render() {
                                         Ok(_) => {}
                                         Err(
-                                            wgpu::SurfaceError::Lost
-                                            | wgpu::SurfaceError::Outdated,
+                                            wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
                                         ) => {
                                             let size = renderer.size();
                                             renderer.resize(size);
