@@ -301,6 +301,11 @@ impl App {
         self.update_timer
     }
 
+    /// Returns the last frame time as computed by the renderer.
+    pub fn frame_dt(&self) -> f32 {
+        self.delta_time
+    }
+
     /// Sets the amount of times the `App` game logic is updated per second
     pub fn set_update_rate(&mut self, update_rate: u32) {
         if update_rate == 0 {
