@@ -59,7 +59,7 @@ pub struct Camera2D {
 
 #[derive(Component)]
 pub struct Text {
-    content: &'static str,
+    content: String,
     font: &'static str,
     font_size: f32,
     color: Color,
@@ -462,14 +462,14 @@ impl Camera for Camera2D {
 
 impl Text {
     pub fn new(
-        content: &'static str,
+        content: impl Into<String>,
         font: &'static str,
         font_size: f32,
         is_visible: bool,
         color: impl ColorTrait,
     ) -> Self {
         Self {
-            content,
+            content: content.into(),
             font,
             font_size,
             color: Color::from_wgpu_color(color.to_wgpu()),
@@ -478,12 +478,12 @@ impl Text {
         }
     }
 
-    pub fn content(&self) -> &'static str {
-        self.content
+    pub fn content(&self) -> &str {
+        &self.content
     }
 
-    pub fn set_content(&mut self, content: &'static str) {
-        self.content = content;
+    pub fn set_content(&mut self, content: impl Into<String>) {
+        self.content = content.into();
     }
 
     pub fn font(&self) -> &'static str {
