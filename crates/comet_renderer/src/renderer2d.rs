@@ -1049,6 +1049,10 @@ impl<'a> Renderer for Renderer2D<'a> {
         }
     }
 
+    fn window(&self) -> &Window {
+        self.render_context.window()
+    }
+
     fn size(&self) -> PhysicalSize<u32> {
         self.render_context.size()
     }

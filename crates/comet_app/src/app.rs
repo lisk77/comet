@@ -348,14 +348,16 @@ impl App {
 
         pollster::block_on(async {
             let event_loop = EventLoop::new().unwrap();
-            let window = Arc::new(Self::create_window(
-                self.title.clone(),
-                &self.icon,
-                &self.size,
-                &event_loop,
-            ));
-            let mut renderer = R::new(window.clone(), self.clear_color.clone());
-            info!("Renderer created! ({})", type_name::<R>());
+            let mut renderer = R::new(
+                Arc::new(Self::create_window(
+                    self.title.clone(),
+                    &self.icon,
+                    &self.size,
+                    &event_loop,
+                )),
+                self.clear_color.clone(),
+            );
+            info!("Using Renderer {}", type_name::<R>());
 
             info!("Setting up!");
             setup(&mut self, &mut renderer);
@@ -427,7 +429,7 @@ impl App {
                             }
 
                             if window_focused && !window_occluded {
-                                window.request_redraw();
+                                renderer.window().request_redraw();
                             }
 
                             if self.dt().is_finite() {
