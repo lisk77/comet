@@ -67,6 +67,9 @@ pub struct Renderer2D<'a> {
     delta_time: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderHandle2D;
+
 impl<'a> Renderer2D<'a> {
     pub fn init_atlas(&mut self) {
         let texture_path = "res/textures/".to_string();
@@ -1037,6 +1040,8 @@ impl<'a> Renderer2D<'a> {
 }
 
 impl<'a> Renderer for Renderer2D<'a> {
+    type Handle = RenderHandle2D;
+
     fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Self {
         Self {
             render_context: RenderContext::new(window, clear_color),
@@ -1047,6 +1052,10 @@ impl<'a> Renderer for Renderer2D<'a> {
             last_frame_time: std::time::Instant::now(),
             delta_time: 0.0,
         }
+    }
+
+    fn handle(&self) -> Self::Handle {
+        RenderHandle2D
     }
 
     fn window(&self) -> &Window {
