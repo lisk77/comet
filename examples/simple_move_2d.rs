@@ -1,8 +1,7 @@
 use comet::prelude::*;
 use comet_input::keyboard::Key;
-use winit_input_helper::WinitInputHelper;
 
-fn setup(app: &mut App, renderer: &mut Renderer2D) {
+fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     // Takes all the textures from res/textures and puts them into a texture atlas
     renderer.init_atlas();
 
@@ -19,43 +18,36 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
     app.add_component(e1, renderer2d);
 }
 
-fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
+fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
     handle_input(app, dt);
 
     renderer.render_scene_2d(app.scene_mut());
 }
 
 fn handle_input(app: &mut App, dt: f32) {
-    if app.key_held(Key::KeyW)
-        || app.key_held(Key::KeyA)
-        || app.key_held(Key::KeyS)
-        || app.key_held(Key::KeyD)
-    {
-        update_position(
-            app.input_manager().clone(),
-            app.get_component_mut::<Transform2D>(EntityId { index: 1, gen: 0 })
-                .unwrap(),
-            dt,
-        );
-    }
-}
-
-fn update_position(input: WinitInputHelper, transform: &mut Transform2D, dt: f32) {
     let mut direction = v2::ZERO;
-
-    if input.key_held(Key::KeyW) {
+    if app.key_held(Key::KeyW) {
         direction += v2::Y;
     }
-    if input.key_held(Key::KeyA) {
+    if app.key_held(Key::KeyA) {
         direction -= v2::X;
     }
-    if input.key_held(Key::KeyS) {
+    if app.key_held(Key::KeyS) {
         direction -= v2::Y;
     }
-    if input.key_held(Key::KeyD) {
+    if app.key_held(Key::KeyD) {
         direction += v2::X;
     }
 
+    if direction != v2::ZERO {
+        let transform = app
+            .get_component_mut::<Transform2D>(EntityId { index: 1, gen: 0 })
+            .unwrap();
+        update_position(direction, transform, dt);
+    }
+}
+
+fn update_position(direction: v2, transform: &mut Transform2D, dt: f32) {
     // If check to prevent division by zero and the comet to fly off into infinity...
     if direction != v2::ZERO {
         let normalized_dir = direction.normalize();
