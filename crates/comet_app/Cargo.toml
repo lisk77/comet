@@ -19,6 +19,7 @@ winit_input_helper = "0.16.0"
 crossbeam-channel = "0.5.14"
 chrono = "0.4.40"
 wgpu = "22.0"
+flume = "0.12.0"
 
 [dependencies.image]
 version = "0.24"

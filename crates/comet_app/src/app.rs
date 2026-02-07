@@ -4,7 +4,7 @@ use comet_ecs::{
 };
 use comet_input::keyboard::Key;
 use comet_log::*;
-use comet_renderer::renderer::Renderer;
+use comet_renderer::renderer::{Renderer, RendererHandle};
 use comet_sound::*;
 use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
@@ -341,8 +341,8 @@ impl App {
     /// Starts the `App` event loop.
     pub fn run<R: Renderer>(
         mut self,
-        setup: fn(&mut App, &mut R),
-        update: fn(&mut App, &mut R, f32),
+        setup: fn(&mut App, &mut R::Handle),
+        update: fn(&mut App, &mut R::Handle, f32),
     ) {
         info!("Starting up {}!", self.title);
 
@@ -357,10 +357,14 @@ impl App {
                 )),
                 self.clear_color.clone(),
             );
+            let (cmd_tx, cmd_rx) = flume::unbounded::<
+                <R::Handle as comet_renderer::renderer::RendererHandle>::Command,
+            >();
+            let mut handle = R::Handle::new(cmd_tx);
             info!("Using Renderer {}", type_name::<R>());
 
             info!("Setting up!");
-            setup(&mut self, &mut renderer);
+            setup(&mut self, &mut handle);
 
             let mut time_stack = 0.0;
             let mut window_focused = true;
@@ -395,6 +399,10 @@ impl App {
                                 renderer.set_scale_factor(*scale_factor);
                             }
                             WindowEvent::RedrawRequested => {
+                                while let Ok(cmd) = cmd_rx.try_recv() {
+                                    renderer.apply_command(cmd);
+                                }
+
                                 if window_focused && !window_occluded {
                                     match renderer.render() {
                                         Ok(_) => {}
@@ -417,13 +425,17 @@ impl App {
                             _ => {}
                         },
                         Event::AboutToWait => {
+                            while let Ok(cmd) = cmd_rx.try_recv() {
+                                renderer.apply_command(cmd);
+                            }
+
                             self.delta_time = renderer.update();
 
                             if self.dt() != f32::INFINITY {
                                 time_stack += self.delta_time;
                                 while time_stack > self.update_timer {
                                     let time = self.dt();
-                                    update(&mut self, &mut renderer, time);
+                                    update(&mut self, &mut handle, time);
                                     time_stack -= self.update_timer;
                                 }
                             }

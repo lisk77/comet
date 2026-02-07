@@ -74,6 +74,14 @@ pub struct RenderHandle2D {
 }
 
 impl RenderHandle2D {
+    pub fn init_atlas(&mut self) {
+        let _ = self.tx.send(Renderer2DCommand::InitAtlas);
+    }
+
+    pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
+        let _ = self.tx.send(Renderer2DCommand::InitAtlasFromPaths(paths));
+    }
+
     pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
         let cameras = scene.get_entities_with(vec![
             comet_ecs::Transform2D::type_id(),
