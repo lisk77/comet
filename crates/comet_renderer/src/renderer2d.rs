@@ -1,7 +1,8 @@
 use crate::{
     camera::{CameraManager, RenderCamera},
-    render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand},
+    render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
+    render_events::Renderer2DEvent,
     render_pass::{RenderPass, universal_clear_execute, universal_load_execute},
     renderer::{Renderer, RendererHandle},
 };
@@ -60,30 +61,45 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 pub struct Renderer2D<'a> {
     render_context: RenderContext<'a>,
     resource_manager: GraphicResourceManager,
-    camera_manager: CameraManager,
     render_passes: Vec<RenderPass>,
-    cached_render_entities: Vec<comet_ecs::EntityId>,
     last_frame_time: std::time::Instant,
     delta_time: f32,
+    event_sender: flume::Sender<Renderer2DEvent>
 }
 
 #[derive(Debug)]
 pub struct RenderHandle2D {
-    tx: flume::Sender<Renderer2DCommand>,
+    command_sender: flume::Sender<Renderer2DCommand>,
+    event_receiver: flume::Receiver<Renderer2DEvent>,
     cached_render_entities: Vec<comet_ecs::EntityId>,
+    last_size: Option<PhysicalSize<u32>>,
 }
 
 impl RenderHandle2D {
     pub fn init_atlas(&mut self) {
-        let _ = self.tx.send(Renderer2DCommand::InitAtlas);
+        let _ = self.command_sender.send(Renderer2DCommand::InitAtlas);
     }
 
     pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
-        let _ = self.tx.send(Renderer2DCommand::InitAtlasFromPaths(paths));
+        let _ = self.command_sender.send(Renderer2DCommand::InitAtlasFromPaths(paths));
     }
 
     pub fn load_font(&mut self, path: &str, size: f32) {
-        let _ = self.tx.send(Renderer2DCommand::LoadFont(path.to_string(), size));
+        let _ = self.command_sender.send(Renderer2DCommand::LoadFont(path.to_string(), size));
+    }
+
+    pub fn size(&mut self) -> PhysicalSize<u32> {
+        let _ = self.command_sender.send(Renderer2DCommand::Size);
+        self.poll_events();
+        self.last_size.unwrap_or_else(|| PhysicalSize::new(0, 0))
+    }
+
+    pub fn poll_events(&mut self) {
+        while let Ok(event) = self.event_receiver.try_recv() {
+            if let Renderer2DEvent::Size(size) = event {
+                self.last_size = Some(size);
+            }
+        }
     }
 
     pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
@@ -151,6 +167,33 @@ impl RenderHandle2D {
             }
         }
 
+        let mut texts = Vec::new();
+        let text_entities = scene.get_entities_with(vec![
+            comet_ecs::Transform2D::type_id(),
+            comet_ecs::Text::type_id(),
+        ]);
+
+        for entity in text_entities {
+            if let (Some(transform), Some(text)) = (
+                scene.get_component::<comet_ecs::Transform2D>(entity),
+                scene.get_component::<comet_ecs::Text>(entity),
+            ) {
+                if !text.is_visible() {
+                    continue;
+                }
+
+                let color = text.color().to_wgpu();
+                texts.push(Text2D {
+                    position: [transform.position().x(), transform.position().y()],
+                    content: text.content().to_string(),
+                    font: text.font(),
+                    size: text.font_size(),
+                    color: [color.r as f32, color.g as f32, color.b as f32, color.a as f32],
+                    visible: true,
+                });
+            }
+        }
+
         let camera_entity = cameras
             .into_iter()
             .min_by_key(|entity| {
@@ -174,15 +217,27 @@ impl RenderHandle2D {
             priority: camera.priority(),
         };
 
-        let _ = self.tx.send(Renderer2DCommand::SubmitFrame(camera_packet, draws));
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts));
     }
 }
 
 impl RendererHandle for RenderHandle2D {
     type Command = Renderer2DCommand;
+    type Event = Renderer2DEvent;
 
-    fn new(sender: flume::Sender<Self::Command>) -> Self {
-        Self { tx: sender, cached_render_entities: Vec::new()}
+    fn new(sender: flume::Sender<Self::Command>, receiver: flume::Receiver<Self::Event>) -> Self {
+        Self {
+            command_sender: sender,
+            event_receiver: receiver,
+            cached_render_entities: Vec::new(),
+            last_size: None,
+        }
+    }
+
+    fn poll_event(&self) -> Option<Renderer2DEvent> {
+        self.event_receiver.try_recv().ok()
     }
 }
 
@@ -855,7 +910,12 @@ impl<'a> Renderer2D<'a> {
         (vertex_data, index_data)
     }
 
-    pub fn submit_frame(&mut self, camera: CameraPacket2D, mut draws: Vec<Draw2D>) {
+    pub fn submit_frame(
+        &mut self,
+        camera: CameraPacket2D,
+        mut draws: Vec<Draw2D>,
+        texts: Vec<Text2D>,
+    ) {
         self.setup_camera_from_packet(camera);
 
         draws.sort_by_key(|draw| draw.draw_index);
@@ -977,6 +1037,33 @@ impl<'a> Renderer2D<'a> {
             vertex_buffer,
             index_buffer,
         );
+
+        for text in texts {
+            if !text.visible {
+                continue;
+            }
+
+            let position = v2::new(text.position[0], text.position[1]);
+            let color = wgpu::Color {
+                r: text.color[0] as f64,
+                g: text.color[1] as f64,
+                b: text.color[2] as f64,
+                a: text.color[3] as f64,
+            };
+
+            let mut bounds = v2::ZERO;
+            let (vertices, indices) = self.add_text_to_buffers(
+                &text.content,
+                text.font,
+                text.size,
+                position,
+                color,
+                &mut bounds,
+            );
+
+            self.render_context
+                .update_batch_buffers("Font".to_string(), vertices, indices);
+        }
     }
 
     fn setup_camera_from_packet(&mut self, camera: CameraPacket2D) {
@@ -1058,15 +1145,14 @@ impl<'a> Renderer2D<'a> {
 impl<'a> Renderer for Renderer2D<'a> {
     type Handle = RenderHandle2D;
     
-    fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Self {
+    fn new(window: Arc<Window>, clear_color: Option<impl Color>, event_sender: flume::Sender<Renderer2DEvent>) -> Self {
         Self {
             render_context: RenderContext::new(window, clear_color),
             resource_manager: GraphicResourceManager::new(),
-            camera_manager: CameraManager::new(),
             render_passes: Vec::new(),
-            cached_render_entities: Vec::new(),
             last_frame_time: std::time::Instant::now(),
             delta_time: 0.0,
+            event_sender,
         }
     }
 
@@ -1075,11 +1161,17 @@ impl<'a> Renderer for Renderer2D<'a> {
             Renderer2DCommand::Clear => {}
             Renderer2DCommand::InitAtlas => self.init_atlas(),
             Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
+            Renderer2DCommand::Size => {
+                let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));            
+            }
             Renderer2DCommand::LoadFont(font_path, font_size) => self.load_font(font_path.as_str(), font_size),
-            Renderer2DCommand::SubmitFrame(
-                camera,
-                draws,
-            ) => self.submit_frame(camera, draws),
+            Renderer2DCommand::PrecomputedTextBounds { text, font_path, font_size } => {
+                let bounds = self.precompute_text_bounds(&text, font_path.as_str(), font_size);
+                let _ = self.event_sender.send(Renderer2DEvent::PrecomputedTextBounds { width: bounds.x(), height: bounds.y() });
+            }
+            Renderer2DCommand::SubmitFrame(camera, draws, texts) => {
+                self.submit_frame(camera, draws, texts)
+            }
         }
     }
 

@@ -5,13 +5,20 @@ use winit::window::Window;
 
 pub trait RendererHandle {
     type Command: Send + 'static;
-    fn new(sender: flume::Sender<Self::Command>) -> Self;  
+    type Event: Send + 'static;
+
+    fn new(sender: flume::Sender<Self::Command>, receiver: flume::Receiver<Self::Event>) -> Self; 
+    fn poll_event(&self) -> Option<Self::Event>; 
 }
 
 pub trait Renderer: Sized + Send + Sync {
     type Handle: RendererHandle;
-    
-    fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Self;
+
+    fn new(
+        window: Arc<Window>,
+        clear_color: Option<impl Color>,
+        event_sender: flume::Sender<<Self::Handle as RendererHandle>::Event>,
+    ) -> Self;
     fn apply_command(&mut self, command: <Self::Handle as RendererHandle>::Command);
     fn window(&self) -> &Window;
     fn size(&self) -> PhysicalSize<u32>;

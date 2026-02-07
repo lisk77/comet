@@ -357,6 +357,9 @@ impl App {
             let size = self.size.clone();
             let clear_color = self.clear_color.clone();
 
+            let (cmd_tx, cmd_rx) = flume::unbounded::<<R::Handle as comet_renderer::renderer::RendererHandle>::Command>();
+            let (evt_tx, evt_rx) = flume::unbounded::<<R::Handle as comet_renderer::renderer::RendererHandle>::Event>();
+
             let event_loop = EventLoop::new().unwrap();
             let mut renderer = R::new(
                 Arc::new(Self::create_window(
@@ -366,8 +369,8 @@ impl App {
                     &event_loop,
                 )),
                 clear_color,
+                evt_tx,
             );
-            let (cmd_tx, cmd_rx) = flume::unbounded::<<R::Handle as comet_renderer::renderer::RendererHandle>::Command>();
             let quit_flag = Arc::new(AtomicBool::new(false));
             let logic_quit = quit_flag.clone();
             info!("Using Renderer {}", type_name::<R>());
@@ -375,7 +378,7 @@ impl App {
             info!("Setting up!");
             let logic_thread = std::thread::spawn(move || {
                 let mut app = self;
-                let mut handle = R::Handle::new(cmd_tx);
+                let mut handle = R::Handle::new(cmd_tx, evt_rx);
                 setup(&mut app, &mut handle);
 
                 let mut time_stack = 0.0;

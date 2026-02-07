@@ -17,10 +17,26 @@ pub struct Draw2D {
     pub visible: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct Text2D {
+    pub position: [f32; 2],
+    pub content: String,
+    pub font: &'static str,
+    pub size: f32,
+    pub color: [f32; 4],
+    pub visible: bool,
+}
+
 pub enum Renderer2DCommand {
     Clear,
     InitAtlas,
     InitAtlasFromPaths(Vec<String>),
+    Size,
     LoadFont(String, f32),
-    SubmitFrame(CameraPacket2D, Vec<Draw2D>)
+    PrecomputedTextBounds{ 
+        text: String,
+        font_path: String,
+        font_size: f32
+    },
+    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>)
 }
