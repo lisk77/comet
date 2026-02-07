@@ -1,4 +1,4 @@
-pub trait Audio {
+pub trait Audio: Send {
     fn new() -> Self
     where
         Self: Sized;
