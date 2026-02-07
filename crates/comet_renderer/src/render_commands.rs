@@ -21,8 +21,6 @@ pub enum Renderer2DCommand {
     Clear,
     InitAtlas,
     InitAtlasFromPaths(Vec<String>),
-    SubmitFrame {
-        camera: CameraPacket2D,
-        draws: Vec<Draw2D>,
-    },
+    LoadFont(String, f32),
+    SubmitFrame(CameraPacket2D, Vec<Draw2D>)
 }

@@ -82,6 +82,10 @@ impl RenderHandle2D {
         let _ = self.tx.send(Renderer2DCommand::InitAtlasFromPaths(paths));
     }
 
+    pub fn load_font(&mut self, path: &str, size: f32) {
+        let _ = self.tx.send(Renderer2DCommand::LoadFont(path.to_string(), size));
+    }
+
     pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
         let cameras = scene.get_entities_with(vec![
             comet_ecs::Transform2D::type_id(),
@@ -170,7 +174,7 @@ impl RenderHandle2D {
             priority: camera.priority(),
         };
 
-        let _ = self.tx.send(Renderer2DCommand::SubmitFrame { camera: camera_packet, draws });
+        let _ = self.tx.send(Renderer2DCommand::SubmitFrame(camera_packet, draws));
     }
 }
 
@@ -1071,10 +1075,11 @@ impl<'a> Renderer for Renderer2D<'a> {
             Renderer2DCommand::Clear => {}
             Renderer2DCommand::InitAtlas => self.init_atlas(),
             Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
-            Renderer2DCommand::SubmitFrame {
+            Renderer2DCommand::LoadFont(font_path, font_size) => self.load_font(font_path.as_str(), font_size),
+            Renderer2DCommand::SubmitFrame(
                 camera,
                 draws,
-            } => self.submit_frame(camera, draws),
+            ) => self.submit_frame(camera, draws),
         }
     }
 
