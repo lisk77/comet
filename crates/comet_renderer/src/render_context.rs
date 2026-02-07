@@ -5,6 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
 pub struct RenderContext<'a> {
+    window: Arc<Window>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'a>,
@@ -26,7 +27,7 @@ impl<'a> RenderContext<'a> {
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window).unwrap();
+        let surface = instance.create_surface(window.clone()).unwrap();
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
@@ -75,6 +76,7 @@ impl<'a> RenderContext<'a> {
         };
 
         Self {
+            window,
             device,
             queue,
             surface,
@@ -88,6 +90,10 @@ impl<'a> RenderContext<'a> {
         }
     }
 
+    pub fn window(&self) -> &Window {
+        &self.window
+    }
+
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
@@ -96,7 +102,7 @@ impl<'a> RenderContext<'a> {
         &self.queue
     }
 
-    pub fn surface(&self) -> &wgpu::Surface {
+    pub fn surface(&self) -> &wgpu::Surface<'a> {
         &self.surface
     }
 

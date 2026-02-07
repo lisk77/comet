@@ -1,0 +1,42 @@
+#[derive(Clone, Copy, Debug)]
+pub struct CameraPacket2D {
+    pub position: [f32; 2],
+    pub rotation_deg: f32,
+    pub zoom: f32,
+    pub dimensions: [f32; 2],
+    pub priority: u8,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Draw2D {
+    pub position: [f32; 2],
+    pub rotation_deg: f32,
+    pub scale: [f32; 2],
+    pub texture: &'static str,
+    pub draw_index: u32,
+    pub visible: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Text2D {
+    pub position: [f32; 2],
+    pub content: String,
+    pub font: &'static str,
+    pub size: f32,
+    pub color: [f32; 4],
+    pub visible: bool,
+}
+
+pub enum Renderer2DCommand {
+    Clear,
+    InitAtlas,
+    InitAtlasFromPaths(Vec<String>),
+    Size,
+    LoadFont(String, f32),
+    PrecomputedTextBounds{ 
+        text: String,
+        font_path: String,
+        font_size: f32
+    },
+    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>)
+}

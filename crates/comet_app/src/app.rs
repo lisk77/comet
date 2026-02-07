@@ -4,7 +4,7 @@ use comet_ecs::{
 };
 use comet_input::keyboard::Key;
 use comet_log::*;
-use comet_renderer::renderer::Renderer;
+use comet_renderer::renderer::{Renderer, RendererHandle};
 use comet_sound::*;
 use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
@@ -15,6 +15,7 @@ use winit::{
     window::{Icon, Window},
 };
 use winit_input_helper::WinitInputHelper as InputManager;
+use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
 
 /// Represents the presets of an `App` instance.
 pub enum ApplicationType {
@@ -29,10 +30,10 @@ pub struct App {
     icon: Option<Icon>,
     size: Option<LogicalSize<u32>>,
     clear_color: Option<LinearRgba>,
-    input_manager: InputManager,
+    input_manager: Arc<Mutex<InputManager>>,
     delta_time: f32,
     update_timer: f32,
-    game_state: Option<Box<dyn Any>>,
+    game_state: Option<Box<dyn Any + Send>>,
     audio: Box<dyn Audio>,
     scene: Scene,
     should_quit: bool,
@@ -46,7 +47,7 @@ impl App {
             icon: None,
             size: None,
             clear_color: None,
-            input_manager: InputManager::new(),
+            input_manager: Arc::new(Mutex::new(InputManager::new())),
             delta_time: 0.0,
             update_timer: 0.0166667,
             game_state: None,
@@ -82,7 +83,7 @@ impl App {
 
     /// Allows to set a custom game state struct for the `App` instance.
     /// This allows for additional state management and control additionally to the core functionality of the engine.
-    pub fn with_game_state(mut self, game_state: impl Any + 'static) -> Self {
+    pub fn with_game_state(mut self, game_state: impl Any + Send + 'static) -> Self {
         self.game_state = Some(Box::new(game_state));
         self
     }
@@ -150,23 +151,23 @@ impl App {
     }
 
     /// Retrieves a reference to the `InputManager`.
-    pub fn input_manager(&self) -> &InputManager {
-        &self.input_manager
+    pub fn input_manager(&self) -> std::sync::MutexGuard<'_, InputManager> {
+        self.input_manager.lock().unwrap()
     }
 
     /// Checks if a key is currently pressed.
     pub fn key_pressed(&self, key: Key) -> bool {
-        self.input_manager.key_pressed(key)
+        self.input_manager.lock().unwrap().key_pressed(key)
     }
 
     /// Checks if a key is currently held.
     pub fn key_held(&self, key: Key) -> bool {
-        self.input_manager.key_held(key)
+        self.input_manager.lock().unwrap().key_held(key)
     }
 
     /// Checks if a key was released this frame.
     pub fn key_released(&self, key: Key) -> bool {
-        self.input_manager.key_released(key)
+        self.input_manager.lock().unwrap().key_released(key)
     }
 
     /// Creates a new entity and returns its ID.
@@ -340,38 +341,88 @@ impl App {
 
     /// Starts the `App` event loop.
     pub fn run<R: Renderer>(
-        mut self,
-        setup: fn(&mut App, &mut R),
-        update: fn(&mut App, &mut R, f32),
-    ) {
-        info!("Starting up {}!", self.title);
+        self,
+        setup: fn(&mut App, &mut R::Handle),
+        update: fn(&mut App, &mut R::Handle, f32),
+    ) where
+        R::Handle: 'static,
+    {
+        let title = self.title.clone();
+        info!("Starting up {}!", title);
 
         pollster::block_on(async {
+            let update_timer = self.update_timer;
+            let input_manager = self.input_manager.clone();
+            let icon = self.icon.clone();
+            let size = self.size.clone();
+            let clear_color = self.clear_color.clone();
+
+            let (cmd_tx, cmd_rx) = flume::unbounded::<<R::Handle as comet_renderer::renderer::RendererHandle>::Command>();
+            let (evt_tx, evt_rx) = flume::unbounded::<<R::Handle as comet_renderer::renderer::RendererHandle>::Event>();
+
             let event_loop = EventLoop::new().unwrap();
-            let window = Arc::new(Self::create_window(
-                self.title.clone(),
-                &self.icon,
-                &self.size,
-                &event_loop,
-            ));
-            let mut renderer = R::new(window.clone(), self.clear_color.clone());
-            info!("Renderer created! ({})", type_name::<R>());
+            let mut renderer = R::new(
+                Arc::new(Self::create_window(
+                    title.clone(),
+                    &icon,
+                    &size,
+                    &event_loop,
+                )),
+                clear_color,
+                evt_tx,
+            );
+            let quit_flag = Arc::new(AtomicBool::new(false));
+            let logic_quit = quit_flag.clone();
+            info!("Using Renderer {}", type_name::<R>());
 
             info!("Setting up!");
-            setup(&mut self, &mut renderer);
+            let logic_thread = std::thread::spawn(move || {
+                let mut app = self;
+                let mut handle = R::Handle::new(cmd_tx, evt_rx);
+                setup(&mut app, &mut handle);
 
-            let mut time_stack = 0.0;
+                let mut time_stack = 0.0;
+                let mut last_tick = std::time::Instant::now();
+
+                while !logic_quit.load(Ordering::Relaxed) {
+                    let now = std::time::Instant::now();
+                    let frame_dt = now.duration_since(last_tick).as_secs_f32();
+                    last_tick = now;
+                    app.delta_time = frame_dt;
+
+                    if app.dt() != f32::INFINITY {
+                        time_stack += frame_dt;
+                        while time_stack > app.update_timer {
+                            let step = app.dt();
+                            update(&mut app, &mut handle, step);
+                            time_stack -= app.update_timer;
+                        }
+                    } else {
+                        update(&mut app, &mut handle, frame_dt);
+                    }
+
+                    if app.should_quit {
+                        logic_quit.store(true, Ordering::Relaxed);
+                        break;
+                    }
+
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            });
+
             let mut window_focused = true;
             let mut window_occluded = false;
 
             info!("Starting event loop!");
             event_loop
                 .run(|event, elwt| {
-                    if self.should_quit {
+                    if quit_flag.load(Ordering::Relaxed) {
                         elwt.exit()
                     }
 
-                    self.input_manager.update(&event);
+                    if let Ok(mut manager) = input_manager.lock() {
+                        manager.update(&event);
+                    }
 
                     #[allow(unused_variables)]
                     match event {
@@ -379,7 +430,10 @@ impl App {
                             ref event,
                             window_id,
                         } => match event {
-                            WindowEvent::CloseRequested {} => elwt.exit(),
+                            WindowEvent::CloseRequested {} => {
+                                quit_flag.store(true, Ordering::Relaxed);
+                                elwt.exit();
+                            }
                             WindowEvent::Focused(focused) => {
                                 window_focused = *focused;
                             }
@@ -393,6 +447,10 @@ impl App {
                                 renderer.set_scale_factor(*scale_factor);
                             }
                             WindowEvent::RedrawRequested => {
+                                while let Ok(cmd) = cmd_rx.try_recv() {
+                                    renderer.apply_command(cmd);
+                                }
+
                                 if window_focused && !window_occluded {
                                     match renderer.render() {
                                         Ok(_) => {}
@@ -415,24 +473,17 @@ impl App {
                             _ => {}
                         },
                         Event::AboutToWait => {
-                            self.delta_time = renderer.update();
-
-                            if self.dt() != f32::INFINITY {
-                                time_stack += self.delta_time;
-                                while time_stack > self.update_timer {
-                                    let time = self.dt();
-                                    update(&mut self, &mut renderer, time);
-                                    time_stack -= self.update_timer;
-                                }
+                            while let Ok(cmd) = cmd_rx.try_recv() {
+                                renderer.apply_command(cmd);
                             }
 
                             if window_focused && !window_occluded {
-                                window.request_redraw();
+                                renderer.window().request_redraw();
                             }
 
-                            if self.dt().is_finite() {
+                            if update_timer.is_finite() {
                                 let next_frame = std::time::Instant::now()
-                                    + std::time::Duration::from_secs_f32(self.update_timer);
+                                    + std::time::Duration::from_secs_f32(update_timer);
                                 elwt.set_control_flow(ControlFlow::WaitUntil(next_frame));
                             } else {
                                 elwt.set_control_flow(ControlFlow::Wait);
@@ -441,9 +492,10 @@ impl App {
                         _ => {}
                     }
                 })
-                .unwrap()
+                .unwrap();
+            logic_thread.join().ok();
         });
 
-        info!("Shutting down {}!", self.title);
+        info!("Shutting down {}!", title);
     }
 }

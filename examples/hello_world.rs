@@ -2,11 +2,11 @@ use comet::prelude::*;
 
 // This function will only be called once before the event loop starts.
 #[allow(unused_variables)]
-fn setup(app: &mut App, renderer: &mut Renderer2D) {}
+fn setup(app: &mut App, renderer: &mut RenderHandle2D) {}
 
 // This function will be called on every tick after the event loop starts.
 #[allow(unused_variables)]
-fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {}
+fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {}
 
 fn main() {
     // This creates a window with the title "Hello world".

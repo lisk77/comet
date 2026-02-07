@@ -1,7 +1,7 @@
 use comet::prelude::*;
 use comet_sound::Audio;
 
-fn setup(app: &mut App, _renderer: &mut Renderer2D) {
+fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     app.load_audio("startup", "res/sounds/hit.ogg");
     app.play_audio("startup", true); // second parameter loops the sound
 
@@ -11,7 +11,7 @@ fn setup(app: &mut App, _renderer: &mut Renderer2D) {
 }
 
 #[allow(unused_variables)]
-fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
+fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
     // in this example, update_audio doesnt do anything because the kira audio system
     // doesnt need any update
     app.update_audio(dt);

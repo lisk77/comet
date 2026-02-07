@@ -1,18 +1,19 @@
 use crate::{
-    camera::CameraManager,
+    camera::{CameraManager, RenderCamera},
+    render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
-    render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
-    renderer::Renderer,
+    render_events::Renderer2DEvent,
+    render_pass::{RenderPass, universal_clear_execute, universal_load_execute},
+    renderer::{Renderer, RendererHandle},
 };
 use comet_colors::Color;
-use comet_ecs::{Component, Render, Render2D, Transform2D};
 use comet_log::*;
-use comet_math::{m4, v2};
+use comet_math::{m4, v2, v3};
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
-use std::collections::HashSet;
-use std::sync::Arc;
+use comet_ecs::{Component, Render, Render2D, Transform2D};
+use std::{collections::HashSet, sync::Arc};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -60,11 +61,184 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 pub struct Renderer2D<'a> {
     render_context: RenderContext<'a>,
     resource_manager: GraphicResourceManager,
-    camera_manager: CameraManager,
     render_passes: Vec<RenderPass>,
-    cached_render_entities: Vec<comet_ecs::EntityId>,
     last_frame_time: std::time::Instant,
     delta_time: f32,
+    event_sender: flume::Sender<Renderer2DEvent>
+}
+
+#[derive(Debug)]
+pub struct RenderHandle2D {
+    command_sender: flume::Sender<Renderer2DCommand>,
+    event_receiver: flume::Receiver<Renderer2DEvent>,
+    cached_render_entities: Vec<comet_ecs::EntityId>,
+    last_size: Option<PhysicalSize<u32>>,
+}
+
+impl RenderHandle2D {
+    pub fn init_atlas(&mut self) {
+        let _ = self.command_sender.send(Renderer2DCommand::InitAtlas);
+    }
+
+    pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
+        let _ = self.command_sender.send(Renderer2DCommand::InitAtlasFromPaths(paths));
+    }
+
+    pub fn load_font(&mut self, path: &str, size: f32) {
+        let _ = self.command_sender.send(Renderer2DCommand::LoadFont(path.to_string(), size));
+    }
+
+    pub fn size(&mut self) -> PhysicalSize<u32> {
+        let _ = self.command_sender.send(Renderer2DCommand::Size);
+        self.poll_events();
+        self.last_size.unwrap_or_else(|| PhysicalSize::new(0, 0))
+    }
+
+    pub fn poll_events(&mut self) {
+        while let Ok(event) = self.event_receiver.try_recv() {
+            if let Renderer2DEvent::Size(size) = event {
+                self.last_size = Some(size);
+            }
+        }
+    }
+
+    pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
+        let cameras = scene.get_entities_with(vec![
+            comet_ecs::Transform2D::type_id(),
+            comet_ecs::Camera2D::type_id(),
+        ]);
+
+        if cameras.is_empty() {
+            return;
+        }
+
+        let unsorted_entities = scene.get_entities_with(vec![
+            comet_ecs::Transform2D::type_id(),
+            comet_ecs::Render2D::type_id(),
+        ]);
+
+        let mut dirty_sort = self.cached_render_entities.len() != unsorted_entities.len();
+
+        if !dirty_sort {
+            let unsorted_set: HashSet<comet_ecs::EntityId> =
+                unsorted_entities.iter().copied().collect();
+            dirty_sort = self
+                .cached_render_entities
+                .iter()
+                .any(|e| !unsorted_set.contains(e));
+        }
+
+        if !dirty_sort {
+            dirty_sort = !self.cached_render_entities.windows(2).all(|w| {
+                let a = scene
+                    .get_component::<comet_ecs::Render2D>(w[0])
+                    .map(|r| r.draw_index());
+                let b = scene
+                    .get_component::<comet_ecs::Render2D>(w[1])
+                    .map(|r| r.draw_index());
+                matches!((a, b), (Some(da), Some(db)) if da <= db)
+            });
+        }
+
+        if dirty_sort {
+            let mut entities = unsorted_entities;
+            entities.sort_by(|&a, &b| {
+                let ra = scene.get_component::<comet_ecs::Render2D>(a).unwrap();
+                let rb = scene.get_component::<comet_ecs::Render2D>(b).unwrap();
+                ra.draw_index().cmp(&rb.draw_index())
+            });
+            self.cached_render_entities = entities;
+        }
+
+        let mut draws = Vec::new();
+        for entity in &self.cached_render_entities {
+            if let (Some(transform), Some(render)) = (
+                scene.get_component::<comet_ecs::Transform2D>(*entity),
+                scene.get_component::<comet_ecs::Render2D>(*entity),
+            ) {
+                draws.push(Draw2D {
+                    position: [transform.position().x(), transform.position().y()],
+                    rotation_deg: transform.rotation().to_degrees(),
+                    scale: [1.0, 1.0],
+                    texture: render.get_texture(),
+                    draw_index: render.draw_index(),
+                    visible: render.is_visible(),
+                });
+            }
+        }
+
+        let mut texts = Vec::new();
+        let text_entities = scene.get_entities_with(vec![
+            comet_ecs::Transform2D::type_id(),
+            comet_ecs::Text::type_id(),
+        ]);
+
+        for entity in text_entities {
+            if let (Some(transform), Some(text)) = (
+                scene.get_component::<comet_ecs::Transform2D>(entity),
+                scene.get_component::<comet_ecs::Text>(entity),
+            ) {
+                if !text.is_visible() {
+                    continue;
+                }
+
+                let color = text.color().to_wgpu();
+                texts.push(Text2D {
+                    position: [transform.position().x(), transform.position().y()],
+                    content: text.content().to_string(),
+                    font: text.font(),
+                    size: text.font_size(),
+                    color: [color.r as f32, color.g as f32, color.b as f32, color.a as f32],
+                    visible: true,
+                });
+            }
+        }
+
+        let camera_entity = cameras
+            .into_iter()
+            .min_by_key(|entity| {
+                scene
+                    .get_component::<comet_ecs::Camera2D>(*entity)
+                    .map(|camera| camera.priority())
+                    .unwrap_or(u8::MAX)
+            })
+            .unwrap();
+        let camera_transform = scene
+            .get_component::<comet_ecs::Transform2D>(camera_entity)
+            .unwrap();
+        let camera = scene
+            .get_component::<comet_ecs::Camera2D>(camera_entity)
+            .unwrap();
+        let camera_packet = CameraPacket2D {
+            position: [camera_transform.position().x(), camera_transform.position().y()],
+            rotation_deg: camera_transform.rotation().to_degrees(),
+            zoom: camera.zoom(),
+            dimensions: [camera.dimensions().x(), camera.dimensions().y()],
+            priority: camera.priority(),
+        };
+
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts));
+    }
+}
+
+impl RendererHandle for RenderHandle2D {
+    type Command = Renderer2DCommand;
+    type Event = Renderer2DEvent;
+
+    fn new(sender: flume::Sender<Self::Command>, receiver: flume::Receiver<Self::Event>) -> Self {
+        Self {
+            command_sender: sender,
+            event_receiver: receiver,
+            cached_render_entities: Vec::new(),
+            last_size: None,
+        }
+    }
+
+    fn poll_event(&self) -> Option<Renderer2DEvent> {
+        self.event_receiver.try_recv().ok()
+    }
 }
 
 impl<'a> Renderer2D<'a> {
@@ -736,178 +910,126 @@ impl<'a> Renderer2D<'a> {
         (vertex_data, index_data)
     }
 
-    pub fn render_scene_2d(&mut self, scene: &mut comet_ecs::Scene) {
-        let cameras = scene.get_entities_with(vec![
-            comet_ecs::Transform2D::type_id(),
-            comet_ecs::Camera2D::type_id(),
-        ]);
+    pub fn submit_frame(
+        &mut self,
+        camera: CameraPacket2D,
+        mut draws: Vec<Draw2D>,
+        texts: Vec<Text2D>,
+    ) {
+        self.setup_camera_from_packet(camera);
 
-        if cameras.is_empty() {
-            return;
-        }
-
-        let unsorted_entities = scene.get_entities_with(vec![
-            comet_ecs::Transform2D::type_id(),
-            comet_ecs::Render2D::type_id(),
-        ]);
-
-        let mut dirty_sort = self.cached_render_entities.len() != unsorted_entities.len();
-
-        if !dirty_sort {
-            let unsorted_set: HashSet<comet_ecs::EntityId> =
-                unsorted_entities.iter().copied().collect();
-            dirty_sort = self
-                .cached_render_entities
-                .iter()
-                .any(|e| !unsorted_set.contains(e));
-        }
-
-        if !dirty_sort {
-            dirty_sort = !self.cached_render_entities.windows(2).all(|w| {
-                let a = scene
-                    .get_component::<comet_ecs::Render2D>(w[0])
-                    .map(|r| r.draw_index());
-                let b = scene
-                    .get_component::<comet_ecs::Render2D>(w[1])
-                    .map(|r| r.draw_index());
-                matches!((a, b), (Some(da), Some(db)) if da <= db)
-            });
-        }
-
-        if dirty_sort {
-            let mut entities = unsorted_entities;
-            entities.sort_by(|&a, &b| {
-                let ra = scene.get_component::<comet_ecs::Render2D>(a).unwrap();
-                let rb = scene.get_component::<comet_ecs::Render2D>(b).unwrap();
-                ra.draw_index().cmp(&rb.draw_index())
-            });
-            self.cached_render_entities = entities;
-        }
-
-        let entities = self.cached_render_entities.clone();
-
-        let texts = scene.get_entities_with(vec![
-            comet_ecs::Transform2D::type_id(),
-            comet_ecs::Text::type_id(),
-        ]);
-
-        self.setup_camera(scene, cameras);
+        draws.sort_by_key(|draw| draw.draw_index);
 
         let mut vertex_buffer: Vec<Vertex> = Vec::new();
         let mut index_buffer: Vec<u16> = Vec::new();
 
-        for entity in entities {
-            let renderer_component = scene.get_component::<Render2D>(entity).unwrap();
-            let transform_component = scene.get_component::<Transform2D>(entity).unwrap();
-
-            if renderer_component.is_visible() {
-                let world_position = transform_component.position().clone();
-                let rotation_angle = transform_component.rotation().to_radians();
-
-                let region =
-                    match self.get_texture_region(renderer_component.get_texture()) {
-                        Some(r) => r,
-                        None => continue,
-                    };
-
-                let (dim_x, dim_y) = region.dimensions();
-                let scale = renderer_component.scale();
-                let half_width = dim_x as f32 * 0.5 * scale.x();
-                let half_height = dim_y as f32 * 0.5 * scale.y();
-
-                let buffer_size = vertex_buffer.len() as u16;
-
-                let world_corners = [
-                    (-half_width, half_height),
-                    (-half_width, -half_height),
-                    (half_width, -half_height),
-                    (half_width, half_height),
-                ];
-
-                let cos_angle = rotation_angle.cos();
-                let sin_angle = rotation_angle.sin();
-
-                let rotated_world_corners = [
-                    (
-                        world_corners[0].0 * cos_angle - world_corners[0].1 * sin_angle
-                            + world_position.x(),
-                        world_corners[0].0 * sin_angle + world_corners[0].1 * cos_angle
-                            + world_position.y(),
-                    ),
-                    (
-                        world_corners[1].0 * cos_angle - world_corners[1].1 * sin_angle
-                            + world_position.x(),
-                        world_corners[1].0 * sin_angle + world_corners[1].1 * cos_angle
-                            + world_position.y(),
-                    ),
-                    (
-                        world_corners[2].0 * cos_angle - world_corners[2].1 * sin_angle
-                            + world_position.x(),
-                        world_corners[2].0 * sin_angle + world_corners[2].1 * cos_angle
-                            + world_position.y(),
-                    ),
-                    (
-                        world_corners[3].0 * cos_angle - world_corners[3].1 * sin_angle
-                            + world_position.x(),
-                        world_corners[3].0 * sin_angle + world_corners[3].1 * cos_angle
-                            + world_position.y(),
-                    ),
-                ];
-
-                let inv_width = 1.0 / self.render_context.config().width as f32;
-                let inv_height = 1.0 / self.render_context.config().height as f32;
-
-                let snapped_screen_corners = [
-                    (
-                        rotated_world_corners[0].0.round() * inv_width,
-                        rotated_world_corners[0].1.round() * inv_height,
-                    ),
-                    (
-                        rotated_world_corners[1].0.round() * inv_width,
-                        rotated_world_corners[1].1.round() * inv_height,
-                    ),
-                    (
-                        rotated_world_corners[2].0.round() * inv_width,
-                        rotated_world_corners[2].1.round() * inv_height,
-                    ),
-                    (
-                        rotated_world_corners[3].0.round() * inv_width,
-                        rotated_world_corners[3].1.round() * inv_height,
-                    ),
-                ];
-
-                vertex_buffer.extend_from_slice(&[
-                    Vertex::new(
-                        [snapped_screen_corners[0].0, snapped_screen_corners[0].1, 0.0],
-                        [region.u0(), region.v0()],
-                        [1.0, 1.0, 1.0, 1.0],
-                    ),
-                    Vertex::new(
-                        [snapped_screen_corners[1].0, snapped_screen_corners[1].1, 0.0],
-                        [region.u0(), region.v1()],
-                        [1.0, 1.0, 1.0, 1.0],
-                    ),
-                    Vertex::new(
-                        [snapped_screen_corners[2].0, snapped_screen_corners[2].1, 0.0],
-                        [region.u1(), region.v1()],
-                        [1.0, 1.0, 1.0, 1.0],
-                    ),
-                    Vertex::new(
-                        [snapped_screen_corners[3].0, snapped_screen_corners[3].1, 0.0],
-                        [region.u1(), region.v0()],
-                        [1.0, 1.0, 1.0, 1.0],
-                    ),
-                ]);
-
-                index_buffer.extend_from_slice(&[
-                    0 + buffer_size,
-                    1 + buffer_size,
-                    3 + buffer_size,
-                    1 + buffer_size,
-                    2 + buffer_size,
-                    3 + buffer_size,
-                ]);
+        for draw in draws {
+            if !draw.visible {
+                continue;
             }
+
+            let region = match self.get_texture_region(draw.texture) {
+                Some(r) => r,
+                None => continue,
+            };
+
+            let (dim_x, dim_y) = region.dimensions();
+            let half_width = dim_x as f32 * 0.5 * draw.scale[0];
+            let half_height = dim_y as f32 * 0.5 * draw.scale[1];
+
+            let buffer_size = vertex_buffer.len() as u16;
+
+            let world_corners = [
+                (-half_width, half_height),
+                (-half_width, -half_height),
+                (half_width, -half_height),
+                (half_width, half_height),
+            ];
+
+            let rotation_angle = draw.rotation_deg.to_radians();
+            let cos_angle = rotation_angle.cos();
+            let sin_angle = rotation_angle.sin();
+
+            let rotated_world_corners = [
+                (
+                    world_corners[0].0 * cos_angle - world_corners[0].1 * sin_angle
+                        + draw.position[0],
+                    world_corners[0].0 * sin_angle + world_corners[0].1 * cos_angle
+                        + draw.position[1],
+                ),
+                (
+                    world_corners[1].0 * cos_angle - world_corners[1].1 * sin_angle
+                        + draw.position[0],
+                    world_corners[1].0 * sin_angle + world_corners[1].1 * cos_angle
+                        + draw.position[1],
+                ),
+                (
+                    world_corners[2].0 * cos_angle - world_corners[2].1 * sin_angle
+                        + draw.position[0],
+                    world_corners[2].0 * sin_angle + world_corners[2].1 * cos_angle
+                        + draw.position[1],
+                ),
+                (
+                    world_corners[3].0 * cos_angle - world_corners[3].1 * sin_angle
+                        + draw.position[0],
+                    world_corners[3].0 * sin_angle + world_corners[3].1 * cos_angle
+                        + draw.position[1],
+                ),
+            ];
+
+            let inv_width = 1.0 / self.render_context.config().width as f32;
+            let inv_height = 1.0 / self.render_context.config().height as f32;
+
+            let snapped_screen_corners = [
+                (
+                    rotated_world_corners[0].0.round() * inv_width,
+                    rotated_world_corners[0].1.round() * inv_height,
+                ),
+                (
+                    rotated_world_corners[1].0.round() * inv_width,
+                    rotated_world_corners[1].1.round() * inv_height,
+                ),
+                (
+                    rotated_world_corners[2].0.round() * inv_width,
+                    rotated_world_corners[2].1.round() * inv_height,
+                ),
+                (
+                    rotated_world_corners[3].0.round() * inv_width,
+                    rotated_world_corners[3].1.round() * inv_height,
+                ),
+            ];
+
+            vertex_buffer.extend_from_slice(&[
+                Vertex::new(
+                    [snapped_screen_corners[0].0, snapped_screen_corners[0].1, 0.0],
+                    [region.u0(), region.v0()],
+                    [1.0, 1.0, 1.0, 1.0],
+                ),
+                Vertex::new(
+                    [snapped_screen_corners[1].0, snapped_screen_corners[1].1, 0.0],
+                    [region.u0(), region.v1()],
+                    [1.0, 1.0, 1.0, 1.0],
+                ),
+                Vertex::new(
+                    [snapped_screen_corners[2].0, snapped_screen_corners[2].1, 0.0],
+                    [region.u1(), region.v1()],
+                    [1.0, 1.0, 1.0, 1.0],
+                ),
+                Vertex::new(
+                    [snapped_screen_corners[3].0, snapped_screen_corners[3].1, 0.0],
+                    [region.u1(), region.v0()],
+                    [1.0, 1.0, 1.0, 1.0],
+                ),
+            ]);
+
+            index_buffer.extend_from_slice(&[
+                0 + buffer_size,
+                1 + buffer_size,
+                3 + buffer_size,
+                1 + buffer_size,
+                2 + buffer_size,
+                3 + buffer_size,
+            ]);
         }
 
         self.render_context.update_batch_buffers(
@@ -916,59 +1038,43 @@ impl<'a> Renderer2D<'a> {
             index_buffer,
         );
 
-        for text_entity in texts {
-            let position = {
-                let transform = scene
-                    .get_component::<comet_ecs::Transform2D>(text_entity)
-                    .unwrap();
-                comet_math::v2::new(transform.position().x(), transform.position().y())
+        for text in texts {
+            if !text.visible {
+                continue;
+            }
+
+            let position = v2::new(text.position[0], text.position[1]);
+            let color = wgpu::Color {
+                r: text.color[0] as f64,
+                g: text.color[1] as f64,
+                b: text.color[2] as f64,
+                a: text.color[3] as f64,
             };
 
-            if let Some(text_component) = scene.get_component_mut::<comet_ecs::Text>(text_entity) {
-                if !text_component.is_visible() {
-                    continue;
-                }
+            let mut bounds = v2::ZERO;
+            let (vertices, indices) = self.add_text_to_buffers(
+                &text.content,
+                text.font,
+                text.size,
+                position,
+                color,
+                &mut bounds,
+            );
 
-                let font = text_component.font();
-                let size = text_component.font_size();
-                let color = text_component.color().to_wgpu();
-                let content = text_component.content();
-
-                let mut bounds = comet_math::v2::ZERO;
-
-                let (vertices, indices) = self.add_text_to_buffers(
-                    content,
-                    font,
-                    size,
-                    position,
-                    color,
-                    &mut bounds,
-                );
-
-                text_component.set_bounds(bounds);
-
-                self.render_context
-                    .update_batch_buffers("Font".to_string(), vertices, indices);
-            }
+            self.render_context
+                .update_batch_buffers("Font".to_string(), vertices, indices);
         }
     }
 
-    fn setup_camera(&mut self, scene: &comet_ecs::Scene, cameras: Vec<comet_ecs::EntityId>) {
-        if cameras.is_empty() {
-            return;
-        }
-
-        self.camera_manager.update_from_scene(scene, cameras);
-
-        if !self.camera_manager.has_active_camera() {
-            error!("No active camera found");
-            return;
-        }
-
-        let active_camera = self.camera_manager.get_camera();
+    fn setup_camera_from_packet(&mut self, camera: CameraPacket2D) {
+        let render_camera = RenderCamera::new(
+            camera.zoom,
+            v2::new(camera.dimensions[0], camera.dimensions[1]),
+            v3::new(camera.position[0], camera.position[1], 0.0),
+        );
 
         let mut camera_uniform = crate::camera::CameraUniform::new();
-        camera_uniform.update_view_proj(active_camera);
+        camera_uniform.update_view_proj(&render_camera);
 
         let buffer = Arc::new(self.render_context.device().create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -1037,16 +1143,40 @@ impl<'a> Renderer2D<'a> {
 }
 
 impl<'a> Renderer for Renderer2D<'a> {
-    fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Self {
+    type Handle = RenderHandle2D;
+    
+    fn new(window: Arc<Window>, clear_color: Option<impl Color>, event_sender: flume::Sender<Renderer2DEvent>) -> Self {
         Self {
             render_context: RenderContext::new(window, clear_color),
             resource_manager: GraphicResourceManager::new(),
-            camera_manager: CameraManager::new(),
             render_passes: Vec::new(),
-            cached_render_entities: Vec::new(),
             last_frame_time: std::time::Instant::now(),
             delta_time: 0.0,
+            event_sender,
         }
+    }
+
+    fn apply_command(&mut self, command: <Self::Handle as RendererHandle>::Command) {
+        match command {
+            Renderer2DCommand::Clear => {}
+            Renderer2DCommand::InitAtlas => self.init_atlas(),
+            Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
+            Renderer2DCommand::Size => {
+                let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));            
+            }
+            Renderer2DCommand::LoadFont(font_path, font_size) => self.load_font(font_path.as_str(), font_size),
+            Renderer2DCommand::PrecomputedTextBounds { text, font_path, font_size } => {
+                let bounds = self.precompute_text_bounds(&text, font_path.as_str(), font_size);
+                let _ = self.event_sender.send(Renderer2DEvent::PrecomputedTextBounds { width: bounds.x(), height: bounds.y() });
+            }
+            Renderer2DCommand::SubmitFrame(camera, draws, texts) => {
+                self.submit_frame(camera, draws, texts)
+            }
+        }
+    }
+
+    fn window(&self) -> &Window {
+        self.render_context.window()
     }
 
     fn size(&self) -> PhysicalSize<u32> {

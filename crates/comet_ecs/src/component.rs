@@ -135,7 +135,7 @@ pub trait Collider {
 pub trait Render {
     fn is_visible(&self) -> bool;
     fn set_visibility(&mut self, is_visible: bool);
-    fn get_texture(&self) -> &str;
+    fn get_texture(&self) -> &'static str;
     fn set_texture(&mut self, texture: &'static str);
 }
 
@@ -324,7 +324,7 @@ impl Render for Render2D {
         self.is_visible = is_visible;
     }
 
-    fn get_texture(&self) -> &str {
+    fn get_texture(&self) -> &'static str {
         self.texture_name
     }
 
