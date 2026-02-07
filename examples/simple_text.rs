@@ -1,13 +1,6 @@
 use comet::prelude::*;
 
-// A general state struct that caches known/static EntityIds
-// In this example we just cache the EntityId for the text entity
-#[derive(Default)]
-struct TextState {
-    text: EntityId,
-}
-
-fn setup(app: &mut App, renderer: &mut Renderer2D) {
+fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     renderer.init_atlas();
     // Loading the font from the res/fonts directory with a rendered size of 77px
     renderer.load_font("./res/fonts/PressStart2P-Regular.ttf", 77.0);
@@ -31,23 +24,24 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
             sRgba::<f32>::from_hex("#abb2bfff"),    // Color of the text
         ),
     );
-
-    // Cache text entity in game state
-    if let Some(state) = app.game_state_mut::<TextState>() {
-        state.text = text;
-    }
 }
 
 #[allow(unused_variables)]
-fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
-    // Getting the windows size
+fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
+    // Getting the window size (cached request)
     let size = renderer.size();
 
     // Recalculating the position of the text every frame to ensure the same relative position
-    if let Some(state) = app.game_state::<TextState>() {
-        if let Some(transform) = app.get_component_mut::<Transform2D>(state.text) {
-            transform.position_mut().set_x(-((size.width - 50) as f32));
-            transform.position_mut().set_y((size.height - 100) as f32);
+    if size.width > 0 && size.height > 0 {
+        let texts = app.get_entities_with(vec![
+            Transform2D::type_id(),
+            Text::type_id(),
+        ]);
+        if let Some(entity) = texts.first().copied() {
+            if let Some(transform) = app.get_component_mut::<Transform2D>(entity) {
+                transform.position_mut().set_x(-((size.width - 50) as f32));
+                transform.position_mut().set_y((size.height - 100) as f32);
+            }
         }
     }
 
@@ -57,7 +51,6 @@ fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {
 fn main() {
     App::new()
         .with_preset(App2D)
-        .with_game_state(TextState::default())
         .with_title("Simple Text")
         .run::<Renderer2D>(setup, update);
 }

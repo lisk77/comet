@@ -1,6 +1,6 @@
 use comet::prelude::*;
 
-fn setup(app: &mut App, renderer: &mut Renderer2D) {
+fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     // Initialize the texture atlas
     renderer.init_atlas();
 
@@ -44,7 +44,7 @@ fn setup(app: &mut App, renderer: &mut Renderer2D) {
 }
 
 #[allow(unused_variables)]
-fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {}
+fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {}
 
 fn main() {
     App::new()
