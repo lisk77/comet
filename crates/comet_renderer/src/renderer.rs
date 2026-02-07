@@ -3,12 +3,16 @@ use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-pub trait Renderer: Sized + Send + Sync {
-    type Handle;
+pub trait RendererHandle {
     type Command: Send + 'static;
+    fn new(sender: flume::Sender<Self::Command>) -> Self;  
+}
+
+pub trait Renderer: Sized + Send + Sync {
+    type Handle: RendererHandle;
+    
     fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Self;
-    fn handle(&self) -> Self::Handle;
-    fn apply_command(&mut self, command: Self::Command);
+    fn apply_command(&mut self, command: <Self::Handle as RendererHandle>::Command);
     fn window(&self) -> &Window;
     fn size(&self) -> PhysicalSize<u32>;
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>);

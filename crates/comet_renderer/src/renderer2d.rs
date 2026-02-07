@@ -3,7 +3,7 @@ use crate::{
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand},
     render_context::RenderContext,
     render_pass::{RenderPass, universal_clear_execute, universal_load_execute},
-    renderer::Renderer,
+    renderer::{Renderer, RendererHandle},
 };
 use comet_colors::Color;
 use comet_log::*;
@@ -11,7 +11,8 @@ use comet_math::{m4, v2, v3};
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
-use std::sync::Arc;
+use comet_ecs::{Component, Render, Render2D, Transform2D};
+use std::{collections::HashSet, sync::Arc};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -66,8 +67,112 @@ pub struct Renderer2D<'a> {
     delta_time: f32,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct RenderHandle2D;
+#[derive(Debug)]
+pub struct RenderHandle2D {
+    tx: flume::Sender<Renderer2DCommand>,
+    cached_render_entities: Vec<comet_ecs::EntityId>,
+}
+
+impl RenderHandle2D {
+    pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
+        let cameras = scene.get_entities_with(vec![
+            comet_ecs::Transform2D::type_id(),
+            comet_ecs::Camera2D::type_id(),
+        ]);
+
+        if cameras.is_empty() {
+            return;
+        }
+
+        let unsorted_entities = scene.get_entities_with(vec![
+            comet_ecs::Transform2D::type_id(),
+            comet_ecs::Render2D::type_id(),
+        ]);
+
+        let mut dirty_sort = self.cached_render_entities.len() != unsorted_entities.len();
+
+        if !dirty_sort {
+            let unsorted_set: HashSet<comet_ecs::EntityId> =
+                unsorted_entities.iter().copied().collect();
+            dirty_sort = self
+                .cached_render_entities
+                .iter()
+                .any(|e| !unsorted_set.contains(e));
+        }
+
+        if !dirty_sort {
+            dirty_sort = !self.cached_render_entities.windows(2).all(|w| {
+                let a = scene
+                    .get_component::<comet_ecs::Render2D>(w[0])
+                    .map(|r| r.draw_index());
+                let b = scene
+                    .get_component::<comet_ecs::Render2D>(w[1])
+                    .map(|r| r.draw_index());
+                matches!((a, b), (Some(da), Some(db)) if da <= db)
+            });
+        }
+
+        if dirty_sort {
+            let mut entities = unsorted_entities;
+            entities.sort_by(|&a, &b| {
+                let ra = scene.get_component::<comet_ecs::Render2D>(a).unwrap();
+                let rb = scene.get_component::<comet_ecs::Render2D>(b).unwrap();
+                ra.draw_index().cmp(&rb.draw_index())
+            });
+            self.cached_render_entities = entities;
+        }
+
+        let mut draws = Vec::new();
+        for entity in &self.cached_render_entities {
+            if let (Some(transform), Some(render)) = (
+                scene.get_component::<comet_ecs::Transform2D>(*entity),
+                scene.get_component::<comet_ecs::Render2D>(*entity),
+            ) {
+                draws.push(Draw2D {
+                    position: [transform.position().x(), transform.position().y()],
+                    rotation_deg: transform.rotation().to_degrees(),
+                    scale: [1.0, 1.0],
+                    texture: render.get_texture(),
+                    draw_index: render.draw_index(),
+                    visible: render.is_visible(),
+                });
+            }
+        }
+
+        let camera_entity = cameras
+            .into_iter()
+            .min_by_key(|entity| {
+                scene
+                    .get_component::<comet_ecs::Camera2D>(*entity)
+                    .map(|camera| camera.priority())
+                    .unwrap_or(u8::MAX)
+            })
+            .unwrap();
+        let camera_transform = scene
+            .get_component::<comet_ecs::Transform2D>(camera_entity)
+            .unwrap();
+        let camera = scene
+            .get_component::<comet_ecs::Camera2D>(camera_entity)
+            .unwrap();
+        let camera_packet = CameraPacket2D {
+            position: [camera_transform.position().x(), camera_transform.position().y()],
+            rotation_deg: camera_transform.rotation().to_degrees(),
+            zoom: camera.zoom(),
+            dimensions: [camera.dimensions().x(), camera.dimensions().y()],
+            priority: camera.priority(),
+        };
+
+        let _ = self.tx.send(Renderer2DCommand::SubmitFrame { camera: camera_packet, draws });
+    }
+}
+
+impl RendererHandle for RenderHandle2D {
+    type Command = Renderer2DCommand;
+
+    fn new(sender: flume::Sender<Self::Command>) -> Self {
+        Self { tx: sender, cached_render_entities: Vec::new()}
+    }
+}
 
 impl<'a> Renderer2D<'a> {
     pub fn init_atlas(&mut self) {
@@ -940,8 +1045,7 @@ impl<'a> Renderer2D<'a> {
 
 impl<'a> Renderer for Renderer2D<'a> {
     type Handle = RenderHandle2D;
-    type Command = Renderer2DCommand;
-
+    
     fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Self {
         Self {
             render_context: RenderContext::new(window, clear_color),
@@ -954,11 +1058,7 @@ impl<'a> Renderer for Renderer2D<'a> {
         }
     }
 
-    fn handle(&self) -> Self::Handle {
-        RenderHandle2D
-    }
-
-    fn apply_command(&mut self, command: Self::Command) {
+    fn apply_command(&mut self, command: <Self::Handle as RendererHandle>::Command) {
         match command {
             Renderer2DCommand::Clear => {}
             Renderer2DCommand::InitAtlas => self.init_atlas(),
