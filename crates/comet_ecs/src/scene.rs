@@ -1,9 +1,11 @@
 use crate::archetypes::Archetypes;
 use crate::prefabs::PrefabManager;
 use crate::{Component, Entity, EntityId, IdQueue};
+use crate::component_storage::{ComponentStorage, ComponentStorageExt};
 use comet_log::*;
-use comet_structs::*;
+use comet_structs::ComponentSet;
 use std::any::TypeId;
+use std::collections::HashMap;
 
 pub struct Scene {
     id_queue: IdQueue,
@@ -11,6 +13,8 @@ pub struct Scene {
     generations: Vec<u32>,
     entities: Vec<Option<Entity>>,
     components: ComponentStorage,
+    component_registry: Vec<Option<TypeId>>,
+    component_index: HashMap<TypeId, usize>,
     archetypes: Archetypes,
     prefabs: PrefabManager,
 }
@@ -23,6 +27,8 @@ impl Scene {
             generations: Vec::new(),
             entities: Vec::new(),
             components: ComponentStorage::new(),
+            component_registry: Vec::new(),
+            component_index: HashMap::new(),
             archetypes: Archetypes::new(),
             prefabs: PrefabManager::new(),
         }
@@ -111,8 +117,8 @@ impl Scene {
         let idx = entity_id.index as usize;
         self.remove_entity_from_archetype(entity_id.index, self.get_component_set(idx));
         self.entities[idx] = None;
-        info!("Deleted entity! ID: {}", entity_id.index);
-        self.components.remove_entity(idx);
+        info!("Deleted entity! ID: {}", idx);
+        self.components.remove_entity(entity_id);
         if let Some(gen) = self.generations.get_mut(idx) {
             *gen = gen.wrapping_add(1);
         }
@@ -166,15 +172,31 @@ impl Scene {
 
         let type_ids = components
             .iter()
-            .map(|index| self.components.keys()[*index])
+            .filter_map(|index| self.component_registry.get(*index).and_then(|v| *v))
             .collect::<Vec<TypeId>>();
         ComponentSet::from_ids(type_ids)
     }
 
     /// Registers a new component in the scene.
     pub fn register_component<C: Component + 'static>(&mut self) {
-        if !self.components.contains(&C::type_id()) {
+        if !self.components.contains_component(&C::type_id()) {
             self.components.register_component::<C>(self.entities.len());
+            let type_id = C::type_id();
+            if !self.component_index.contains_key(&type_id) {
+                let index = if let Some((i, _)) = self
+                    .component_registry
+                    .iter()
+                    .enumerate()
+                    .find(|(_, v)| v.is_none())
+                {
+                    self.component_registry[i] = Some(type_id);
+                    i
+                } else {
+                    self.component_registry.push(Some(type_id));
+                    self.component_registry.len() - 1
+                };
+                self.component_index.insert(type_id, index);
+            }
             self.create_archetype(ComponentSet::from_ids(vec![C::type_id()]));
             info!("Registered component: {}", C::type_name());
             return;
@@ -184,8 +206,13 @@ impl Scene {
 
     /// Deregisters a component from the scene.
     pub fn deregister_component<C: Component + 'static>(&mut self) {
-        if self.components.contains(&C::type_id()) {
+        if self.components.contains_component(&C::type_id()) {
             self.components.deregister_component::<C>();
+            if let Some(index) = self.component_index.remove(&C::type_id()) {
+                if let Some(slot) = self.component_registry.get_mut(index) {
+                    *slot = None;
+                }
+            }
             info!("Deregistered component: {}", C::type_name());
             return;
         }
@@ -209,14 +236,8 @@ impl Scene {
             self.remove_entity_from_archetype(entity_id.index, old_component_set);
         }
 
-        self.components
-            .set_component(entity_id.index as usize, component);
-        if let Some(component_index) = self
-            .components
-            .keys()
-            .iter()
-            .position(|x| *x == C::type_id())
-        {
+        self.components.add_component(entity_id, component);
+        if let Some(component_index) = self.component_index.get(&C::type_id()).copied() {
             if let Some(entity) = self.get_entity_mut(entity_id) {
                 entity.add_component(component_index);
             } else {
@@ -256,13 +277,8 @@ impl Scene {
         self.remove_entity_from_archetype(entity_id.index, old_component_set);
 
         self.components
-            .remove_component::<C>(entity_id.index as usize);
-        if let Some(component_index) = self
-            .components
-            .keys()
-            .iter()
-            .position(|x| *x == C::type_id())
-        {
+            .remove_component::<C>(entity_id);
+        if let Some(component_index) = self.component_index.get(&C::type_id()).copied() {
             if let Some(entity) = self.get_entity_mut(entity_id) {
                 entity.remove_component(component_index);
             }
@@ -291,7 +307,7 @@ impl Scene {
             return None;
         }
         self.components
-            .get_component::<C>(entity_id.index as usize)
+            .get_component::<C>(entity_id)
     }
 
     pub fn get_component_mut<C: Component + 'static>(
@@ -302,14 +318,14 @@ impl Scene {
             return None;
         }
         self.components
-            .get_component_mut::<C>(entity_id.index as usize)
+            .get_component_mut::<C>(entity_id)
     }
 
     pub fn has<C: Component + 'static>(&self, entity_id: EntityId) -> bool {
         self.is_alive(entity_id)
             && self
                 .components
-                .get_component::<C>(entity_id.index as usize)
+                .get_component::<C>(entity_id)
                 .is_some()
     }
 
@@ -352,7 +368,7 @@ impl Scene {
 
     /// Iterates over all entities that have the two given components and calls the given function.
     pub fn foreach<C: Component, K: Component>(&mut self, mut func: impl FnMut(&mut C, &mut K)) {
-        if std::any::TypeId::of::<C>() == std::any::TypeId::of::<K>() {
+        if C::type_id() == K::type_id() {
             error!("foreach called with identical component types");
             return;
         }
@@ -368,10 +384,13 @@ impl Scene {
                     if let Some(entities) = self.archetypes.get_archetype(archetype_set) {
                         for &idx in entities {
                             let idx = idx as usize;
-                            if let (Some(c), Some(k)) =
-                                (c_store.get_mut::<C>(idx), k_store.get_mut::<K>(idx))
-                            {
-                                func(c, k);
+                            if let Some(ent) = self.entities.get(idx).and_then(|e| e.as_ref()) {
+                                let id = ent.id();
+                                if let (Some(c), Some(k)) =
+                                    (c_store.get_mut::<C>(id), k_store.get_mut::<K>(id))
+                                {
+                                    func(c, k);
+                                }
                             }
                         }
                     }
@@ -389,7 +408,7 @@ impl Scene {
     pub fn spawn_prefab(&mut self, name: &str) -> Option<EntityId> {
         if self.prefabs.has_prefab(name) {
             if let Some(factory) = self.prefabs.prefabs.get(&name.to_string()) {
-                let factory = *factory; // Copy the function pointer
+                let factory = *factory;
                 Some(factory(self))
             } else {
                 None
