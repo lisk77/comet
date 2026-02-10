@@ -154,7 +154,7 @@ impl TextureAtlas {
                 let height = tex.height() as i32;
 
                 if width > atlas_size as i32 || height > atlas_size as i32 {
-                    error!(
+                    warn!(
                         "Texture '{}' is too large ({width}x{height}) for current atlas size {atlas_size}x{atlas_size}",
                         name
                     );
@@ -190,12 +190,6 @@ impl TextureAtlas {
                 );
                 atlas_size *= 2;
             } else {
-                info!(
-                    "Created texture atlas ({}x{}) with {} textures.",
-                    atlas_size,
-                    atlas_size,
-                    placements.len()
-                );
                 return (max_x as u32, max_y as u32, placements);
             }
         }
