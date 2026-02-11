@@ -91,7 +91,44 @@ impl RenderHandle2D {
     pub fn size(&mut self) -> PhysicalSize<u32> {
         let _ = self.command_sender.send(Renderer2DCommand::Size);
         self.poll_events();
-        self.last_size.unwrap_or_else(|| PhysicalSize::new(0, 0))
+        self.event_receiver
+            .try_recv()
+            .ok()
+            .and_then(|e| match e {
+                Renderer2DEvent::Size(size) => Some(size),
+                _ => None,
+            })
+            .unwrap_or_else(|| self.last_size.unwrap_or(PhysicalSize::new(0, 0)))
+    }
+
+    pub fn scale_factor(&mut self) -> f64 {
+        let _ = self.command_sender.send(Renderer2DCommand::ScaleFactor);
+        self.poll_events();
+        self.event_receiver
+            .try_recv()
+            .ok()
+            .and_then(|e| match e {
+                Renderer2DEvent::ScaleFactor(factor) => Some(factor),
+                _ => None,
+            })
+            .unwrap_or(1.0)
+    }
+
+    pub fn precompute_text_bounds(&mut self, text: &str, font_path: &str, font_size: f32) -> v2 {
+        let _ = self.command_sender.send(Renderer2DCommand::PrecomputedTextBounds {
+            text: text.to_string(),
+            font_path: font_path.to_string(),
+            font_size,
+        });
+        self.poll_events();
+        self.event_receiver
+            .try_recv()
+            .ok()
+            .and_then(|e| match e {
+                Renderer2DEvent::PrecomputedTextBounds { width, height } => Some(v2::new(width, height)),
+                _ => None,
+            })
+            .unwrap_or(v2::ZERO)
     }
 
     pub fn poll_events(&mut self) {
@@ -1163,6 +1200,9 @@ impl<'a> Renderer for Renderer2D<'a> {
             Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
             Renderer2DCommand::Size => {
                 let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));            
+            }
+            Renderer2DCommand::ScaleFactor => {
+                let _ = self.event_sender.send(Renderer2DEvent::ScaleFactor(self.scale_factor()));
             }
             Renderer2DCommand::LoadFont(font_path, font_size) => self.load_font(font_path.as_str(), font_size),
             Renderer2DCommand::PrecomputedTextBounds { text, font_path, font_size } => {

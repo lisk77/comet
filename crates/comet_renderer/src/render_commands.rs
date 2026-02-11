@@ -32,6 +32,7 @@ pub enum Renderer2DCommand {
     InitAtlas,
     InitAtlasFromPaths(Vec<String>),
     Size,
+    ScaleFactor,
     LoadFont(String, f32),
     PrecomputedTextBounds{ 
         text: String,
