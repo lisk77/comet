@@ -14,4 +14,3 @@ mod id;
 mod prefabs;
 mod scene;
 mod sparse_set;
-mod component_storage;

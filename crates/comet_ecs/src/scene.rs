@@ -1,37 +1,52 @@
-use crate::archetypes::Archetypes;
+use crate::archetypes::{Archetypes, ComponentInfo};
 use crate::prefabs::PrefabManager;
 use crate::{Component, Entity, EntityId, IdQueue};
-use crate::component_storage::{ComponentStorage, ComponentStorageExt};
 use comet_log::*;
 use comet_structs::ComponentSet;
 use std::any::TypeId;
+use std::alloc::Layout;
 use std::collections::HashMap;
+use std::ptr;
+
+#[derive(Clone, Copy, Debug)]
+struct EntityLocation {
+    archetype: usize,
+    row: usize,
+    gen: u32,
+}
 
 pub struct Scene {
     id_queue: IdQueue,
     next_id: u32,
     generations: Vec<u32>,
     entities: Vec<Option<Entity>>,
-    components: ComponentStorage,
     component_registry: Vec<Option<TypeId>>,
     component_index: HashMap<TypeId, usize>,
+    component_info: HashMap<TypeId, ComponentInfo>,
+    entity_locations: Vec<Option<EntityLocation>>,
     archetypes: Archetypes,
     prefabs: PrefabManager,
 }
 
 impl Scene {
     pub fn new() -> Self {
-        Self {
+        let mut scene = Self {
             id_queue: IdQueue::new(),
             next_id: 0,
             generations: Vec::new(),
             entities: Vec::new(),
-            components: ComponentStorage::new(),
             component_registry: Vec::new(),
             component_index: HashMap::new(),
+            component_info: HashMap::new(),
+            entity_locations: Vec::new(),
             archetypes: Archetypes::new(),
             prefabs: PrefabManager::new(),
-        }
+        };
+        let empty_set = ComponentSet::new();
+        let _ = scene
+            .archetypes
+            .get_or_create(empty_set, &scene.component_info, &scene.component_index);
+        scene
     }
 
     /// Returns the number of how many entities exist in the current Scene.
@@ -83,6 +98,19 @@ impl Scene {
         }
 
         let id = EntityId { index, gen };
+        let empty_set = ComponentSet::new();
+        let empty_arch = self
+            .archetypes
+            .get_or_create(empty_set, &self.component_info, &self.component_index);
+        let row = self.archetypes.get_mut(empty_arch).push_entity(id);
+        if index as usize >= self.entity_locations.len() {
+            self.entity_locations.resize(index as usize + 1, None);
+        }
+        self.entity_locations[index as usize] = Some(EntityLocation {
+            archetype: empty_arch,
+            row,
+            gen,
+        });
         self.get_next_id();
         info!("Created entity! ID: {} (gen {})", id.index, id.gen);
         id
@@ -115,44 +143,41 @@ impl Scene {
         }
 
         let idx = entity_id.index as usize;
-        self.remove_entity_from_archetype(entity_id.index, self.get_component_set(idx));
+        if let Some(loc) = self.entity_locations.get(idx).and_then(|l| *l) {
+            let last_row = self.archetypes.get(loc.archetype).len().saturating_sub(1);
+            if loc.row != last_row {
+                let swapped_entity = {
+                    let arch = self.archetypes.get_mut(loc.archetype);
+                    arch.swap_rows(loc.row, last_row);
+                    arch.entities()[loc.row]
+                };
+                let swapped_idx = swapped_entity.index as usize;
+                if let Some(entry) = self.entity_locations.get_mut(swapped_idx) {
+                    *entry = Some(EntityLocation {
+                        archetype: loc.archetype,
+                        row: loc.row,
+                        gen: swapped_entity.gen,
+                    });
+                }
+            }
+
+            let arch = self.archetypes.get_mut(loc.archetype);
+            for col in arch.columns_mut() {
+                let _ = col.drop_last();
+            }
+            arch.pop_entity();
+        }
+
         self.entities[idx] = None;
+        if idx < self.entity_locations.len() {
+            self.entity_locations[idx] = None;
+        }
         info!("Deleted entity! ID: {}", idx);
-        self.components.remove_entity(entity_id);
         if let Some(gen) = self.generations.get_mut(idx) {
             *gen = gen.wrapping_add(1);
         }
         self.id_queue.sorted_enqueue(entity_id.index);
         self.get_next_id();
-    }
-
-    fn create_archetype(&mut self, components: ComponentSet) {
-        self.archetypes.create_archetype(components.clone());
-
-        let mut matching_entities = Vec::new();
-        for (entity_id, entity_option) in self.entities.iter().enumerate() {
-            if let Some(_entity) = entity_option {
-                let entity_component_set = self.get_component_set(entity_id);
-
-                if components.is_subset(&entity_component_set) {
-                    matching_entities.push(entity_id as u32);
-                }
-            }
-        }
-
-        for entity_id in matching_entities {
-            self.add_entity_to_archetype(entity_id, components.clone());
-        }
-    }
-
-    fn add_entity_to_archetype(&mut self, entity_id: u32, components: ComponentSet) {
-        self.archetypes
-            .add_entity_to_archetype(&components, entity_id);
-    }
-
-    fn remove_entity_from_archetype(&mut self, entity_id: u32, components: ComponentSet) {
-        self.archetypes
-            .remove_entity_from_archetype(&components, entity_id);
     }
 
     fn get_component_set(&self, entity_id: usize) -> ComponentSet {
@@ -177,38 +202,79 @@ impl Scene {
         ComponentSet::from_ids(type_ids)
     }
 
+    fn get_location(&self, entity_id: EntityId) -> Option<EntityLocation> {
+        self.entity_locations
+            .get(entity_id.index as usize)
+            .and_then(|l| *l)
+            .filter(|l| l.gen == entity_id.gen)
+    }
+
+    fn set_location(&mut self, entity_id: EntityId, archetype: usize, row: usize) {
+        let index = entity_id.index as usize;
+        if index >= self.entity_locations.len() {
+            self.entity_locations.resize(index + 1, None);
+        }
+        self.entity_locations[index] = Some(EntityLocation {
+            archetype,
+            row,
+            gen: entity_id.gen,
+        });
+    }
+
+    fn get_two_archetypes_mut(
+        &mut self,
+        a: usize,
+        b: usize,
+    ) -> (&mut crate::archetypes::Archetype, &mut crate::archetypes::Archetype) {
+        self.archetypes.get_two_mut(a, b)
+    }
+
+    fn ensure_archetype(&mut self, set: ComponentSet) -> usize {
+        self.archetypes
+            .get_or_create(set, &self.component_info, &self.component_index)
+    }
+
     /// Registers a new component in the scene.
     pub fn register_component<C: Component + 'static>(&mut self) {
-        if !self.components.contains_component(&C::type_id()) {
-            self.components.register_component::<C>(self.entities.len());
-            let type_id = C::type_id();
-            if !self.component_index.contains_key(&type_id) {
-                let index = if let Some((i, _)) = self
-                    .component_registry
-                    .iter()
-                    .enumerate()
-                    .find(|(_, v)| v.is_none())
-                {
-                    self.component_registry[i] = Some(type_id);
-                    i
-                } else {
-                    self.component_registry.push(Some(type_id));
-                    self.component_registry.len() - 1
-                };
-                self.component_index.insert(type_id, index);
-            }
-            self.create_archetype(ComponentSet::from_ids(vec![C::type_id()]));
-            info!("Registered component: {}", C::type_name());
+        let type_id = C::type_id();
+        if self.component_info.contains_key(&type_id) {
+            warn!("Component {} is already registered!", C::type_name());
             return;
         }
-        warn!("Component {} is already registered!", C::type_name());
+
+        let drop_fn: unsafe fn(*mut u8) = |ptr| unsafe { ptr::drop_in_place(ptr as *mut C) };
+        let info = ComponentInfo {
+            type_id,
+            layout: Layout::new::<C>(),
+            drop_fn,
+            type_name: C::type_name(),
+        };
+        self.component_info.insert(type_id, info);
+
+        if !self.component_index.contains_key(&type_id) {
+            let index = if let Some((i, _)) = self
+                .component_registry
+                .iter()
+                .enumerate()
+                .find(|(_, v)| v.is_none())
+            {
+                self.component_registry[i] = Some(type_id);
+                i
+            } else {
+                self.component_registry.push(Some(type_id));
+                self.component_registry.len() - 1
+            };
+            self.component_index.insert(type_id, index);
+        }
+
+        info!("Registered component: {}", C::type_name());
     }
 
     /// Deregisters a component from the scene.
     pub fn deregister_component<C: Component + 'static>(&mut self) {
-        if self.components.contains_component(&C::type_id()) {
-            self.components.deregister_component::<C>();
-            if let Some(index) = self.component_index.remove(&C::type_id()) {
+        let type_id = C::type_id();
+        if self.component_info.remove(&type_id).is_some() {
+            if let Some(index) = self.component_index.remove(&type_id) {
                 if let Some(slot) = self.component_registry.get_mut(index) {
                     *slot = None;
                 }
@@ -231,36 +297,85 @@ impl Scene {
             return;
         }
 
-        let old_component_set = self.get_component_set(entity_id.index as usize);
-        if !old_component_set.to_vec().is_empty() {
-            self.remove_entity_from_archetype(entity_id.index, old_component_set);
-        }
-
-        self.components.add_component(entity_id, component);
-        if let Some(component_index) = self.component_index.get(&C::type_id()).copied() {
-            if let Some(entity) = self.get_entity_mut(entity_id) {
-                entity.add_component(component_index);
-            } else {
-                error!(
-                    "Attempted to add component to non-existent entity {}",
-                    entity_id.index
-                );
-            }
-        } else {
+        let type_id = C::type_id();
+        if !self.component_info.contains_key(&type_id) {
             error!(
                 "Component {} not registered, cannot add to entity {}",
                 C::type_name(),
                 entity_id.index
             );
+            return;
         }
 
-        let new_component_set = self.get_component_set(entity_id.index as usize);
-
-        if !self.archetypes.contains_archetype(&new_component_set) {
-            self.create_archetype(new_component_set.clone());
+        let old_set = self.get_component_set(entity_id.index as usize);
+        if old_set.contains(&type_id) {
+            if let Some(loc) = self.get_location(entity_id) {
+                let arch = self.archetypes.get_mut(loc.archetype);
+                if let Some(col_idx) = arch.column_index(type_id) {
+                    let _ = arch.columns_mut()[col_idx].set::<C>(loc.row, component);
+                }
+            }
+            return;
         }
 
-        self.add_entity_to_archetype(entity_id.index, new_component_set);
+        let mut new_set = old_set.clone();
+        new_set.insert(type_id);
+        let new_arch_id = self.ensure_archetype(new_set);
+
+        let loc = match self.get_location(entity_id) {
+            Some(loc) => loc,
+            None => return,
+        };
+        let old_arch_id = loc.archetype;
+
+        let old_len = self.archetypes.get(old_arch_id).len();
+        if old_len == 0 {
+            return;
+        }
+
+        if loc.row != old_len - 1 {
+            let swapped = {
+                let arch = self.archetypes.get_mut(old_arch_id);
+                arch.swap_rows(loc.row, old_len - 1);
+                arch.entities()[loc.row]
+            };
+            self.set_location(swapped, old_arch_id, loc.row);
+        }
+
+        let (old_arch, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
+        let new_row = new_arch.push_entity(entity_id);
+        let new_types = new_arch.types().to_vec();
+        let old_types = old_arch.types().to_vec();
+        let new_set = new_arch.set().clone();
+
+        if let Some(new_idx) = new_arch.column_index(type_id) {
+            new_arch.columns_mut()[new_idx].push::<C>(component);
+        }
+
+        for (new_idx, t) in new_types.iter().enumerate() {
+            if *t == type_id {
+                continue;
+            }
+            if let Some(old_idx) = old_arch.column_index(*t) {
+                let _ = old_arch.columns_mut()[old_idx]
+                    .move_last_to(&mut new_arch.columns_mut()[new_idx]);
+            }
+        }
+
+        for (old_idx, t) in old_types.iter().enumerate() {
+            if !new_set.contains(t) {
+                let _ = old_arch.columns_mut()[old_idx].drop_last();
+            }
+        }
+
+        old_arch.pop_entity();
+        self.set_location(entity_id, new_arch_id, new_row);
+
+        if let Some(component_index) = self.component_index.get(&type_id).copied() {
+            if let Some(entity) = self.get_entity_mut(entity_id) {
+                entity.add_component(component_index);
+            }
+        }
 
         info!(
             "Added component {} to entity {}!",
@@ -273,25 +388,61 @@ impl Scene {
         if !self.is_alive(entity_id) {
             return;
         }
-        let old_component_set = self.get_component_set(entity_id.index as usize);
-        self.remove_entity_from_archetype(entity_id.index, old_component_set);
+        let type_id = C::type_id();
+        let old_set = self.get_component_set(entity_id.index as usize);
+        if !old_set.contains(&type_id) {
+            return;
+        }
 
-        self.components
-            .remove_component::<C>(entity_id);
-        if let Some(component_index) = self.component_index.get(&C::type_id()).copied() {
-            if let Some(entity) = self.get_entity_mut(entity_id) {
-                entity.remove_component(component_index);
+        let mut new_set = old_set.clone();
+        new_set.remove(&type_id);
+        let new_arch_id = self.ensure_archetype(new_set);
+
+        let loc = match self.get_location(entity_id) {
+            Some(loc) => loc,
+            None => return,
+        };
+        let old_arch_id = loc.archetype;
+        let old_len = self.archetypes.get(old_arch_id).len();
+        if old_len == 0 {
+            return;
+        }
+
+        if loc.row != old_len - 1 {
+            let swapped = {
+                let arch = self.archetypes.get_mut(old_arch_id);
+                arch.swap_rows(loc.row, old_len - 1);
+                arch.entities()[loc.row]
+            };
+            self.set_location(swapped, old_arch_id, loc.row);
+        }
+
+        let (old_arch, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
+        let new_row = new_arch.push_entity(entity_id);
+        let new_types = new_arch.types().to_vec();
+        let old_types = old_arch.types().to_vec();
+        let new_set = new_arch.set().clone();
+
+        for (new_idx, t) in new_types.iter().enumerate() {
+            if let Some(old_idx) = old_arch.column_index(*t) {
+                let _ = old_arch.columns_mut()[old_idx]
+                    .move_last_to(&mut new_arch.columns_mut()[new_idx]);
             }
         }
 
-        let new_component_set = self.get_component_set(entity_id.index as usize);
-
-        if !new_component_set.to_vec().is_empty() {
-            if !self.archetypes.contains_archetype(&new_component_set) {
-                self.create_archetype(new_component_set.clone());
+        for (old_idx, t) in old_types.iter().enumerate() {
+            if !new_set.contains(t) {
+                let _ = old_arch.columns_mut()[old_idx].drop_last();
             }
+        }
 
-            self.add_entity_to_archetype(entity_id.index, new_component_set);
+        old_arch.pop_entity();
+        self.set_location(entity_id, new_arch_id, new_row);
+
+        if let Some(component_index) = self.component_index.get(&type_id).copied() {
+            if let Some(entity) = self.get_entity_mut(entity_id) {
+                entity.remove_component(component_index);
+            }
         }
 
         info!(
@@ -306,8 +457,10 @@ impl Scene {
         if !self.is_alive(entity_id) {
             return None;
         }
-        self.components
-            .get_component::<C>(entity_id)
+        let loc = self.get_location(entity_id)?;
+        let arch = self.archetypes.get(loc.archetype);
+        let col_idx = arch.column_index(C::type_id())?;
+        arch.columns().get(col_idx)?.get::<C>(loc.row)
     }
 
     pub fn get_component_mut<C: Component + 'static>(
@@ -317,16 +470,15 @@ impl Scene {
         if !self.is_alive(entity_id) {
             return None;
         }
-        self.components
-            .get_component_mut::<C>(entity_id)
+        let loc = self.get_location(entity_id)?;
+        let arch = self.archetypes.get_mut(loc.archetype);
+        let col_idx = arch.column_index(C::type_id())?;
+        arch.columns_mut().get_mut(col_idx)?.get_mut::<C>(loc.row)
     }
 
     pub fn has<C: Component + 'static>(&self, entity_id: EntityId) -> bool {
         self.is_alive(entity_id)
-            && self
-                .components
-                .get_component::<C>(entity_id)
-                .is_some()
+            && self.get_component::<C>(entity_id).is_some()
     }
 
     /// Returns a list of entities that have the given components.
@@ -334,22 +486,11 @@ impl Scene {
         let component_set = ComponentSet::from_ids(components);
         let mut result = Vec::new();
 
-        for archetype_set in self.archetypes.component_sets() {
-            if component_set.is_subset(archetype_set) {
-                if let Some(entities) = self.archetypes.get_archetype(archetype_set) {
-                    for index in entities.iter() {
-                        if let Some(gen) = self.generations.get(*index as usize) {
-                            if self
-                                .entities
-                                .get(*index as usize)
-                                .is_some_and(|e| e.is_some())
-                            {
-                                result.push(EntityId {
-                                    index: *index,
-                                    gen: *gen,
-                                });
-                            }
-                        }
+        for arch in self.archetypes.iter() {
+            if component_set.is_subset(arch.set()) {
+                for entity in arch.entities() {
+                    if self.is_alive(*entity) {
+                        result.push(*entity);
                     }
                 }
             }
@@ -374,24 +515,38 @@ impl Scene {
         }
 
         let required = ComponentSet::from_ids(vec![C::type_id(), K::type_id()]);
-        let (c_set, k_set) = self
-            .components
-            .get_two_mut(&C::type_id(), &K::type_id());
+        for arch in self.archetypes.iter_mut() {
+            if required.is_subset(arch.set()) {
+                let c_idx = match arch.column_index(C::type_id()) {
+                    Some(idx) => idx,
+                    None => continue,
+                };
+                let k_idx = match arch.column_index(K::type_id()) {
+                    Some(idx) => idx,
+                    None => continue,
+                };
 
-        if let (Some(c_store), Some(k_store)) = (c_set, k_set) {
-            for archetype_set in self.archetypes.component_sets() {
-                if required.is_subset(archetype_set) {
-                    if let Some(entities) = self.archetypes.get_archetype(archetype_set) {
-                        for &idx in entities {
-                            let idx = idx as usize;
-                            if let Some(ent) = self.entities.get(idx).and_then(|e| e.as_ref()) {
-                                let id = ent.id();
-                                if let (Some(c), Some(k)) =
-                                    (c_store.get_mut::<C>(id), k_store.get_mut::<K>(id))
-                                {
-                                    func(c, k);
-                                }
-                            }
+                let len = arch.len();
+                if c_idx < k_idx {
+                    let (left, right) = arch.columns_mut().split_at_mut(k_idx);
+                    let c_col = &mut left[c_idx];
+                    let k_col = &mut right[0];
+                    for row in 0..len {
+                        if let (Some(c), Some(k)) =
+                            (c_col.get_mut::<C>(row), k_col.get_mut::<K>(row))
+                        {
+                            func(c, k);
+                        }
+                    }
+                } else {
+                    let (left, right) = arch.columns_mut().split_at_mut(c_idx);
+                    let k_col = &mut left[k_idx];
+                    let c_col = &mut right[0];
+                    for row in 0..len {
+                        if let (Some(c), Some(k)) =
+                            (c_col.get_mut::<C>(row), k_col.get_mut::<K>(row))
+                        {
+                            func(c, k);
                         }
                     }
                 }

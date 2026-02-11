@@ -71,6 +71,18 @@ impl ComponentSet {
         self.set.is_superset(&other.set)
     }
 
+    pub fn insert(&mut self, id: TypeId) {
+        self.set.insert(id);
+    }
+
+    pub fn remove(&mut self, id: &TypeId) {
+        self.set.remove(id);
+    }
+
+    pub fn contains(&self, id: &TypeId) -> bool {
+        self.set.contains(id)
+    }
+
     pub fn to_vec(&self) -> Vec<TypeId> {
         self.set.iter().cloned().collect()
     }

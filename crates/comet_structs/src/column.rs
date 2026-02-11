@@ -17,6 +17,40 @@ unsafe impl Send for Column {}
 unsafe impl Sync for Column {}
 
 impl Column {
+    pub fn new_raw(
+        type_id: TypeId,
+        item_layout: Layout,
+        drop_fn: unsafe fn(*mut u8),
+        capacity: usize,
+    ) -> Self {
+        if item_layout.size() == 0 {
+            return Self {
+                type_id,
+                item_layout,
+                drop_fn,
+                data: NonNull::dangling(),
+                len: 0,
+                capacity: usize::MAX,
+                swap_scratch: NonNull::dangling(),
+            };
+        }
+
+        let swap_scratch =
+            NonNull::new(unsafe { alloc(item_layout) }).unwrap_or_else(|| handle_alloc_error(item_layout));
+
+        let mut column = Self {
+            type_id,
+            item_layout,
+            drop_fn,
+            data: NonNull::dangling(),
+            len: 0,
+            capacity: 0,
+            swap_scratch,
+        };
+        column.reserve_exact(capacity);
+        column
+    }
+
     pub fn new<T: 'static>(capacity: usize) -> Self {
         let item_layout = Layout::new::<T>();
         let drop_fn = |ptr: *mut u8| unsafe { ptr::drop_in_place(ptr as *mut T) };
@@ -60,6 +94,11 @@ impl Column {
         assert_eq!(self.type_id, TypeId::of::<T>(), "Type mismatch");
     }
 
+    #[inline]
+    fn assert_type_id(&self, type_id: TypeId) {
+        assert_eq!(self.type_id, type_id, "Type mismatch");
+    }
+
     fn reserve_exact(&mut self, additional: usize) {
         let available = self.capacity.saturating_sub(self.len);
         if available >= additional {
@@ -94,6 +133,17 @@ impl Column {
     unsafe fn elem_ptr(&self, index: usize) -> *mut u8 {
         debug_assert!(index < self.len);
         self.data.as_ptr().add(index * self.item_layout.size())
+    }
+
+    fn push_raw_from(&mut self, src: *const u8) {
+        debug_assert!(self.item_layout.size() != 0);
+        self.reserve_exact(1);
+        let index = self.len;
+        self.len += 1;
+        unsafe {
+            let dst_ptr = self.elem_ptr(index);
+            ptr::copy_nonoverlapping(src, dst_ptr, self.item_layout.size());
+        }
     }
 
     pub fn push<T: 'static>(&mut self, item: T) {
@@ -198,6 +248,41 @@ impl Column {
             ptr::copy_nonoverlapping(last_ptr, dst_ptr, self.item_layout.size());
         }
         self.len -= 1;
+    }
+
+    pub fn move_last_to(&mut self, dst: &mut Column) -> Option<()> {
+        self.assert_type_id(dst.type_id);
+        if self.len == 0 {
+            return None;
+        }
+        if self.item_layout.size() == 0 {
+            self.len -= 1;
+            dst.len += 1;
+            return Some(());
+        }
+
+        let src_index = self.len - 1;
+        let src_ptr = unsafe { self.elem_ptr(src_index) as *const u8 };
+        dst.push_raw_from(src_ptr);
+        self.len -= 1;
+        Some(())
+    }
+
+    pub fn drop_last(&mut self) -> Option<()> {
+        if self.len == 0 {
+            return None;
+        }
+        if self.item_layout.size() == 0 {
+            self.len -= 1;
+            return Some(());
+        }
+        let index = self.len - 1;
+        unsafe {
+            let ptr = self.elem_ptr(index);
+            (self.drop_fn)(ptr);
+        }
+        self.len -= 1;
+        Some(())
     }
 }
 
