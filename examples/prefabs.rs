@@ -1,14 +1,11 @@
 use comet::prelude::*;
 
 fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
-    // Initialize the texture atlas
     renderer.init_atlas();
 
-    // Register needed components
     app.register_component::<Position2D>();
     app.register_component::<Color>();
 
-    // Register prefabs
     register_prefab!(
         app,
         "player",

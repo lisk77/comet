@@ -1,5 +1,5 @@
 use crate::archetypes::{Archetypes, ComponentInfo};
-use crate::prefabs::PrefabManager;
+use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::{Component, Entity, EntityId, IdQueue};
 use comet_log::*;
 use comet_structs::ComponentSet;
@@ -576,5 +576,66 @@ impl Scene {
     /// Checks if a prefab with the given name exists.
     pub fn has_prefab(&self, name: &str) -> bool {
         self.prefabs.has_prefab(name)
+    }
+
+    pub fn spawn_with_components(&mut self, mut components: Vec<ErasedComponent>) -> EntityId {
+        let entity_id = self.new_entity();
+        if components.is_empty() {
+            return entity_id;
+        }
+
+        let mut component_set = ComponentSet::new();
+        for component in &components {
+            component_set.insert(component.type_id);
+        }
+        let new_arch_id = self.ensure_archetype(component_set.clone());
+
+        if let Some(loc) = self.get_location(entity_id) {
+            let old_arch_id = loc.archetype;
+            let old_len = self.archetypes.get(old_arch_id).len();
+            if old_len > 0 && loc.row != old_len - 1 {
+                let swapped = {
+                    let arch = self.archetypes.get_mut(old_arch_id);
+                    arch.swap_rows(loc.row, old_len - 1);
+                    arch.entities()[loc.row]
+                };
+                self.set_location(swapped, old_arch_id, loc.row);
+            }
+
+            if old_arch_id != new_arch_id {
+                let (_, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
+                let new_row = new_arch.push_entity(entity_id);
+
+                let mut map = HashMap::with_capacity(components.len());
+                for component in components.drain(..) {
+                    map.insert(component.type_id, component);
+                }
+
+                let new_types = new_arch.types().to_vec();
+                for (new_idx, t) in new_types.iter().enumerate() {
+                    let component = map
+                        .remove(t)
+                        .unwrap_or_else(|| panic!("Prefab missing component {:?}", t));
+                    (component.push_fn)(component.value, &mut new_arch.columns_mut()[new_idx]);
+                }
+
+                let old_arch = self.archetypes.get_mut(old_arch_id);
+                old_arch.pop_entity();
+                self.set_location(entity_id, new_arch_id, new_row);
+            }
+        }
+
+        let component_indices = component_set
+            .to_vec()
+            .iter()
+            .filter_map(|type_id| self.component_index.get(type_id).copied())
+            .collect::<Vec<usize>>();
+        if let Some(entity) = self.get_entity_mut(entity_id) {
+            for component_index in component_indices {
+                entity.add_component(component_index);
+            }
+        }
+
+        entity_id
     }
 }

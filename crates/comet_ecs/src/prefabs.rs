@@ -1,4 +1,28 @@
-use comet_structs::FlatMap;
+use comet_structs::{Column, FlatMap};
+use std::any::{Any, TypeId};
+
+pub struct ErasedComponent {
+    pub(crate) type_id: TypeId,
+    pub(crate) push_fn: fn(Box<dyn Any>, &mut Column),
+    pub(crate) value: Box<dyn Any>,
+}
+
+impl ErasedComponent {
+    pub fn new<C: crate::Component + 'static>(value: C) -> Self {
+        fn push<C: crate::Component + 'static>(value: Box<dyn Any>, column: &mut Column) {
+            let value = *value
+                .downcast::<C>()
+                .expect("ErasedComponent type mismatch");
+            column.push::<C>(value);
+        }
+
+        Self {
+            type_id: TypeId::of::<C>(),
+            push_fn: push::<C>,
+            value: Box::new(value),
+        }
+    }
+}
 
 pub type PrefabFactory = fn(&mut crate::Scene) -> crate::EntityId;
 
@@ -27,11 +51,11 @@ macro_rules! register_prefab {
     ($scene:expr, $name:expr, $($component:expr),* $(,)?) => {
         {
             fn prefab_factory(scene: &mut $crate::Scene) -> $crate::EntityId {
-                let entity = scene.new_entity();
-                $(
-                    scene.add_component(entity, $component);
-                )*
-                entity
+                scene.spawn_with_components(vec![
+                    $(
+                        $crate::prefabs::ErasedComponent::new($component),
+                    )*
+                ])
             }
             $scene.register_prefab($name, prefab_factory);
         }
