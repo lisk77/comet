@@ -37,6 +37,9 @@ pub struct App {
     audio: Box<dyn Audio>,
     scene: Scene,
     should_quit: bool,
+    tick_systems: Vec<fn(&mut App, f32)>,
+    pending_tick_add: Vec<fn(&mut App, f32)>,
+    pending_tick_remove: Vec<fn(&mut App, f32)>,
 }
 
 impl App {
@@ -54,6 +57,9 @@ impl App {
             audio: Box::new(KiraAudio::new()),
             scene: Scene::new(),
             should_quit: false,
+            tick_systems: Vec::new(),
+            pending_tick_add: Vec::new(),
+            pending_tick_remove: Vec::new(),
         }
     }
 
@@ -115,6 +121,43 @@ impl App {
     pub fn with_audio(mut self, audio_system: Box<dyn Audio>) -> Self {
         self.audio = audio_system;
         self
+    }
+
+    /// Registers a system that runs every tick in deterministic order.
+    pub fn add_tick_system(&mut self, system: fn(&mut App, f32)) {
+        self.pending_tick_add.push(system);
+    }
+
+    /// Removes a tick system if present.
+    pub fn remove_tick_system(&mut self, system: fn(&mut App, f32)) -> bool {
+        self.pending_tick_remove.push(system);
+        true
+    }
+
+    fn apply_tick_system_changes(&mut self) {
+        if !self.pending_tick_remove.is_empty() {
+            for remove in self.pending_tick_remove.drain(..) {
+                if let Some(pos) = self
+                    .tick_systems
+                    .iter()
+                    .position(|s| std::ptr::fn_addr_eq(*s, remove))
+                {
+                    self.tick_systems.remove(pos);
+                }
+            }
+        }
+
+        if !self.pending_tick_add.is_empty() {
+            for system in self.pending_tick_add.drain(..) {
+                if !self
+                    .tick_systems
+                    .iter()
+                    .any(|s| std::ptr::fn_addr_eq(*s, system))
+                {
+                    self.tick_systems.push(system);
+                }
+            }
+        }
     }
 
     fn load_icon(path: &std::path::Path) -> Option<Icon> {
@@ -408,6 +451,7 @@ impl App {
 
                 let mut time_stack = 0.0;
                 let mut last_tick = std::time::Instant::now();
+                let max_steps = 5;
 
                 while !logic_quit.load(Ordering::Relaxed) {
                     let now = std::time::Instant::now();
@@ -417,12 +461,28 @@ impl App {
 
                     if app.dt() != f32::INFINITY {
                         time_stack += frame_dt;
-                        while time_stack > app.update_timer {
+                        let mut steps = 0;
+                        while time_stack > app.update_timer && steps < max_steps {
                             let step = app.dt();
+                            app.apply_tick_system_changes();
+                            let mut i = 0;
+                            while i < app.tick_systems.len() {
+                                let system = app.tick_systems[i];
+                                system(&mut app, step);
+                                i += 1;
+                            }
                             update(&mut app, &mut handle, step);
                             time_stack -= app.update_timer;
+                            steps += 1;
                         }
                     } else {
+                        app.apply_tick_system_changes();
+                        let mut i = 0;
+                        while i < app.tick_systems.len() {
+                            let system = app.tick_systems[i];
+                            system(&mut app, frame_dt);
+                            i += 1;
+                        }
                         update(&mut app, &mut handle, frame_dt);
                     }
 
@@ -431,7 +491,7 @@ impl App {
                         break;
                     }
 
-                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    std::thread::yield_now();
                 }
             });
 
