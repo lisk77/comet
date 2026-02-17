@@ -579,6 +579,14 @@ impl Scene {
         self.prefabs.has_prefab(name)
     }
 
+    pub(crate) fn archetypes(&self) -> &crate::archetypes::Archetypes {
+        &self.archetypes
+    }
+
+    pub(crate) fn archetypes_mut(&mut self) -> &mut crate::archetypes::Archetypes {
+        &mut self.archetypes
+    }
+
     pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> EntityId {
         let entity = self.new_entity();
         bundle.insert(self, entity);

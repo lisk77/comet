@@ -6,11 +6,13 @@ pub use id::*;
 pub use bundles::Bundle;
 pub use prefabs::ErasedComponent;
 pub use prefabs::PrefabFactory;
+pub use query::*;
 pub use scene::*;
 pub use sparse_set::SparseSet;
 
 mod archetypes;
 mod bundles;
+mod query;
 mod component;
 mod entity;
 mod id;

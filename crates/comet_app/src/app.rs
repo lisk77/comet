@@ -155,6 +155,26 @@ impl App {
         self.scene.spawn_bundle(bundle)
     }
 
+    pub fn query<C: comet_ecs::Component>(&self) -> comet_ecs::Query<'_, C> {
+        self.scene.query::<C>()
+    }
+
+    pub fn query_mut<C: comet_ecs::Component>(&mut self) -> comet_ecs::QueryMut<'_, C> {
+        self.scene.query_mut::<C>()
+    }
+
+    pub fn query_pair<A: comet_ecs::Component, B: comet_ecs::Component>(
+        &self,
+    ) -> comet_ecs::QueryPair<'_, A, B> {
+        self.scene.query_pair::<A, B>()
+    }
+
+    pub fn query_pair_mut<A: comet_ecs::Component, B: comet_ecs::Component>(
+        &mut self,
+    ) -> comet_ecs::QueryPairMut<'_, A, B> {
+        self.scene.query_pair_mut::<A, B>()
+    }
+
     /// Retrieves a reference to the `InputManager`.
     pub fn input_manager(&self) -> std::sync::MutexGuard<'_, InputManager> {
         self.input_manager.lock().unwrap()
