@@ -1,4 +1,5 @@
 use crate::archetypes::{Archetypes, ComponentInfo};
+use crate::bundles::Bundle;
 use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::{Component, Entity, EntityId, IdQueue};
 use comet_log::*;
@@ -576,6 +577,16 @@ impl Scene {
     /// Checks if a prefab with the given name exists.
     pub fn has_prefab(&self, name: &str) -> bool {
         self.prefabs.has_prefab(name)
+    }
+
+    pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> EntityId {
+        let entity = self.new_entity();
+        bundle.insert(self, entity);
+        entity
+    }
+
+    pub fn add_bundle<B: Bundle>(&mut self, entity: EntityId, bundle: B) {
+        bundle.insert(self, entity);
     }
 
     pub fn spawn_with_components(&mut self, mut components: Vec<ErasedComponent>) -> EntityId {

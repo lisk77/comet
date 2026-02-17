@@ -150,6 +150,11 @@ impl App {
         &mut self.scene
     }
 
+    /// Spawns a new entity using a bundle of components.
+    pub fn spawn_bundle<B: comet_ecs::Bundle>(&mut self, bundle: B) -> EntityId {
+        self.scene.spawn_bundle(bundle)
+    }
+
     /// Retrieves a reference to the `InputManager`.
     pub fn input_manager(&self) -> std::sync::MutexGuard<'_, InputManager> {
         self.input_manager.lock().unwrap()
