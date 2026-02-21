@@ -1,9 +1,9 @@
+pub use bundles::Bundle;
 pub use comet_math as math;
 pub use component::*;
 pub use component_derive::*;
 pub use entity::*;
 pub use id::*;
-pub use bundles::Bundle;
 pub use prefabs::ErasedComponent;
 pub use prefabs::PrefabFactory;
 pub use query::*;
@@ -12,10 +12,10 @@ pub use sparse_set::SparseSet;
 
 mod archetypes;
 mod bundles;
-mod query;
 mod component;
 mod entity;
 mod id;
 pub mod prefabs;
+mod query;
 mod scene;
 mod sparse_set;

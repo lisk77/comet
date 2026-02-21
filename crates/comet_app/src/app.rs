@@ -8,6 +8,10 @@ use comet_renderer::renderer::{Renderer, RendererHandle};
 use comet_sound::*;
 use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use winit::dpi::LogicalSize;
 use winit::{
     event::*,
@@ -15,7 +19,6 @@ use winit::{
     window::{Icon, Window},
 };
 use winit_input_helper::WinitInputHelper as InputManager;
-use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
 
 /// Represents the presets of an `App` instance.
 pub enum ApplicationType {
@@ -198,23 +201,23 @@ impl App {
         self.scene.spawn_bundle(bundle)
     }
 
-    pub fn query<C: comet_ecs::Component>(&self) -> comet_ecs::Query<'_, C> {
+    pub fn query<C: comet_ecs::Component>(&self) -> comet_ecs::QueryBuilder<'_, C> {
         self.scene.query::<C>()
     }
 
-    pub fn query_mut<C: comet_ecs::Component>(&mut self) -> comet_ecs::QueryMut<'_, C> {
+    pub fn query_mut<C: comet_ecs::Component>(&mut self) -> comet_ecs::QueryMutBuilder<'_, C> {
         self.scene.query_mut::<C>()
     }
 
     pub fn query_pair<A: comet_ecs::Component, B: comet_ecs::Component>(
         &self,
-    ) -> comet_ecs::QueryPair<'_, A, B> {
+    ) -> comet_ecs::QueryPairBuilder<'_, A, B> {
         self.scene.query_pair::<A, B>()
     }
 
     pub fn query_pair_mut<A: comet_ecs::Component, B: comet_ecs::Component>(
         &mut self,
-    ) -> comet_ecs::QueryPairMut<'_, A, B> {
+    ) -> comet_ecs::QueryPairMutBuilder<'_, A, B> {
         self.scene.query_pair_mut::<A, B>()
     }
 
@@ -425,8 +428,12 @@ impl App {
             let size = self.size.clone();
             let clear_color = self.clear_color.clone();
 
-            let (cmd_tx, cmd_rx) = flume::unbounded::<<R::Handle as comet_renderer::renderer::RendererHandle>::Command>();
-            let (evt_tx, evt_rx) = flume::unbounded::<<R::Handle as comet_renderer::renderer::RendererHandle>::Event>();
+            let (cmd_tx, cmd_rx) = flume::unbounded::<
+                <R::Handle as comet_renderer::renderer::RendererHandle>::Command,
+            >();
+            let (evt_tx, evt_rx) = flume::unbounded::<
+                <R::Handle as comet_renderer::renderer::RendererHandle>::Event,
+            >();
 
             let event_loop = EventLoop::new().unwrap();
             let mut renderer = R::new(
