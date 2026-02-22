@@ -1,7 +1,14 @@
-use crate::{EntityId, Scene};
+use crate::{ErasedComponent, Scene};
 
 pub trait Bundle {
-    fn insert(self, scene: &mut Scene, entity: EntityId);
+    fn into_components(self) -> Vec<ErasedComponent>;
+
+    fn insert(self, scene: &mut Scene, entity: crate::EntityId)
+    where
+        Self: Sized,
+    {
+        scene.add_with_components(entity, self.into_components());
+    }
 }
 
 #[macro_export]
@@ -12,8 +19,12 @@ macro_rules! bundle {
         }
 
         impl $crate::Bundle for $name {
-            fn insert(self, scene: &mut $crate::Scene, entity: $crate::EntityId) {
-                $(scene.add_component(entity, self.$field);)*
+            fn into_components(self) -> Vec<$crate::ErasedComponent> {
+                vec![
+                    $(
+                        $crate::ErasedComponent::new(self.$field),
+                    )*
+                ]
             }
         }
     };

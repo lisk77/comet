@@ -4,6 +4,7 @@ use std::any::{Any, TypeId};
 pub struct ErasedComponent {
     pub(crate) type_id: TypeId,
     pub(crate) push_fn: fn(Box<dyn Any>, &mut Column),
+    pub(crate) set_fn: fn(Box<dyn Any>, &mut Column, usize),
     pub(crate) value: Box<dyn Any>,
 }
 
@@ -16,9 +17,21 @@ impl ErasedComponent {
             column.push::<C>(value);
         }
 
+        fn set<C: crate::Component + 'static>(
+            value: Box<dyn Any>,
+            column: &mut Column,
+            row: usize,
+        ) {
+            let value = *value
+                .downcast::<C>()
+                .expect("ErasedComponent type mismatch");
+            let _ = column.set::<C>(row, value);
+        }
+
         Self {
             type_id: TypeId::of::<C>(),
             push_fn: push::<C>,
+            set_fn: set::<C>,
             value: Box::new(value),
         }
     }

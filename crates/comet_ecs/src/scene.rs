@@ -588,31 +588,48 @@ impl Scene {
     }
 
     pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> EntityId {
-        let entity = self.new_entity();
-        bundle.insert(self, entity);
-        entity
+        self.spawn_with_components(bundle.into_components())
     }
 
     pub fn add_bundle<B: Bundle>(&mut self, entity: EntityId, bundle: B) {
-        bundle.insert(self, entity);
+        self.add_with_components(entity, bundle.into_components());
     }
 
-    pub fn spawn_with_components(&mut self, mut components: Vec<ErasedComponent>) -> EntityId {
-        let entity_id = self.new_entity();
-        if components.is_empty() {
-            return entity_id;
+    pub fn add_with_components(
+        &mut self,
+        entity_id: EntityId,
+        mut components: Vec<ErasedComponent>,
+    ) {
+        if !self.is_alive(entity_id) || components.is_empty() {
+            return;
         }
 
-        let mut component_set = ComponentSet::new();
+        let old_set = self.get_component_set(entity_id.index as usize);
+        let mut component_set = old_set.clone();
         for component in &components {
             component_set.insert(component.type_id);
         }
         let new_arch_id = self.ensure_archetype(component_set.clone());
 
-        if let Some(loc) = self.get_location(entity_id) {
-            let old_arch_id = loc.archetype;
-            let old_len = self.archetypes.get(old_arch_id).len();
-            if old_len > 0 && loc.row != old_len - 1 {
+        let loc = match self.get_location(entity_id) {
+            Some(loc) => loc,
+            None => return,
+        };
+        let old_arch_id = loc.archetype;
+        let old_len = self.archetypes.get(old_arch_id).len();
+        if old_len == 0 {
+            return;
+        }
+
+        if old_arch_id == new_arch_id {
+            let arch = self.archetypes.get_mut(old_arch_id);
+            for component in components.drain(..) {
+                if let Some(col_idx) = arch.column_index(component.type_id) {
+                    (component.set_fn)(component.value, &mut arch.columns_mut()[col_idx], loc.row);
+                }
+            }
+        } else {
+            if loc.row != old_len - 1 {
                 let swapped = {
                     let arch = self.archetypes.get_mut(old_arch_id);
                     arch.swap_rows(loc.row, old_len - 1);
@@ -621,27 +638,46 @@ impl Scene {
                 self.set_location(swapped, old_arch_id, loc.row);
             }
 
-            if old_arch_id != new_arch_id {
-                let (_, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
-                let new_row = new_arch.push_entity(entity_id);
+            let (old_arch, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
+            let new_row = new_arch.push_entity(entity_id);
 
-                let mut map = HashMap::with_capacity(components.len());
-                for component in components.drain(..) {
-                    map.insert(component.type_id, component);
-                }
-
-                let new_types = new_arch.types().to_vec();
-                for (new_idx, t) in new_types.iter().enumerate() {
-                    let component = map
-                        .remove(t)
-                        .unwrap_or_else(|| panic!("Prefab missing component {:?}", t));
-                    (component.push_fn)(component.value, &mut new_arch.columns_mut()[new_idx]);
-                }
-
-                let old_arch = self.archetypes.get_mut(old_arch_id);
-                old_arch.pop_entity();
-                self.set_location(entity_id, new_arch_id, new_row);
+            let mut map = HashMap::with_capacity(components.len());
+            for component in components.drain(..) {
+                map.insert(component.type_id, component);
             }
+
+            let new_types = new_arch.types().to_vec();
+            let old_types = old_arch.types().to_vec();
+            let new_set = new_arch.set().clone();
+
+            for (new_idx, t) in new_types.iter().enumerate() {
+                if let Some(old_idx) = old_arch.column_index(*t) {
+                    let _ = old_arch.columns_mut()[old_idx]
+                        .move_last_to(&mut new_arch.columns_mut()[new_idx]);
+                    if let Some(component) = map.remove(t) {
+                        (component.set_fn)(
+                            component.value,
+                            &mut new_arch.columns_mut()[new_idx],
+                            new_row,
+                        );
+                    }
+                    continue;
+                }
+
+                let component = map
+                    .remove(t)
+                    .unwrap_or_else(|| panic!("Bundle missing component {:?}", t));
+                (component.push_fn)(component.value, &mut new_arch.columns_mut()[new_idx]);
+            }
+
+            for (old_idx, t) in old_types.iter().enumerate() {
+                if !new_set.contains(t) {
+                    let _ = old_arch.columns_mut()[old_idx].drop_last();
+                }
+            }
+
+            old_arch.pop_entity();
+            self.set_location(entity_id, new_arch_id, new_row);
         }
 
         let component_indices = component_set
@@ -654,7 +690,14 @@ impl Scene {
                 entity.add_component(component_index);
             }
         }
+    }
 
+    pub fn spawn_with_components(&mut self, components: Vec<ErasedComponent>) -> EntityId {
+        let entity_id = self.new_entity();
+        if components.is_empty() {
+            return entity_id;
+        }
+        self.add_with_components(entity_id, components);
         entity_id
     }
 }
