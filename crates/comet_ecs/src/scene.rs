@@ -46,7 +46,11 @@ impl Scene {
         let empty_set = ComponentSet::new();
         let _ = scene
             .archetypes
-            .get_or_create(empty_set, &scene.component_info, &scene.component_index);
+            .get_or_create(
+                empty_set,
+                &scene.component_info,
+                &scene.component_registry,
+            );
         scene
     }
 
@@ -102,7 +106,11 @@ impl Scene {
         let empty_set = ComponentSet::new();
         let empty_arch = self
             .archetypes
-            .get_or_create(empty_set, &self.component_info, &self.component_index);
+            .get_or_create(
+                empty_set,
+                &self.component_info,
+                &self.component_registry,
+            );
         let row = self.archetypes.get_mut(empty_arch).push_entity(id);
         if index as usize >= self.entity_locations.len() {
             self.entity_locations.resize(index as usize + 1, None);
@@ -209,8 +217,11 @@ impl Scene {
     }
 
     fn ensure_archetype(&mut self, set: ComponentSet) -> usize {
-        self.archetypes
-            .get_or_create(set, &self.component_info, &self.component_index)
+        self.archetypes.get_or_create(
+            set,
+            &self.component_info,
+            &self.component_registry,
+        )
     }
 
     fn has_live_component_instances(&self, type_id: TypeId) -> bool {
@@ -341,6 +352,7 @@ impl Scene {
             type_id,
             &self.component_info,
             &self.component_index,
+            &self.component_registry,
         );
 
         let old_len = self.archetypes.get(old_arch_id).len();
@@ -361,7 +373,6 @@ impl Scene {
         let new_row = new_arch.push_entity(entity_id);
         let new_types = new_arch.types().to_vec();
         let old_types = old_arch.types().to_vec();
-        let new_set = new_arch.set().clone();
 
         if let Some(new_idx) = new_arch.column_index(type_id) {
             new_arch.columns_mut()[new_idx].push::<C>(component);
@@ -378,7 +389,7 @@ impl Scene {
         }
 
         for (old_idx, t) in old_types.iter().enumerate() {
-            if !new_set.contains(t) {
+            if new_arch.column_index(*t).is_none() {
                 let _ = old_arch.columns_mut()[old_idx].drop_last();
             }
         }
@@ -418,6 +429,7 @@ impl Scene {
             type_id,
             &self.component_info,
             &self.component_index,
+            &self.component_registry,
         );
         let old_len = self.archetypes.get(old_arch_id).len();
         if old_len == 0 {
@@ -437,7 +449,6 @@ impl Scene {
         let new_row = new_arch.push_entity(entity_id);
         let new_types = new_arch.types().to_vec();
         let old_types = old_arch.types().to_vec();
-        let new_set = new_arch.set().clone();
 
         for (new_idx, t) in new_types.iter().enumerate() {
             if let Some(old_idx) = old_arch.column_index(*t) {
@@ -447,7 +458,7 @@ impl Scene {
         }
 
         for (old_idx, t) in old_types.iter().enumerate() {
-            if !new_set.contains(t) {
+            if new_arch.column_index(*t).is_none() {
                 let _ = old_arch.columns_mut()[old_idx].drop_last();
             }
         }
@@ -499,7 +510,14 @@ impl Scene {
 
     /// Returns a list of entities that have the given components.
     pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<EntityId> {
-        let component_set = ComponentSet::from_ids(components);
+        let mut indices = Vec::with_capacity(components.len());
+        for type_id in components {
+            let Some(index) = self.component_index.get(&type_id).copied() else {
+                return Vec::new();
+            };
+            indices.push(index);
+        }
+        let component_set = ComponentSet::from_indices(indices);
         let mut result = Vec::new();
 
         for arch in self.archetypes.iter() {
@@ -530,7 +548,15 @@ impl Scene {
             return;
         }
 
-        let required = ComponentSet::from_ids(vec![C::type_id(), K::type_id()]);
+        let c_index = match self.component_index.get(&C::type_id()).copied() {
+            Some(index) => index,
+            None => return,
+        };
+        let k_index = match self.component_index.get(&K::type_id()).copied() {
+            Some(index) => index,
+            None => return,
+        };
+        let required = ComponentSet::from_indices(vec![c_index, k_index]);
         for arch in self.archetypes.iter_mut() {
             if required.is_subset(arch.set()) {
                 let c_idx = match arch.column_index(C::type_id()) {
@@ -630,7 +656,12 @@ impl Scene {
         let old_set = self.archetypes.get(old_arch_id).set().clone();
         let mut component_set = old_set.clone();
         for component in &components {
-            component_set.insert(component.type_id);
+            let index = self
+                .component_index
+                .get(&component.type_id)
+                .copied()
+                .unwrap_or_else(|| panic!("Component {:?} missing index", component.type_id));
+            component_set.insert(index);
         }
         let new_arch_id = self.ensure_archetype(component_set.clone());
         let old_len = self.archetypes.get(old_arch_id).len();
@@ -665,7 +696,6 @@ impl Scene {
 
             let new_types = new_arch.types().to_vec();
             let old_types = old_arch.types().to_vec();
-            let new_set = new_arch.set().clone();
 
             for (new_idx, t) in new_types.iter().enumerate() {
                 if let Some(old_idx) = old_arch.column_index(*t) {
@@ -688,7 +718,7 @@ impl Scene {
             }
 
             for (old_idx, t) in old_types.iter().enumerate() {
-                if !new_set.contains(t) {
+                if new_arch.column_index(*t).is_none() {
                     let _ = old_arch.columns_mut()[old_idx].drop_last();
                 }
             }
@@ -697,11 +727,7 @@ impl Scene {
             self.set_location(entity_id, new_arch_id, new_row);
         }
 
-        let component_indices = component_set
-            .to_vec()
-            .iter()
-            .filter_map(|type_id| self.component_index.get(type_id).copied())
-            .collect::<Vec<usize>>();
+        let component_indices = component_set.to_vec();
         if let Some(entity) = self.get_entity_mut(entity_id) {
             for component_index in component_indices {
                 entity.add_component(component_index);

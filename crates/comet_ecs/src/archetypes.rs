@@ -152,23 +152,28 @@ impl Archetypes {
         &mut self,
         set: ComponentSet,
         component_info: &HashMap<TypeId, ComponentInfo>,
-        component_index: &HashMap<TypeId, usize>,
+        component_registry: &[Option<TypeId>],
     ) -> usize {
         if let Some(&id) = self.index.get(&set) {
             return id;
         }
 
-        let mut types = set.to_vec();
-        types.sort_by_key(|t| component_index.get(t).copied().unwrap_or(usize::MAX));
-
-        let mut columns = Vec::with_capacity(types.len());
-        for type_id in &types {
-            let info = component_info.get(type_id).unwrap_or_else(|| {
+        let mut indices = set.to_vec();
+        indices.sort_unstable();
+        let mut types = Vec::with_capacity(indices.len());
+        let mut columns = Vec::with_capacity(indices.len());
+        for index in indices {
+            let type_id = component_registry
+                .get(index)
+                .and_then(|entry| *entry)
+                .unwrap_or_else(|| panic!("Component index {} not registered", index));
+            let info = component_info.get(&type_id).unwrap_or_else(|| {
                 panic!(
                     "Component with TypeId {:?} not registered before archetype creation",
                     type_id
                 )
             });
+            types.push(type_id);
             columns.push(Column::new_raw(
                 info.type_id,
                 info.layout,
@@ -190,14 +195,19 @@ impl Archetypes {
         type_id: TypeId,
         component_info: &HashMap<TypeId, ComponentInfo>,
         component_index: &HashMap<TypeId, usize>,
+        component_registry: &[Option<TypeId>],
     ) -> usize {
         if let Some(next) = self.archetypes[from].add_edge(type_id) {
             return next;
         }
 
+        let index = component_index
+            .get(&type_id)
+            .copied()
+            .unwrap_or_else(|| panic!("Component {:?} missing index", type_id));
         let mut next_set = self.archetypes[from].set().clone();
-        next_set.insert(type_id);
-        let to = self.get_or_create(next_set, component_info, component_index);
+        next_set.insert(index);
+        let to = self.get_or_create(next_set, component_info, component_registry);
 
         self.archetypes[from].set_add_edge(type_id, to);
         if from != to {
@@ -212,14 +222,19 @@ impl Archetypes {
         type_id: TypeId,
         component_info: &HashMap<TypeId, ComponentInfo>,
         component_index: &HashMap<TypeId, usize>,
+        component_registry: &[Option<TypeId>],
     ) -> usize {
         if let Some(next) = self.archetypes[from].remove_edge(type_id) {
             return next;
         }
 
+        let index = component_index
+            .get(&type_id)
+            .copied()
+            .unwrap_or_else(|| panic!("Component {:?} missing index", type_id));
         let mut next_set = self.archetypes[from].set().clone();
-        next_set.remove(&type_id);
-        let to = self.get_or_create(next_set, component_info, component_index);
+        next_set.remove(index);
+        let to = self.get_or_create(next_set, component_info, component_registry);
 
         self.archetypes[from].set_remove_edge(type_id, to);
         if from != to {
