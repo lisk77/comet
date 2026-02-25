@@ -125,18 +125,31 @@ impl Column {
         if self.item_layout.size() == 0 {
             return;
         }
-        let available = self.capacity.saturating_sub(self.len);
-        if available >= additional {
+        let required = self
+            .len
+            .checked_add(additional)
+            .expect("column capacity overflow");
+
+        if self.capacity >= required {
             return;
         }
-        let increment = additional - available;
-        self.grow_exact(increment);
+
+        let mut new_capacity = self.capacity.max(4);
+        while new_capacity < required {
+            let doubled = new_capacity.saturating_mul(2);
+            if doubled <= new_capacity {
+                new_capacity = required;
+                break;
+            }
+            new_capacity = doubled;
+        }
+
+        self.grow_to(new_capacity);
     }
 
-    fn grow_exact(&mut self, increment: usize) {
+    fn grow_to(&mut self, new_capacity: usize) {
         debug_assert!(self.item_layout.size() != 0);
-
-        let new_capacity = self.capacity + increment;
+        debug_assert!(new_capacity >= self.capacity);
 
         let new_layout = array_layout_strided(self.item_layout.align(), self.stride, new_capacity)
             .expect("array layout should be valid");
