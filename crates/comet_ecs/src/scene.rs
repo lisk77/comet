@@ -181,28 +181,6 @@ impl Scene {
         self.get_next_id();
     }
 
-    fn get_component_set(&self, entity_id: usize) -> ComponentSet {
-        let components = match self.entities.get(entity_id) {
-            Some(cmp) => match cmp.as_ref() {
-                Some(e) => e.get_components().iter().collect::<Vec<usize>>(),
-                None => {
-                    error!("This entity ({}) does not have any components!", entity_id);
-                    Vec::new()
-                }
-            },
-            _ => {
-                error!("This entity ({}) does not exist!", entity_id);
-                Vec::new()
-            }
-        };
-
-        let type_ids = components
-            .iter()
-            .filter_map(|index| self.component_registry.get(*index).and_then(|v| *v))
-            .collect::<Vec<TypeId>>();
-        ComponentSet::from_ids(type_ids)
-    }
-
     fn get_location(&self, entity_id: EntityId) -> Option<EntityLocation> {
         self.entity_locations
             .get(entity_id.index as usize)
@@ -344,26 +322,26 @@ impl Scene {
             return;
         }
 
-        let old_set = self.get_component_set(entity_id.index as usize);
-        if old_set.contains(&type_id) {
-            if let Some(loc) = self.get_location(entity_id) {
-                let arch = self.archetypes.get_mut(loc.archetype);
-                if let Some(col_idx) = arch.column_index(type_id) {
-                    let _ = arch.columns_mut()[col_idx].set::<C>(loc.row, component);
-                }
-            }
-            return;
-        }
-
-        let mut new_set = old_set.clone();
-        new_set.insert(type_id);
-        let new_arch_id = self.ensure_archetype(new_set);
-
         let loc = match self.get_location(entity_id) {
             Some(loc) => loc,
             None => return,
         };
         let old_arch_id = loc.archetype;
+
+        if self.archetypes.get(old_arch_id).column_index(type_id).is_some() {
+            let arch = self.archetypes.get_mut(old_arch_id);
+            if let Some(col_idx) = arch.column_index(type_id) {
+                let _ = arch.columns_mut()[col_idx].set::<C>(loc.row, component);
+            }
+            return;
+        }
+
+        let new_arch_id = self.archetypes.get_or_create_add_edge(
+            old_arch_id,
+            type_id,
+            &self.component_info,
+            &self.component_index,
+        );
 
         let old_len = self.archetypes.get(old_arch_id).len();
         if old_len == 0 {
@@ -426,20 +404,21 @@ impl Scene {
             return;
         }
         let type_id = C::type_id();
-        let old_set = self.get_component_set(entity_id.index as usize);
-        if !old_set.contains(&type_id) {
-            return;
-        }
-
-        let mut new_set = old_set.clone();
-        new_set.remove(&type_id);
-        let new_arch_id = self.ensure_archetype(new_set);
-
         let loc = match self.get_location(entity_id) {
             Some(loc) => loc,
             None => return,
         };
         let old_arch_id = loc.archetype;
+        if self.archetypes.get(old_arch_id).column_index(type_id).is_none() {
+            return;
+        }
+
+        let new_arch_id = self.archetypes.get_or_create_remove_edge(
+            old_arch_id,
+            type_id,
+            &self.component_info,
+            &self.component_index,
+        );
         let old_len = self.archetypes.get(old_arch_id).len();
         if old_len == 0 {
             return;
@@ -643,18 +622,17 @@ impl Scene {
             return;
         }
 
-        let old_set = self.get_component_set(entity_id.index as usize);
-        let mut component_set = old_set.clone();
-        for component in &components {
-            component_set.insert(component.type_id);
-        }
-        let new_arch_id = self.ensure_archetype(component_set.clone());
-
         let loc = match self.get_location(entity_id) {
             Some(loc) => loc,
             None => return,
         };
         let old_arch_id = loc.archetype;
+        let old_set = self.archetypes.get(old_arch_id).set().clone();
+        let mut component_set = old_set.clone();
+        for component in &components {
+            component_set.insert(component.type_id);
+        }
+        let new_arch_id = self.ensure_archetype(component_set.clone());
         let old_len = self.archetypes.get(old_arch_id).len();
         if old_len == 0 {
             return;

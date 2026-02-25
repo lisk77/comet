@@ -15,6 +15,8 @@ pub struct Archetype {
     set: ComponentSet,
     types: Vec<TypeId>,
     type_to_index: HashMap<TypeId, usize>,
+    add_edges: HashMap<TypeId, usize>,
+    remove_edges: HashMap<TypeId, usize>,
     entities: Vec<EntityId>,
     columns: Vec<Column>,
 }
@@ -30,6 +32,8 @@ impl Archetype {
             set,
             types,
             type_to_index,
+            add_edges: HashMap::new(),
+            remove_edges: HashMap::new(),
             entities: Vec::new(),
             columns,
         }
@@ -85,6 +89,22 @@ impl Archetype {
 
     pub fn pop_entity(&mut self) {
         let _ = self.entities.pop();
+    }
+
+    pub fn add_edge(&self, type_id: TypeId) -> Option<usize> {
+        self.add_edges.get(&type_id).copied()
+    }
+
+    pub fn remove_edge(&self, type_id: TypeId) -> Option<usize> {
+        self.remove_edges.get(&type_id).copied()
+    }
+
+    pub fn set_add_edge(&mut self, type_id: TypeId, target: usize) {
+        self.add_edges.insert(type_id, target);
+    }
+
+    pub fn set_remove_edge(&mut self, type_id: TypeId, target: usize) {
+        self.remove_edges.insert(type_id, target);
     }
 }
 
@@ -162,5 +182,49 @@ impl Archetypes {
         self.archetypes.push(archetype);
         self.index.insert(set, id);
         id
+    }
+
+    pub fn get_or_create_add_edge(
+        &mut self,
+        from: usize,
+        type_id: TypeId,
+        component_info: &HashMap<TypeId, ComponentInfo>,
+        component_index: &HashMap<TypeId, usize>,
+    ) -> usize {
+        if let Some(next) = self.archetypes[from].add_edge(type_id) {
+            return next;
+        }
+
+        let mut next_set = self.archetypes[from].set().clone();
+        next_set.insert(type_id);
+        let to = self.get_or_create(next_set, component_info, component_index);
+
+        self.archetypes[from].set_add_edge(type_id, to);
+        if from != to {
+            self.archetypes[to].set_remove_edge(type_id, from);
+        }
+        to
+    }
+
+    pub fn get_or_create_remove_edge(
+        &mut self,
+        from: usize,
+        type_id: TypeId,
+        component_info: &HashMap<TypeId, ComponentInfo>,
+        component_index: &HashMap<TypeId, usize>,
+    ) -> usize {
+        if let Some(next) = self.archetypes[from].remove_edge(type_id) {
+            return next;
+        }
+
+        let mut next_set = self.archetypes[from].set().clone();
+        next_set.remove(&type_id);
+        let to = self.get_or_create(next_set, component_info, component_index);
+
+        self.archetypes[from].set_remove_edge(type_id, to);
+        if from != to {
+            self.archetypes[to].set_add_edge(type_id, from);
+        }
+        to
     }
 }
