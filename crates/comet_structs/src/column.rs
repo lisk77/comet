@@ -315,6 +315,9 @@ impl Column {
         }
 
         if self.item_layout.size() == 0 {
+            unsafe {
+                (self.drop_fn)(NonNull::<u8>::dangling().as_ptr());
+            }
             self.len -= 1;
             return Some(());
         }
@@ -333,6 +336,11 @@ impl Column {
 impl Drop for Column {
     fn drop(&mut self) {
         if self.item_layout.size() == 0 {
+            for _ in 0..self.len {
+                unsafe {
+                    (self.drop_fn)(NonNull::<u8>::dangling().as_ptr());
+                }
+            }
             return;
         }
 
@@ -364,4 +372,34 @@ impl Drop for Column {
 fn array_layout_strided(align: usize, stride: usize, n: usize) -> Option<Layout> {
     let alloc_size = stride.checked_mul(n)?;
     Layout::from_size_align(alloc_size, align).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Column;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static DROPS: AtomicUsize = AtomicUsize::new(0);
+
+    struct ZstDrop;
+
+    impl Drop for ZstDrop {
+        fn drop(&mut self) {
+            DROPS.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn zst_components_are_dropped() {
+        DROPS.store(0, Ordering::SeqCst);
+
+        {
+            let mut column = Column::new::<ZstDrop>(0);
+            column.push(ZstDrop);
+            column.push(ZstDrop);
+            let _ = column.drop_last();
+        }
+
+        assert_eq!(DROPS.load(Ordering::SeqCst), 2);
+    }
 }

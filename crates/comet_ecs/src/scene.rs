@@ -235,6 +235,12 @@ impl Scene {
             .get_or_create(set, &self.component_info, &self.component_index)
     }
 
+    fn has_live_component_instances(&self, type_id: TypeId) -> bool {
+        self.archetypes
+            .iter()
+            .any(|arch| arch.column_index(type_id).is_some() && !arch.is_empty())
+    }
+
     /// Registers a new component in the scene.
     pub fn register_component<C: Component + 'static>(&mut self) {
         let type_id = C::type_id();
@@ -248,7 +254,6 @@ impl Scene {
             type_id,
             layout: Layout::new::<C>(),
             drop_fn,
-            type_name: C::type_name(),
         };
         self.component_info.insert(type_id, info);
 
@@ -274,16 +279,47 @@ impl Scene {
     /// Deregisters a component from the scene.
     pub fn deregister_component<C: Component + 'static>(&mut self) {
         let type_id = C::type_id();
-        if self.component_info.remove(&type_id).is_some() {
-            if let Some(index) = self.component_index.remove(&type_id) {
-                if let Some(slot) = self.component_registry.get_mut(index) {
-                    *slot = None;
-                }
-            }
-            info!("Deregistered component: {}", C::type_name());
+        if !self.component_info.contains_key(&type_id) {
+            warn!("Component {} was not registered!", C::type_name());
             return;
         }
-        warn!("Component {} was not registered!", C::type_name());
+
+        if self.has_live_component_instances(type_id) {
+            error!(
+                "Cannot deregister component {} while live entities still contain it",
+                C::type_name()
+            );
+            return;
+        }
+
+        if let Some(index) = self.component_index.remove(&type_id) {
+            for entity in self.entities.iter_mut().flatten() {
+                entity.remove_component(index);
+            }
+
+            if let Some(slot) = self.component_registry.get_mut(index) {
+                *slot = None;
+            }
+        }
+
+        if self.component_info.remove(&type_id).is_some() {
+            info!("Deregistered component: {}", C::type_name());
+        } else {
+            warn!("Component {} was not registered!", C::type_name());
+        }
+    }
+
+    fn validate_components_registered(&self, components: &[ErasedComponent]) -> bool {
+        for component in components {
+            if !self.component_info.contains_key(&component.type_id) {
+                error!(
+                    "Component TypeId {:?} not registered, cannot add bundle/components",
+                    component.type_id
+                );
+                return false;
+            }
+        }
+        true
     }
 
     /// Adds a component to an entity by its ID and an instance of the component.
@@ -603,6 +639,9 @@ impl Scene {
         if !self.is_alive(entity_id) || components.is_empty() {
             return;
         }
+        if !self.validate_components_registered(&components) {
+            return;
+        }
 
         let old_set = self.get_component_set(entity_id.index as usize);
         let mut component_set = old_set.clone();
@@ -699,5 +738,44 @@ impl Scene {
         }
         self.add_with_components(entity_id, components);
         entity_id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scene;
+    use crate::{Component, ErasedComponent};
+
+    struct A;
+    impl Component for A {}
+
+    struct Unregistered;
+    impl Component for Unregistered {}
+
+    #[test]
+    fn deregister_component_is_blocked_while_live_instances_exist() {
+        let mut scene = Scene::new();
+        scene.register_component::<A>();
+
+        let e1 = scene.new_entity();
+        scene.add_component(e1, A);
+
+        scene.deregister_component::<A>();
+
+        let e2 = scene.new_entity();
+        scene.add_component(e2, A);
+
+        assert!(scene.get_component::<A>(e1).is_some());
+        assert!(scene.get_component::<A>(e2).is_some());
+    }
+
+    #[test]
+    fn add_with_components_ignores_unregistered_components_without_panicking() {
+        let mut scene = Scene::new();
+
+        let entity = scene.new_entity();
+        scene.add_with_components(entity, vec![ErasedComponent::new(Unregistered)]);
+
+        assert!(scene.get_component::<Unregistered>(entity).is_none());
     }
 }

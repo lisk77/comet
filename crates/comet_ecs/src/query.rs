@@ -514,7 +514,7 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
         self.scene.query_mut_iter::<C>()
     }
 
-    pub fn for_each(mut self, mut f: impl FnMut(&mut C)) {
+    pub fn for_each(self, mut f: impl FnMut(&mut C)) {
         let mut iter = self.iter();
         while let Some(item) = iter.next() {
             f(item);
@@ -573,7 +573,7 @@ impl<'a, A: Component, B: Component> QueryPairMutBuilder<'a, A, B> {
         self.scene.query_pair_mut_iter::<A, B>()
     }
 
-    pub fn for_each(mut self, mut f: impl FnMut(&mut A, &mut B)) {
+    pub fn for_each(self, mut f: impl FnMut(&mut A, &mut B)) {
         let mut iter = self.iter();
         while let Some((a, b)) = iter.next() {
             f(a, b);

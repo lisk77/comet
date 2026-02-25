@@ -9,7 +9,6 @@ pub struct ComponentInfo {
     pub type_id: TypeId,
     pub layout: Layout,
     pub drop_fn: unsafe fn(*mut u8),
-    pub type_name: String,
 }
 
 pub struct Archetype {
@@ -50,10 +49,6 @@ impl Archetype {
 
     pub fn entities(&self) -> &[EntityId] {
         &self.entities
-    }
-
-    pub fn entities_mut(&mut self) -> &mut Vec<EntityId> {
-        &mut self.entities
     }
 
     pub fn columns_mut(&mut self) -> &mut [Column] {
@@ -131,10 +126,6 @@ impl Archetypes {
             let (left, right) = self.archetypes.split_at_mut(a);
             (&mut right[0], &mut left[b])
         }
-    }
-
-    pub fn find(&self, set: &ComponentSet) -> Option<usize> {
-        self.index.get(set).copied()
     }
 
     pub fn get_or_create(
