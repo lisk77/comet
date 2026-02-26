@@ -1,5 +1,4 @@
 use comet::prelude::*;
-use comet_input::keyboard::Key;
 
 fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     // Takes all the textures from res/textures and puts them into a texture atlas
