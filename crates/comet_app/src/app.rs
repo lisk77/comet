@@ -498,7 +498,15 @@ impl App {
                         break;
                     }
 
-                    std::thread::yield_now();
+                    if app.update_timer.is_finite() && app.update_timer > 0.0 {
+                        let target_step = std::time::Duration::from_secs_f32(app.update_timer);
+                        let elapsed = last_tick.elapsed();
+                        if elapsed < target_step {
+                            std::thread::sleep(target_step - elapsed);
+                        }
+                    } else {
+                        std::thread::yield_now();
+                    }
                 }
             });
 
