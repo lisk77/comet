@@ -3,7 +3,7 @@ use crate::{ErasedComponent, Scene};
 pub trait Bundle {
     fn into_components(self) -> Vec<ErasedComponent>;
 
-    fn insert(self, scene: &mut Scene, entity: crate::EntityId)
+    fn insert(self, scene: &mut Scene, entity: crate::Entity)
     where
         Self: Sized,
     {

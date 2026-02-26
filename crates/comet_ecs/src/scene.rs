@@ -1,7 +1,7 @@
 use crate::archetypes::{Archetypes, ComponentInfo};
 use crate::bundles::Bundle;
 use crate::prefabs::{ErasedComponent, PrefabManager};
-use crate::{Component, Entity, EntityId, IdQueue};
+use crate::{Component, Entity, IdQueue};
 use comet_log::*;
 use comet_structs::ComponentSet;
 use std::any::TypeId;
@@ -71,7 +71,7 @@ impl Scene {
         }
     }
 
-    fn is_alive(&self, id: EntityId) -> bool {
+    fn is_alive(&self, id: Entity) -> bool {
         self.generations
             .get(id.index as usize)
             .is_some_and(|g| *g == id.gen)
@@ -87,7 +87,7 @@ impl Scene {
     }
 
     /// Creates a new entity and returns its ID.
-    pub fn new_entity(&mut self) -> EntityId {
+    pub fn new_entity(&mut self) -> Entity {
         let index = self.next_id;
         let gen = if (index as usize) >= self.generations.len() {
             self.generations.push(0);
@@ -95,14 +95,14 @@ impl Scene {
         } else {
             self.generations[index as usize]
         };
+        let id = Entity { index, gen };
 
         if (index as usize) >= self.entities.len() {
-            self.entities.push(Some(Entity::new(index, gen)));
+            self.entities.push(Some(id));
         } else {
-            self.entities[index as usize] = Some(Entity::new(index, gen));
+            self.entities[index as usize] = Some(id);
         }
 
-        let id = EntityId { index, gen };
         let empty_set = ComponentSet::new();
         let empty_arch = self
             .archetypes
@@ -126,7 +126,7 @@ impl Scene {
     }
 
     /// Gets an immutable reference to an entity by its ID.
-    pub fn get_entity(&self, entity_id: EntityId) -> Option<&Entity> {
+    pub fn get_entity(&self, entity_id: Entity) -> Option<&Entity> {
         if !self.is_alive(entity_id) {
             return None;
         }
@@ -136,7 +136,7 @@ impl Scene {
     }
 
     /// Gets a mutable reference to an entity by its ID.
-    pub fn get_entity_mut(&mut self, entity_id: EntityId) -> Option<&mut Entity> {
+    pub fn get_entity_mut(&mut self, entity_id: Entity) -> Option<&mut Entity> {
         if !self.is_alive(entity_id) {
             return None;
         }
@@ -146,7 +146,7 @@ impl Scene {
     }
 
     /// Deletes an entity by its ID.
-    pub fn delete_entity(&mut self, entity_id: EntityId) {
+    pub fn delete_entity(&mut self, entity_id: Entity) {
         if !self.is_alive(entity_id) {
             return;
         }
@@ -189,14 +189,14 @@ impl Scene {
         self.get_next_id();
     }
 
-    fn get_location(&self, entity_id: EntityId) -> Option<EntityLocation> {
+    fn get_location(&self, entity_id: Entity) -> Option<EntityLocation> {
         self.entity_locations
             .get(entity_id.index as usize)
             .and_then(|l| *l)
             .filter(|l| l.gen == entity_id.gen)
     }
 
-    fn set_location(&mut self, entity_id: EntityId, archetype: usize, row: usize) {
+    fn set_location(&mut self, entity_id: Entity, archetype: usize, row: usize) {
         let index = entity_id.index as usize;
         if index >= self.entity_locations.len() {
             self.entity_locations.resize(index + 1, None);
@@ -282,10 +282,6 @@ impl Scene {
         }
 
         if let Some(index) = self.component_index.remove(&type_id) {
-            for entity in self.entities.iter_mut().flatten() {
-                entity.remove_component(index);
-            }
-
             if let Some(slot) = self.component_registry.get_mut(index) {
                 *slot = None;
             }
@@ -313,7 +309,7 @@ impl Scene {
 
     /// Adds a component to an entity by its ID and an instance of the component.
     /// Overwrites the previous component if another component of the same type is added.
-    pub fn add_component<C: Component + 'static>(&mut self, entity_id: EntityId, component: C) {
+    pub fn add_component<C: Component + 'static>(&mut self, entity_id: Entity, component: C) {
         if !self.is_alive(entity_id) {
             error!(
                 "Attempted to add component {} to dead entity {}",
@@ -397,12 +393,6 @@ impl Scene {
         old_arch.pop_entity();
         self.set_location(entity_id, new_arch_id, new_row);
 
-        if let Some(component_index) = self.component_index.get(&type_id).copied() {
-            if let Some(entity) = self.get_entity_mut(entity_id) {
-                entity.add_component(component_index);
-            }
-        }
-
         info!(
             "Added component {} to entity {}!",
             C::type_name(),
@@ -410,7 +400,7 @@ impl Scene {
         );
     }
 
-    pub fn remove_component<C: Component + 'static>(&mut self, entity_id: EntityId) {
+    pub fn remove_component<C: Component + 'static>(&mut self, entity_id: Entity) {
         if !self.is_alive(entity_id) {
             return;
         }
@@ -466,12 +456,6 @@ impl Scene {
         old_arch.pop_entity();
         self.set_location(entity_id, new_arch_id, new_row);
 
-        if let Some(component_index) = self.component_index.get(&type_id).copied() {
-            if let Some(entity) = self.get_entity_mut(entity_id) {
-                entity.remove_component(component_index);
-            }
-        }
-
         info!(
             "Removed component {} from entity {}!",
             C::type_name(),
@@ -480,7 +464,7 @@ impl Scene {
     }
 
     /// Returns a reference to a component of an entity by its ID.
-    pub fn get_component<C: Component + 'static>(&self, entity_id: EntityId) -> Option<&C> {
+    pub fn get_component<C: Component + 'static>(&self, entity_id: Entity) -> Option<&C> {
         if !self.is_alive(entity_id) {
             return None;
         }
@@ -492,7 +476,7 @@ impl Scene {
 
     pub fn get_component_mut<C: Component + 'static>(
         &mut self,
-        entity_id: EntityId,
+        entity_id: Entity,
     ) -> Option<&mut C> {
         if !self.is_alive(entity_id) {
             return None;
@@ -503,13 +487,13 @@ impl Scene {
         arch.columns_mut().get_mut(col_idx)?.get_mut::<C>(loc.row)
     }
 
-    pub fn has<C: Component + 'static>(&self, entity_id: EntityId) -> bool {
+    pub fn has<C: Component + 'static>(&self, entity_id: Entity) -> bool {
         self.is_alive(entity_id)
             && self.get_component::<C>(entity_id).is_some()
     }
 
     /// Returns a list of entities that have the given components.
-    pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<EntityId> {
+    pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<Entity> {
         let mut indices = Vec::with_capacity(components.len());
         for type_id in components {
             let Some(index) = self.component_index.get(&type_id).copied() else {
@@ -602,7 +586,7 @@ impl Scene {
     }
 
     /// Spawns a prefab with the given name.
-    pub fn spawn_prefab(&mut self, name: &str) -> Option<EntityId> {
+    pub fn spawn_prefab(&mut self, name: &str) -> Option<Entity> {
         if self.prefabs.has_prefab(name) {
             if let Some(factory) = self.prefabs.prefabs.get(&name.to_string()) {
                 let factory = *factory;
@@ -628,17 +612,17 @@ impl Scene {
         &mut self.archetypes
     }
 
-    pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> EntityId {
+    pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> Entity {
         self.spawn_with_components(bundle.into_components())
     }
 
-    pub fn add_bundle<B: Bundle>(&mut self, entity: EntityId, bundle: B) {
+    pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
         self.add_with_components(entity, bundle.into_components());
     }
 
     pub fn add_with_components(
         &mut self,
-        entity_id: EntityId,
+        entity_id: Entity,
         mut components: Vec<ErasedComponent>,
     ) {
         if !self.is_alive(entity_id) || components.is_empty() {
@@ -727,15 +711,9 @@ impl Scene {
             self.set_location(entity_id, new_arch_id, new_row);
         }
 
-        let component_indices = component_set.to_vec();
-        if let Some(entity) = self.get_entity_mut(entity_id) {
-            for component_index in component_indices {
-                entity.add_component(component_index);
-            }
-        }
     }
 
-    pub fn spawn_with_components(&mut self, components: Vec<ErasedComponent>) -> EntityId {
+    pub fn spawn_with_components(&mut self, components: Vec<ErasedComponent>) -> Entity {
         let entity_id = self.new_entity();
         if components.is_empty() {
             return entity_id;

@@ -1,4 +1,4 @@
-use crate::EntityId;
+use crate::Entity;
 use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
 use std::any::TypeId;
@@ -17,7 +17,7 @@ pub struct Archetype {
     type_to_index: HashMap<TypeId, usize>,
     add_edges: HashMap<TypeId, usize>,
     remove_edges: HashMap<TypeId, usize>,
-    entities: Vec<EntityId>,
+    entities: Vec<Entity>,
     columns: Vec<Column>,
 }
 
@@ -51,7 +51,7 @@ impl Archetype {
         self.type_to_index.get(&type_id).copied()
     }
 
-    pub fn entities(&self) -> &[EntityId] {
+    pub fn entities(&self) -> &[Entity] {
         &self.entities
     }
 
@@ -71,7 +71,7 @@ impl Archetype {
         self.entities.is_empty()
     }
 
-    pub fn push_entity(&mut self, entity: EntityId) -> usize {
+    pub fn push_entity(&mut self, entity: Entity) -> usize {
         let row = self.entities.len();
         self.entities.push(entity);
         row

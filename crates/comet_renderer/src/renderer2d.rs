@@ -71,7 +71,7 @@ pub struct Renderer2D<'a> {
 pub struct RenderHandle2D {
     command_sender: flume::Sender<Renderer2DCommand>,
     event_receiver: flume::Receiver<Renderer2DEvent>,
-    cached_render_entities: Vec<comet_ecs::EntityId>,
+    cached_render_entities: Vec<comet_ecs::Entity>,
     last_size: Option<PhysicalSize<u32>>,
 }
 
@@ -157,7 +157,7 @@ impl RenderHandle2D {
         let mut dirty_sort = self.cached_render_entities.len() != unsorted_entities.len();
 
         if !dirty_sort {
-            let unsorted_set: HashSet<comet_ecs::EntityId> =
+            let unsorted_set: HashSet<comet_ecs::Entity> =
                 unsorted_entities.iter().copied().collect();
             dirty_sort = self
                 .cached_render_entities

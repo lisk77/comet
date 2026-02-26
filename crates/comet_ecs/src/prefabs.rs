@@ -37,7 +37,7 @@ impl ErasedComponent {
     }
 }
 
-pub type PrefabFactory = fn(&mut crate::Scene) -> crate::EntityId;
+pub type PrefabFactory = fn(&mut crate::Scene) -> crate::Entity;
 
 pub(crate) struct PrefabManager {
     pub(crate) prefabs: FlatMap<String, PrefabFactory>,
@@ -63,7 +63,7 @@ impl PrefabManager {
 macro_rules! register_prefab {
     ($scene:expr, $name:expr, $($component:expr),* $(,)?) => {
         {
-            fn prefab_factory(scene: &mut $crate::Scene) -> $crate::EntityId {
+            fn prefab_factory(scene: &mut $crate::Scene) -> $crate::Entity {
                 scene.spawn_with_components(vec![
                     $(
                         $crate::prefabs::ErasedComponent::new($component),

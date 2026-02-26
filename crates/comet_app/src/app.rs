@@ -1,6 +1,6 @@
 use comet_colors::{Color as ColorTrait, LinearRgba};
 use comet_ecs::{
-    Camera2D, Component, Entity, EntityId, Render2D, Scene, Text, Transform2D, Transform3D,
+    Camera2D, Component, Entity, Render2D, Scene, Text, Transform2D, Transform3D,
 };
 use comet_input::keyboard::Key;
 use comet_log::*;
@@ -197,7 +197,7 @@ impl App {
     }
 
     /// Spawns a new entity using a bundle of components.
-    pub fn spawn_bundle<B: comet_ecs::Bundle>(&mut self, bundle: B) -> EntityId {
+    pub fn spawn_bundle<B: comet_ecs::Bundle>(&mut self, bundle: B) -> Entity {
         self.scene.spawn_bundle(bundle)
     }
 
@@ -242,22 +242,22 @@ impl App {
     }
 
     /// Creates a new entity and returns its ID.
-    pub fn new_entity(&mut self) -> EntityId {
+    pub fn new_entity(&mut self) -> Entity {
         self.scene.new_entity()
     }
 
     /// Deletes an entity by its ID.
-    pub fn delete_entity(&mut self, entity_id: EntityId) {
+    pub fn delete_entity(&mut self, entity_id: Entity) {
         self.scene.delete_entity(entity_id)
     }
 
     /// Gets an immutable reference to an entity by its ID.
-    pub fn get_entity(&self, entity_id: EntityId) -> Option<&Entity> {
+    pub fn get_entity(&self, entity_id: Entity) -> Option<&Entity> {
         self.scene.get_entity(entity_id)
     }
 
     /// Gets a mutable reference to an entity by its ID.
-    pub fn get_entity_mut(&mut self, entity_id: EntityId) -> Option<&mut Entity> {
+    pub fn get_entity_mut(&mut self, entity_id: Entity) -> Option<&mut Entity> {
         self.scene.get_entity_mut(entity_id)
     }
 
@@ -273,29 +273,29 @@ impl App {
 
     /// Adds a component to an entity by its ID and an instance of the component.
     /// Overwrites the previous component if another component of the same type is added.
-    pub fn add_component<C: Component>(&mut self, entity_id: EntityId, component: C) {
+    pub fn add_component<C: Component>(&mut self, entity_id: Entity, component: C) {
         self.scene.add_component(entity_id, component)
     }
 
     /// Removes a component from an entity by its ID.
-    pub fn remove_component<C: Component>(&mut self, entity_id: EntityId) {
+    pub fn remove_component<C: Component>(&mut self, entity_id: Entity) {
         self.scene.remove_component::<C>(entity_id)
     }
 
     /// Returns a reference to a component of an entity by its ID.
-    pub fn get_component<C: Component>(&self, entity_id: EntityId) -> Option<&C> {
+    pub fn get_component<C: Component>(&self, entity_id: Entity) -> Option<&C> {
         self.scene.get_component::<C>(entity_id)
     }
 
     /// Returns a mutable reference to a component of an entity by its ID.
-    pub fn get_component_mut<C: Component>(&mut self, entity_id: EntityId) -> Option<&mut C> {
+    pub fn get_component_mut<C: Component>(&mut self, entity_id: Entity) -> Option<&mut C> {
         self.scene.get_component_mut::<C>(entity_id)
     }
 
     /// Returns a list of entities that have the given components.
     /// The amount of queriable components is limited to 3 such that the `Archetype` creation is more efficient.
     /// Otherwise it would be a factorial complexity chaos.
-    pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<EntityId> {
+    pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<Entity> {
         self.scene.get_entities_with(components)
     }
 
@@ -312,7 +312,7 @@ impl App {
     }
 
     /// Returns whether an entity has the given component.
-    pub fn has<C: Component>(&self, entity_id: EntityId) -> bool {
+    pub fn has<C: Component>(&self, entity_id: Entity) -> bool {
         self.scene.has::<C>(entity_id)
     }
 
@@ -322,7 +322,7 @@ impl App {
     }
 
     /// Spawns a prefab with the given name.
-    pub fn spawn_prefab(&mut self, name: &str) -> Option<EntityId> {
+    pub fn spawn_prefab(&mut self, name: &str) -> Option<Entity> {
         self.scene.spawn_prefab(name)
     }
 

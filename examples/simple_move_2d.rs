@@ -41,7 +41,7 @@ fn handle_input(app: &mut App, dt: f32) {
 
     if direction != v2::ZERO {
         let transform = app
-            .get_component_mut::<Transform2D>(EntityId { index: 1, gen: 0 })
+            .get_component_mut::<Transform2D>(Entity { index: 1, gen: 0 })
             .unwrap();
         update_position(direction, transform, dt);
     }

@@ -21,7 +21,7 @@ impl CameraManager {
     pub fn update_from_scene(
         &mut self,
         scene: &comet_ecs::Scene,
-        camera_entities: Vec<comet_ecs::EntityId>,
+        camera_entities: Vec<comet_ecs::Entity>,
     ) {
         self.cameras.clear();
 
