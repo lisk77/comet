@@ -1,5 +1,5 @@
 use crate::{
-    camera::{CameraManager, RenderCamera},
+    camera::RenderCamera,
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
     render_events::Renderer2DEvent,
@@ -12,8 +12,8 @@ use comet_math::{m4, v2, v3};
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
-use comet_ecs::{Component, Render, Render2D, Transform2D};
-use std::{collections::HashSet, sync::Arc};
+use comet_ecs::Render;
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -71,7 +71,6 @@ pub struct Renderer2D<'a> {
 pub struct RenderHandle2D {
     command_sender: flume::Sender<Renderer2DCommand>,
     event_receiver: flume::Receiver<Renderer2DEvent>,
-    cached_render_entities: Vec<comet_ecs::Entity>,
     last_size: Option<PhysicalSize<u32>>,
 }
 
@@ -140,118 +139,66 @@ impl RenderHandle2D {
     }
 
     pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
-        let cameras = scene.get_entities_with(vec![
-            comet_ecs::Transform2D::type_id(),
-            comet_ecs::Camera2D::type_id(),
-        ]);
-
-        if cameras.is_empty() {
+        let mut selected_camera: Option<([f32; 2], f32, f32, [f32; 2], u8)> = None;
+        for (transform, camera) in scene
+            .query::<(comet_ecs::Transform2D, comet_ecs::Camera2D)>()
+            .iter()
+        {
+            let should_replace = selected_camera
+                .as_ref()
+                .is_none_or(|(_, _, _, _, current_priority)| camera.priority() < *current_priority);
+            if should_replace {
+                selected_camera = Some((
+                    [transform.position().x(), transform.position().y()],
+                    transform.rotation().to_degrees(),
+                    camera.zoom(),
+                    [camera.dimensions().x(), camera.dimensions().y()],
+                    camera.priority(),
+                ));
+            }
+        }
+        let Some((camera_pos, camera_rot, camera_zoom, camera_dims, camera_priority)) = selected_camera else {
             return;
-        }
-
-        let unsorted_entities = scene.get_entities_with(vec![
-            comet_ecs::Transform2D::type_id(),
-            comet_ecs::Render2D::type_id(),
-        ]);
-
-        let mut dirty_sort = self.cached_render_entities.len() != unsorted_entities.len();
-
-        if !dirty_sort {
-            let unsorted_set: HashSet<comet_ecs::Entity> =
-                unsorted_entities.iter().copied().collect();
-            dirty_sort = self
-                .cached_render_entities
-                .iter()
-                .any(|e| !unsorted_set.contains(e));
-        }
-
-        if !dirty_sort {
-            dirty_sort = !self.cached_render_entities.windows(2).all(|w| {
-                let a = scene
-                    .get_component::<comet_ecs::Render2D>(w[0])
-                    .map(|r| r.draw_index());
-                let b = scene
-                    .get_component::<comet_ecs::Render2D>(w[1])
-                    .map(|r| r.draw_index());
-                matches!((a, b), (Some(da), Some(db)) if da <= db)
-            });
-        }
-
-        if dirty_sort {
-            let mut entities = unsorted_entities;
-            entities.sort_by(|&a, &b| {
-                let ra = scene.get_component::<comet_ecs::Render2D>(a).unwrap();
-                let rb = scene.get_component::<comet_ecs::Render2D>(b).unwrap();
-                ra.draw_index().cmp(&rb.draw_index())
-            });
-            self.cached_render_entities = entities;
-        }
+        };
 
         let mut draws = Vec::new();
-        for entity in &self.cached_render_entities {
-            if let (Some(transform), Some(render)) = (
-                scene.get_component::<comet_ecs::Transform2D>(*entity),
-                scene.get_component::<comet_ecs::Render2D>(*entity),
-            ) {
-                draws.push(Draw2D {
-                    position: [transform.position().x(), transform.position().y()],
-                    rotation_deg: transform.rotation().to_degrees(),
-                    scale: [1.0, 1.0],
-                    texture: render.get_texture(),
-                    draw_index: render.draw_index(),
-                    visible: render.is_visible(),
-                });
-            }
+        for (transform, render) in scene
+            .query::<(comet_ecs::Transform2D, comet_ecs::Render2D)>()
+            .iter()
+        {
+            draws.push(Draw2D {
+                position: [transform.position().x(), transform.position().y()],
+                rotation_deg: transform.rotation().to_degrees(),
+                scale: [1.0, 1.0],
+                texture: render.get_texture(),
+                draw_index: render.draw_index(),
+                visible: render.is_visible(),
+            });
         }
+        draws.sort_by_key(|draw| draw.draw_index);
 
         let mut texts = Vec::new();
-        let text_entities = scene.get_entities_with(vec![
-            comet_ecs::Transform2D::type_id(),
-            comet_ecs::Text::type_id(),
-        ]);
-
-        for entity in text_entities {
-            if let (Some(transform), Some(text)) = (
-                scene.get_component::<comet_ecs::Transform2D>(entity),
-                scene.get_component::<comet_ecs::Text>(entity),
-            ) {
-                if !text.is_visible() {
-                    continue;
-                }
-
-                let color = text.color().to_wgpu();
-                texts.push(Text2D {
-                    position: [transform.position().x(), transform.position().y()],
-                    content: text.content().to_string(),
-                    font: text.font(),
-                    size: text.font_size(),
-                    color: [color.r as f32, color.g as f32, color.b as f32, color.a as f32],
-                    visible: true,
-                });
+        for (transform, text) in scene.query::<(comet_ecs::Transform2D, comet_ecs::Text)>().iter() {
+            if !text.is_visible() {
+                continue;
             }
+            let color = text.color().to_wgpu();
+            texts.push(Text2D {
+                position: [transform.position().x(), transform.position().y()],
+                content: text.content().to_string(),
+                font: text.font(),
+                size: text.font_size(),
+                color: [color.r as f32, color.g as f32, color.b as f32, color.a as f32],
+                visible: true,
+            });
         }
 
-        let camera_entity = cameras
-            .into_iter()
-            .min_by_key(|entity| {
-                scene
-                    .get_component::<comet_ecs::Camera2D>(*entity)
-                    .map(|camera| camera.priority())
-                    .unwrap_or(u8::MAX)
-            })
-            .unwrap();
-        let camera_transform = scene
-            .get_component::<comet_ecs::Transform2D>(camera_entity)
-            .unwrap();
-        let camera = scene
-            .get_component::<comet_ecs::Camera2D>(camera_entity)
-            .unwrap();
         let camera_packet = CameraPacket2D {
-            position: [camera_transform.position().x(), camera_transform.position().y()],
-            rotation_deg: camera_transform.rotation().to_degrees(),
-            zoom: camera.zoom(),
-            dimensions: [camera.dimensions().x(), camera.dimensions().y()],
-            priority: camera.priority(),
+            position: camera_pos,
+            rotation_deg: camera_rot,
+            zoom: camera_zoom,
+            dimensions: camera_dims,
+            priority: camera_priority,
         };
 
         let _ = self
@@ -268,7 +215,6 @@ impl RendererHandle for RenderHandle2D {
         Self {
             command_sender: sender,
             event_receiver: receiver,
-            cached_render_entities: Vec::new(),
             last_size: None,
         }
     }

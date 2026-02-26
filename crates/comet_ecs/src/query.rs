@@ -97,6 +97,88 @@ pub struct QueryPairFiltered<'a, A: Component, B: Component> {
     filter: Option<Box<dyn Fn(&A, &B) -> bool + 'a>>,
 }
 
+pub trait QueryTuple<'a> {
+    type Builder;
+    fn build(scene: &'a Scene) -> Self::Builder;
+}
+
+pub trait QueryTupleMut<'a> {
+    type Builder;
+    fn build(scene: &'a mut Scene) -> Self::Builder;
+}
+
+impl<'a, C: Component> QueryTuple<'a> for (C,) {
+    type Builder = QueryBuilder<'a, C>;
+
+    fn build(scene: &'a Scene) -> Self::Builder {
+        QueryBuilder {
+            scene,
+            tags: Vec::new(),
+            filter: None,
+        }
+    }
+}
+
+impl<'a, A: Component, B: Component> QueryTuple<'a> for (A, B) {
+    type Builder = QueryPairBuilder<'a, A, B>;
+
+    fn build(scene: &'a Scene) -> Self::Builder {
+        QueryPairBuilder {
+            scene,
+            tags: Vec::new(),
+            filter: None,
+        }
+    }
+}
+
+impl<'a, C: Component> QueryTupleMut<'a> for (C,) {
+    type Builder = QueryMutBuilder<'a, C>;
+
+    fn build(scene: &'a mut Scene) -> Self::Builder {
+        QueryMutBuilder {
+            scene,
+            tags: Vec::new(),
+            filter: None,
+        }
+    }
+}
+
+impl<'a, A: Component, B: Component> QueryTupleMut<'a> for (A, B) {
+    type Builder = QueryPairMutBuilder<'a, A, B>;
+
+    fn build(scene: &'a mut Scene) -> Self::Builder {
+        QueryPairMutBuilder {
+            scene,
+            tags: Vec::new(),
+            filter: None,
+        }
+    }
+}
+
+impl<'a, C: Component> QueryTuple<'a> for C {
+    type Builder = QueryBuilder<'a, C>;
+
+    fn build(scene: &'a Scene) -> Self::Builder {
+        QueryBuilder {
+            scene,
+            tags: Vec::new(),
+            filter: None,
+        }
+    }
+}
+
+impl<'a, C: Component> QueryTupleMut<'a> for C {
+    type Builder = QueryMutBuilder<'a, C>;
+
+    fn build(scene: &'a mut Scene) -> Self::Builder {
+        QueryMutBuilder {
+            scene,
+            tags: Vec::new(),
+            filter: None,
+        }
+    }
+}
+
 impl Scene {
     pub fn query_iter<C: Component>(&self) -> Query<'_, C> {
         let mut accesses = Vec::new();
@@ -170,20 +252,11 @@ impl Scene {
         }
     }
 
-    pub fn query<C: Component>(&self) -> QueryBuilder<'_, C> {
-        QueryBuilder {
-            scene: self,
-            tags: Vec::new(),
-            filter: None,
-        }
-    }
-
-    pub fn query_pair<A: Component, B: Component>(&self) -> QueryPairBuilder<'_, A, B> {
-        QueryPairBuilder {
-            scene: self,
-            tags: Vec::new(),
-            filter: None,
-        }
+    pub fn query<'a, Q>(&'a self) -> <Q as QueryTuple<'a>>::Builder
+    where
+        Q: QueryTuple<'a>,
+    {
+        Q::build(self)
     }
 
     pub fn query_pair_mut_iter<A: Component, B: Component>(&mut self) -> QueryPairMut<'_, A, B> {
@@ -220,20 +293,11 @@ impl Scene {
         }
     }
 
-    pub fn query_mut<C: Component>(&mut self) -> QueryMutBuilder<'_, C> {
-        QueryMutBuilder {
-            scene: self,
-            tags: Vec::new(),
-            filter: None,
-        }
-    }
-
-    pub fn query_pair_mut<A: Component, B: Component>(&mut self) -> QueryPairMutBuilder<'_, A, B> {
-        QueryPairMutBuilder {
-            scene: self,
-            tags: Vec::new(),
-            filter: None,
-        }
+    pub fn query_mut<'a, Q>(&'a mut self) -> <Q as QueryTupleMut<'a>>::Builder
+    where
+        Q: QueryTupleMut<'a>,
+    {
+        Q::build(self)
     }
 }
 

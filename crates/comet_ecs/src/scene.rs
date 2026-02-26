@@ -9,6 +9,30 @@ use std::alloc::Layout;
 use std::collections::HashMap;
 use std::ptr;
 
+pub trait ComponentTuple {
+    fn type_ids() -> Vec<TypeId>;
+}
+
+impl ComponentTuple for () {
+    fn type_ids() -> Vec<TypeId> {
+        Vec::new()
+    }
+}
+
+macro_rules! impl_component_tuple {
+    ($($name:ident),+ $(,)?) => {
+        impl<$($name: Component),+> ComponentTuple for ($($name,)+) {
+            fn type_ids() -> Vec<TypeId> {
+                vec![$($name::type_id()),+]
+            }
+        }
+    };
+}
+
+impl_component_tuple!(A);
+impl_component_tuple!(A, B);
+impl_component_tuple!(A, B, C);
+
 #[derive(Clone, Copy, Debug)]
 struct EntityLocation {
     archetype: usize,
@@ -492,16 +516,18 @@ impl Scene {
             && self.get_component::<C>(entity_id).is_some()
     }
 
-    /// Returns a list of entities that have the given components.
-    pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<Entity> {
+    fn component_indices_from_type_ids(&self, components: &[TypeId]) -> Option<Vec<usize>> {
         let mut indices = Vec::with_capacity(components.len());
         for type_id in components {
-            let Some(index) = self.component_index.get(&type_id).copied() else {
-                return Vec::new();
-            };
+            let index = self.component_index.get(type_id).copied()?;
             indices.push(index);
         }
-        let component_set = ComponentSet::from_indices(indices);
+        Some(indices)
+    }
+
+    /// Returns a list of entities that have the given component indices.
+    fn get_entities_with_indices(&self, components: &[usize]) -> Vec<Entity> {
+        let component_set = ComponentSet::from_indices(components.to_vec());
         let mut result = Vec::new();
 
         for arch in self.archetypes.iter() {
@@ -517,12 +543,25 @@ impl Scene {
         result
     }
 
-    /// Deletes all entities that have the given components.
-    pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
-        let entities = self.get_entities_with(components);
+    /// Deletes all entities that have the given component indices.
+    fn delete_entities_with_indices(&mut self, components: &[usize]) {
+        let entities = self.get_entities_with_indices(components);
         for entity in entities {
             self.delete_entity(entity);
         }
+    }
+
+    /// Deletes all entities that have the given components.
+    pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
+        let Some(indices) = self.component_indices_from_type_ids(&components) else {
+            return;
+        };
+        self.delete_entities_with_indices(&indices);
+    }
+
+    /// Deletes all entities that have the component tuple.
+    pub fn delete_entities_with_types<Cs: ComponentTuple>(&mut self) {
+        self.delete_entities_with(Cs::type_ids());
     }
 
     /// Iterates over all entities that have the two given components and calls the given function.

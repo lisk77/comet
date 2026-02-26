@@ -1,6 +1,6 @@
 use comet_colors::{Color as ColorTrait, LinearRgba};
 use comet_ecs::{
-    Camera2D, Component, Entity, Render2D, Scene, Text, Transform2D, Transform3D,
+    Camera2D, Component, ComponentTuple, Entity, Render2D, Scene, Text, Transform2D, Transform3D,
 };
 use comet_input::keyboard::Key;
 use comet_log::*;
@@ -201,24 +201,18 @@ impl App {
         self.scene.spawn_bundle(bundle)
     }
 
-    pub fn query<C: comet_ecs::Component>(&self) -> comet_ecs::QueryBuilder<'_, C> {
-        self.scene.query::<C>()
+    pub fn query<'a, Q>(&'a self) -> <Q as comet_ecs::QueryTuple<'a>>::Builder
+    where
+        Q: comet_ecs::QueryTuple<'a>,
+    {
+        self.scene.query::<Q>()
     }
 
-    pub fn query_mut<C: comet_ecs::Component>(&mut self) -> comet_ecs::QueryMutBuilder<'_, C> {
-        self.scene.query_mut::<C>()
-    }
-
-    pub fn query_pair<A: comet_ecs::Component, B: comet_ecs::Component>(
-        &self,
-    ) -> comet_ecs::QueryPairBuilder<'_, A, B> {
-        self.scene.query_pair::<A, B>()
-    }
-
-    pub fn query_pair_mut<A: comet_ecs::Component, B: comet_ecs::Component>(
-        &mut self,
-    ) -> comet_ecs::QueryPairMutBuilder<'_, A, B> {
-        self.scene.query_pair_mut::<A, B>()
+    pub fn query_mut<'a, Q>(&'a mut self) -> <Q as comet_ecs::QueryTupleMut<'a>>::Builder
+    where
+        Q: comet_ecs::QueryTupleMut<'a>,
+    {
+        self.scene.query_mut::<Q>()
     }
 
     /// Retrieves a reference to the `InputManager`.
@@ -292,18 +286,16 @@ impl App {
         self.scene.get_component_mut::<C>(entity_id)
     }
 
-    /// Returns a list of entities that have the given components.
-    /// The amount of queriable components is limited to 3 such that the `Archetype` creation is more efficient.
-    /// Otherwise it would be a factorial complexity chaos.
-    pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<Entity> {
-        self.scene.get_entities_with(components)
-    }
-
     /// Deletes all entities that have the given components.
     /// The amount of queriable components is limited to 3 such that the `Archetype` creation is more efficient.
     /// Otherwise it would be a factorial complexity chaos.
     pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
         self.scene.delete_entities_with(components)
+    }
+
+    /// Deletes all entities that have the component tuple.
+    pub fn delete_entities_with_types<Cs: ComponentTuple>(&mut self) {
+        self.scene.delete_entities_with_types::<Cs>()
     }
 
     /// Iterates over all entities that have the two given components and calls the given function.
