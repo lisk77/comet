@@ -5,8 +5,8 @@
 // They are intended to work with the base suite of systems provided by the engine.
 use crate::math::{v2, v3};
 use crate::{Entity, Scene};
-use comet_log::*;
 use comet_colors::Color as ColorTrait;
+use comet_log::*;
 use comet_math::m4;
 use component_derive::Component;
 
@@ -179,10 +179,6 @@ impl Position2D {
 }
 
 impl Rotation2D {
-    pub fn new(angle: f32) -> Self {
-        Self { theta: angle }
-    }
-
     pub fn angle(&self) -> f32 {
         self.theta
     }
@@ -338,12 +334,30 @@ impl Render for Render2D {
 }
 
 impl Transform2D {
+    pub fn with_position(position: Position2D) -> Self {
+        Self {
+            position,
+            rotation: Rotation2D::new(),
+        }
+    }
+
+    pub fn with_rotation(rotation: Rotation2D) -> Self {
+        Self {
+            position: Position2D::new(),
+            rotation,
+        }
+    }
+
     pub fn position(&self) -> &Position2D {
         &self.position
     }
 
     pub fn position_mut(&mut self) -> &mut Position2D {
         &mut self.position
+    }
+
+    pub fn set_position(&mut self, position: Position2D) {
+        self.position = position;
     }
 
     pub fn rotation(&self) -> &Rotation2D {
@@ -371,6 +385,20 @@ impl Transform2D {
 }
 
 impl Transform3D {
+    pub fn with_position(position: Position3D) -> Self {
+        Self {
+            position,
+            rotation: Rotation3D::new(),
+        }
+    }
+
+    pub fn with_rotation(rotation: Rotation3D) -> Self {
+        Self {
+            position: Position3D::new(),
+            rotation,
+        }
+    }
+
     pub fn position(&self) -> &Position3D {
         &self.position
     }
