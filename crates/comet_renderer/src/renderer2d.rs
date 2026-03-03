@@ -13,7 +13,7 @@ use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
 use comet_ecs::Render;
-use std::sync::Arc;
+use std::{sync::Arc, time::{Duration, Instant}};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -67,7 +67,6 @@ pub struct Renderer2D<'a> {
     event_sender: flume::Sender<Renderer2DEvent>
 }
 
-#[derive(Debug)]
 pub struct RenderHandle2D {
     command_sender: flume::Sender<Renderer2DCommand>,
     event_receiver: flume::Receiver<Renderer2DEvent>,
@@ -89,27 +88,29 @@ impl RenderHandle2D {
 
     pub fn size(&mut self) -> PhysicalSize<u32> {
         let _ = self.command_sender.send(Renderer2DCommand::Size);
-        self.poll_events();
-        self.event_receiver
-            .try_recv()
-            .ok()
-            .and_then(|e| match e {
-                Renderer2DEvent::Size(size) => Some(size),
-                _ => None,
-            })
+        self.recv_matching_event(Duration::from_millis(25), |event| {
+            matches!(event, Renderer2DEvent::Size(_))
+        })
+        .and_then(|e| match e {
+            Renderer2DEvent::Size(size) => Some(size),
+            _ => None,
+        })
+        .map(|size| {
+            self.last_size = Some(size);
+            size
+        })
             .unwrap_or_else(|| self.last_size.unwrap_or(PhysicalSize::new(0, 0)))
     }
 
     pub fn scale_factor(&mut self) -> f64 {
         let _ = self.command_sender.send(Renderer2DCommand::ScaleFactor);
-        self.poll_events();
-        self.event_receiver
-            .try_recv()
-            .ok()
-            .and_then(|e| match e {
-                Renderer2DEvent::ScaleFactor(factor) => Some(factor),
-                _ => None,
-            })
+        self.recv_matching_event(Duration::from_millis(25), |event| {
+            matches!(event, Renderer2DEvent::ScaleFactor(_))
+        })
+        .and_then(|e| match e {
+            Renderer2DEvent::ScaleFactor(factor) => Some(factor),
+            _ => None,
+        })
             .unwrap_or(1.0)
     }
 
@@ -119,14 +120,13 @@ impl RenderHandle2D {
             font_path: font_path.to_string(),
             font_size,
         });
-        self.poll_events();
-        self.event_receiver
-            .try_recv()
-            .ok()
-            .and_then(|e| match e {
-                Renderer2DEvent::PrecomputedTextBounds { width, height } => Some(v2::new(width, height)),
-                _ => None,
-            })
+        self.recv_matching_event(Duration::from_secs(5), |event| {
+            matches!(event, Renderer2DEvent::PrecomputedTextBounds { .. })
+        })
+        .and_then(|e| match e {
+            Renderer2DEvent::PrecomputedTextBounds { width, height } => Some(v2::new(width, height)),
+            _ => None,
+        })
             .unwrap_or(v2::ZERO)
     }
 
@@ -134,6 +134,37 @@ impl RenderHandle2D {
         while let Ok(event) = self.event_receiver.try_recv() {
             if let Renderer2DEvent::Size(size) = event {
                 self.last_size = Some(size);
+            }
+        }
+    }
+
+    fn recv_matching_event<F>(
+        &mut self,
+        timeout: Duration,
+        predicate: F,
+    ) -> Option<Renderer2DEvent>
+    where
+        F: Fn(&Renderer2DEvent) -> bool,
+    {
+        let deadline = Instant::now() + timeout;
+
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return None;
+            }
+
+            match self.event_receiver.recv_timeout(remaining) {
+                Ok(event) => {
+                    if let Renderer2DEvent::Size(size) = event {
+                        self.last_size = Some(size);
+                    }
+                    if predicate(&event) {
+                        return Some(event);
+                    }
+                }
+                Err(flume::RecvTimeoutError::Timeout) => return None,
+                Err(flume::RecvTimeoutError::Disconnected) => return None,
             }
         }
     }
@@ -823,8 +854,8 @@ impl<'a> Renderer2D<'a> {
             total_height_px += font_data.line_height();
         }
 
-        bounds.set_x((max_line_width_px / config.width as f32) * scale_factor);
-        bounds.set_y((total_height_px / config.height as f32) * scale_factor);
+        bounds.set_x(max_line_width_px * scale_factor);
+        bounds.set_y(total_height_px * scale_factor);
 
         let mut x_offset = 0.0;
         let mut y_offset = 0.0;
