@@ -266,6 +266,14 @@ impl Scene {
         normalized
     }
 
+    fn take_last_component_of_type(
+        components: &mut Vec<ErasedComponent>,
+        type_id: TypeId,
+    ) -> Option<ErasedComponent> {
+        let idx = components.iter().rposition(|component| component.type_id == type_id)?;
+        Some(components.swap_remove(idx))
+    }
+
     pub(crate) fn cached_single_plan(
         &self,
         component: TypeId,
@@ -472,25 +480,25 @@ impl Scene {
 
         let (old_arch, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
         let new_row = new_arch.push_entity(entity_id);
-        let new_types = new_arch.types().to_vec();
-        let old_types = old_arch.types().to_vec();
 
         if let Some(new_idx) = new_arch.column_index(type_id) {
             new_arch.columns_mut()[new_idx].push::<C>(component);
         }
 
-        for (new_idx, t) in new_types.iter().enumerate() {
-            if *t == type_id {
+        for new_idx in 0..new_arch.types().len() {
+            let t = new_arch.types()[new_idx];
+            if t == type_id {
                 continue;
             }
-            if let Some(old_idx) = old_arch.column_index(*t) {
+            if let Some(old_idx) = old_arch.column_index(t) {
                 let _ = old_arch.columns_mut()[old_idx]
                     .move_last_to(&mut new_arch.columns_mut()[new_idx]);
             }
         }
 
-        for (old_idx, t) in old_types.iter().enumerate() {
-            if new_arch.column_index(*t).is_none() {
+        for old_idx in 0..old_arch.types().len() {
+            let t = old_arch.types()[old_idx];
+            if new_arch.column_index(t).is_none() {
                 let _ = old_arch.columns_mut()[old_idx].drop_last();
             }
         }
@@ -544,18 +552,18 @@ impl Scene {
 
         let (old_arch, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
         let new_row = new_arch.push_entity(entity_id);
-        let new_types = new_arch.types().to_vec();
-        let old_types = old_arch.types().to_vec();
 
-        for (new_idx, t) in new_types.iter().enumerate() {
-            if let Some(old_idx) = old_arch.column_index(*t) {
+        for new_idx in 0..new_arch.types().len() {
+            let t = new_arch.types()[new_idx];
+            if let Some(old_idx) = old_arch.column_index(t) {
                 let _ = old_arch.columns_mut()[old_idx]
                     .move_last_to(&mut new_arch.columns_mut()[new_idx]);
             }
         }
 
-        for (old_idx, t) in old_types.iter().enumerate() {
-            if new_arch.column_index(*t).is_none() {
+        for old_idx in 0..old_arch.types().len() {
+            let t = old_arch.types()[old_idx];
+            if new_arch.column_index(t).is_none() {
                 let _ = old_arch.columns_mut()[old_idx].drop_last();
             }
         }
@@ -769,7 +777,7 @@ impl Scene {
                 .unwrap_or_else(|| panic!("Component {:?} missing index", component.type_id));
             component_set.insert(index);
         }
-        let new_arch_id = self.ensure_archetype(component_set.clone());
+        let new_arch_id = self.ensure_archetype(component_set);
         let old_len = self.archetypes.get(old_arch_id).len();
         if old_len == 0 {
             return;
@@ -795,19 +803,12 @@ impl Scene {
             let (old_arch, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
             let new_row = new_arch.push_entity(entity_id);
 
-            let mut map = HashMap::with_capacity(components.len());
-            for component in components.drain(..) {
-                map.insert(component.type_id, component);
-            }
-
-            let new_types = new_arch.types().to_vec();
-            let old_types = old_arch.types().to_vec();
-
-            for (new_idx, t) in new_types.iter().enumerate() {
-                if let Some(old_idx) = old_arch.column_index(*t) {
+            for new_idx in 0..new_arch.types().len() {
+                let t = new_arch.types()[new_idx];
+                if let Some(old_idx) = old_arch.column_index(t) {
                     let _ = old_arch.columns_mut()[old_idx]
                         .move_last_to(&mut new_arch.columns_mut()[new_idx]);
-                    if let Some(component) = map.remove(t) {
+                    if let Some(component) = Self::take_last_component_of_type(&mut components, t) {
                         (component.set_fn)(
                             component.value,
                             &mut new_arch.columns_mut()[new_idx],
@@ -817,14 +818,14 @@ impl Scene {
                     continue;
                 }
 
-                let component = map
-                    .remove(t)
+                let component = Self::take_last_component_of_type(&mut components, t)
                     .unwrap_or_else(|| panic!("Bundle missing component {:?}", t));
                 (component.push_fn)(component.value, &mut new_arch.columns_mut()[new_idx]);
             }
 
-            for (old_idx, t) in old_types.iter().enumerate() {
-                if new_arch.column_index(*t).is_none() {
+            for old_idx in 0..old_arch.types().len() {
+                let t = old_arch.types()[old_idx];
+                if new_arch.column_index(t).is_none() {
                     let _ = old_arch.columns_mut()[old_idx].drop_last();
                 }
             }
