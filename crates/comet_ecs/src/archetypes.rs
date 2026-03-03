@@ -137,6 +137,10 @@ impl Archetypes {
         self.archetypes.iter_mut()
     }
 
+    pub fn len(&self) -> usize {
+        self.archetypes.len()
+    }
+
     pub fn get_two_mut(&mut self, a: usize, b: usize) -> (&mut Archetype, &mut Archetype) {
         assert!(a != b, "cannot mutably borrow the same archetype twice");
         if a < b {

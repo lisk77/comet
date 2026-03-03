@@ -17,5 +17,6 @@ mod entity;
 mod id;
 pub mod prefabs;
 mod query;
+mod query_plan_cache;
 mod scene;
 mod sparse_set;

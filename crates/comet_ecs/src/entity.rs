@@ -17,3 +17,10 @@ impl Entity {
         *self
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EntityLocation {
+    pub(crate) archetype: usize,
+    pub(crate) row: usize,
+    pub(crate) gen: u32,
+}

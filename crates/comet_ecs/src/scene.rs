@@ -1,11 +1,13 @@
 use crate::archetypes::{Archetypes, ComponentInfo};
 use crate::bundles::Bundle;
 use crate::prefabs::{ErasedComponent, PrefabManager};
-use crate::{Component, Entity, IdQueue};
+use crate::query_plan_cache::QueryPlanCache;
+use crate::{Component, Entity, IdQueue, EntityLocation};
 use comet_log::*;
 use comet_structs::ComponentSet;
 use std::any::TypeId;
 use std::alloc::Layout;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ptr;
 
@@ -33,13 +35,6 @@ impl_component_tuple!(A);
 impl_component_tuple!(A, B);
 impl_component_tuple!(A, B, C);
 
-#[derive(Clone, Copy, Debug)]
-struct EntityLocation {
-    archetype: usize,
-    row: usize,
-    gen: u32,
-}
-
 pub struct Scene {
     id_queue: IdQueue,
     next_id: u32,
@@ -50,6 +45,8 @@ pub struct Scene {
     component_info: HashMap<TypeId, ComponentInfo>,
     entity_locations: Vec<Option<EntityLocation>>,
     archetypes: Archetypes,
+    archetype_version: usize,
+    query_plan_cache: RefCell<QueryPlanCache>,
     prefabs: PrefabManager,
 }
 
@@ -65,6 +62,8 @@ impl Scene {
             component_info: HashMap::new(),
             entity_locations: Vec::new(),
             archetypes: Archetypes::new(),
+            archetype_version: 0,
+            query_plan_cache: RefCell::new(QueryPlanCache::default()),
             prefabs: PrefabManager::new(),
         };
         let empty_set = ComponentSet::new();
@@ -241,11 +240,91 @@ impl Scene {
     }
 
     fn ensure_archetype(&mut self, set: ComponentSet) -> usize {
-        self.archetypes.get_or_create(
+        let before = self.archetypes.len();
+        let id = self.archetypes.get_or_create(
             set,
             &self.component_info,
             &self.component_registry,
-        )
+        );
+        self.bump_archetype_version_if_changed(before);
+        id
+    }
+
+    fn bump_archetype_version_if_changed(&mut self, before: usize) {
+        if self.archetypes.len() != before {
+            self.archetype_version = self.archetype_version.wrapping_add(1);
+        }
+    }
+
+    fn normalized_tags(tags: &[TypeId]) -> Vec<TypeId> {
+        let mut normalized = Vec::with_capacity(tags.len());
+        for tag in tags {
+            if !normalized.contains(tag) {
+                normalized.push(*tag);
+            }
+        }
+        normalized
+    }
+
+    pub(crate) fn cached_single_plan(
+        &self,
+        component: TypeId,
+        tags: &[TypeId],
+    ) -> Vec<(usize, usize)> {
+        let normalized_tags = Self::normalized_tags(tags);
+
+        {
+            let mut cache = self.query_plan_cache.borrow_mut();
+            cache.sync_version(self.archetype_version);
+            if let Some(matches) = cache.get_single_cloned(component, &normalized_tags) {
+                return matches;
+            }
+        }
+
+        let mut matches = Vec::new();
+        for (arch_id, arch) in self.archetypes.iter().enumerate() {
+            if let Some(col_idx) = arch.column_index(component) {
+                if normalized_tags.iter().all(|t| arch.column_index(*t).is_some()) {
+                    matches.push((arch_id, col_idx));
+                }
+            }
+        }
+
+        let mut cache = self.query_plan_cache.borrow_mut();
+        cache.sync_version(self.archetype_version);
+        cache.insert_single(component, &normalized_tags, matches.clone());
+        matches
+    }
+
+    pub(crate) fn cached_pair_plan(
+        &self,
+        a: TypeId,
+        b: TypeId,
+        tags: &[TypeId],
+    ) -> Vec<(usize, usize, usize)> {
+        let normalized_tags = Self::normalized_tags(tags);
+
+        {
+            let mut cache = self.query_plan_cache.borrow_mut();
+            cache.sync_version(self.archetype_version);
+            if let Some(matches) = cache.get_pair_cloned(a, b, &normalized_tags) {
+                return matches;
+            }
+        }
+
+        let mut matches = Vec::new();
+        for (arch_id, arch) in self.archetypes.iter().enumerate() {
+            if let (Some(a_idx), Some(b_idx)) = (arch.column_index(a), arch.column_index(b)) {
+                if normalized_tags.iter().all(|t| arch.column_index(*t).is_some()) {
+                    matches.push((arch_id, a_idx, b_idx));
+                }
+            }
+        }
+
+        let mut cache = self.query_plan_cache.borrow_mut();
+        cache.sync_version(self.archetype_version);
+        cache.insert_pair(a, b, &normalized_tags, matches.clone());
+        matches
     }
 
     fn has_live_component_instances(&self, type_id: TypeId) -> bool {
@@ -367,6 +446,7 @@ impl Scene {
             return;
         }
 
+        let before = self.archetypes.len();
         let new_arch_id = self.archetypes.get_or_create_add_edge(
             old_arch_id,
             type_id,
@@ -374,6 +454,7 @@ impl Scene {
             &self.component_index,
             &self.component_registry,
         );
+        self.bump_archetype_version_if_changed(before);
 
         let old_len = self.archetypes.get(old_arch_id).len();
         if old_len == 0 {
@@ -438,6 +519,7 @@ impl Scene {
             return;
         }
 
+        let before = self.archetypes.len();
         let new_arch_id = self.archetypes.get_or_create_remove_edge(
             old_arch_id,
             type_id,
@@ -445,6 +527,7 @@ impl Scene {
             &self.component_index,
             &self.component_registry,
         );
+        self.bump_archetype_version_if_changed(before);
         let old_len = self.archetypes.get(old_arch_id).len();
         if old_len == 0 {
             return;

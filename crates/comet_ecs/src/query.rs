@@ -181,15 +181,14 @@ impl<'a, C: Component> QueryTupleMut<'a> for C {
 impl Scene {
     pub fn query_iter<C: Component>(&self) -> Query<'_, C> {
         let mut accesses = Vec::new();
-        for arch in self.archetypes().iter() {
-            if let Some(col_idx) = arch.column_index(C::type_id()) {
-                let col = &arch.columns()[col_idx] as *const _;
-                accesses.push(QueryAccess {
-                    col,
-                    len: arch.len(),
-                    row: 0,
-                });
-            }
+        for (arch_id, col_idx) in self.cached_single_plan(C::type_id(), &[]) {
+            let arch = self.archetypes().get(arch_id);
+            let col = &arch.columns()[col_idx] as *const _;
+            accesses.push(QueryAccess {
+                col,
+                len: arch.len(),
+                row: 0,
+            });
         }
         Query {
             accesses,
@@ -200,15 +199,11 @@ impl Scene {
 
     pub fn query_mut_iter<C: Component>(&mut self) -> QueryMut<'_, C> {
         let mut accesses = Vec::new();
-        for arch in self.archetypes_mut().iter_mut() {
-            if let Some(col_idx) = arch.column_index(C::type_id()) {
-                let col = &mut arch.columns_mut()[col_idx] as *mut _;
-                accesses.push(QueryMutAccess {
-                    col,
-                    len: arch.len(),
-                    row: 0,
-                });
-            }
+        for (arch_id, col_idx) in self.cached_single_plan(C::type_id(), &[]) {
+            let arch = self.archetypes_mut().get_mut(arch_id);
+            let len = arch.len();
+            let col = &mut arch.columns_mut()[col_idx] as *mut _;
+            accesses.push(QueryMutAccess { col, len, row: 0 });
         }
         QueryMut {
             accesses,
@@ -228,21 +223,17 @@ impl Scene {
         }
 
         let mut accesses = Vec::new();
-        for arch in self.archetypes().iter() {
-            if let (Some(a_idx), Some(b_idx)) = (
-                arch.column_index(A::type_id()),
-                arch.column_index(B::type_id()),
-            ) {
-                let cols = arch.columns();
-                let a_col = &cols[a_idx] as *const _;
-                let b_col = &cols[b_idx] as *const _;
-                accesses.push(QueryPairAccess {
-                    a_col,
-                    b_col,
-                    len: arch.len(),
-                    row: 0,
-                });
-            }
+        for (arch_id, a_idx, b_idx) in self.cached_pair_plan(A::type_id(), B::type_id(), &[]) {
+            let arch = self.archetypes().get(arch_id);
+            let cols = arch.columns();
+            let a_col = &cols[a_idx] as *const _;
+            let b_col = &cols[b_idx] as *const _;
+            accesses.push(QueryPairAccess {
+                a_col,
+                b_col,
+                len: arch.len(),
+                row: 0,
+            });
         }
         QueryPair {
             accesses,
@@ -269,21 +260,18 @@ impl Scene {
         }
 
         let mut accesses = Vec::new();
-        for arch in self.archetypes_mut().iter_mut() {
-            if let (Some(a_idx), Some(b_idx)) = (
-                arch.column_index(A::type_id()),
-                arch.column_index(B::type_id()),
-            ) {
-                let cols = arch.columns_mut();
-                let a_col = &mut cols[a_idx] as *mut _;
-                let b_col = &mut cols[b_idx] as *mut _;
-                accesses.push(QueryPairMutAccess {
-                    a_col,
-                    b_col,
-                    len: arch.len(),
-                    row: 0,
-                });
-            }
+        for (arch_id, a_idx, b_idx) in self.cached_pair_plan(A::type_id(), B::type_id(), &[]) {
+            let arch = self.archetypes_mut().get_mut(arch_id);
+            let len = arch.len();
+            let cols = arch.columns_mut();
+            let a_col = &mut cols[a_idx] as *mut _;
+            let b_col = &mut cols[b_idx] as *mut _;
+            accesses.push(QueryPairMutAccess {
+                a_col,
+                b_col,
+                len,
+                row: 0,
+            });
         }
         QueryPairMut {
             accesses,
@@ -402,17 +390,14 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
 
     pub fn iter(self) -> QueryFiltered<'a, C> {
         let mut accesses = Vec::new();
-        for arch in self.scene.archetypes().iter() {
-            if let Some(col_idx) = arch.column_index(C::type_id()) {
-                if self.tags.iter().all(|t| arch.column_index(*t).is_some()) {
-                    let col = &arch.columns()[col_idx] as *const _;
-                    accesses.push(QueryAccess {
-                        col,
-                        len: arch.len(),
-                        row: 0,
-                    });
-                }
-            }
+        for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
+            let arch = self.scene.archetypes().get(arch_id);
+            let col = &arch.columns()[col_idx] as *const _;
+            accesses.push(QueryAccess {
+                col,
+                len: arch.len(),
+                row: 0,
+            });
         }
         QueryFiltered {
             inner: Query {
@@ -452,23 +437,20 @@ impl<'a, A: Component, B: Component> QueryPairBuilder<'a, A, B> {
 
     pub fn iter(self) -> QueryPairFiltered<'a, A, B> {
         let mut accesses = Vec::new();
-        for arch in self.scene.archetypes().iter() {
-            if let (Some(a_idx), Some(b_idx)) = (
-                arch.column_index(A::type_id()),
-                arch.column_index(B::type_id()),
-            ) {
-                if self.tags.iter().all(|t| arch.column_index(*t).is_some()) {
-                    let cols = arch.columns();
-                    let a_col = &cols[a_idx] as *const _;
-                    let b_col = &cols[b_idx] as *const _;
-                    accesses.push(QueryPairAccess {
-                        a_col,
-                        b_col,
-                        len: arch.len(),
-                        row: 0,
-                    });
-                }
-            }
+        for (arch_id, a_idx, b_idx) in self
+            .scene
+            .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
+        {
+            let arch = self.scene.archetypes().get(arch_id);
+            let cols = arch.columns();
+            let a_col = &cols[a_idx] as *const _;
+            let b_col = &cols[b_idx] as *const _;
+            accesses.push(QueryPairAccess {
+                a_col,
+                b_col,
+                len: arch.len(),
+                row: 0,
+            });
         }
         QueryPairFiltered {
             inner: QueryPair {
@@ -542,17 +524,11 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
 
     pub fn iter(self) -> QueryMutFiltered<'a, C> {
         let mut accesses = Vec::new();
-        for arch in self.scene.archetypes_mut().iter_mut() {
-            if let Some(col_idx) = arch.column_index(C::type_id()) {
-                if self.tags.iter().all(|t| arch.column_index(*t).is_some()) {
-                    let col = &mut arch.columns_mut()[col_idx] as *mut _;
-                    accesses.push(QueryMutAccess {
-                        col,
-                        len: arch.len(),
-                        row: 0,
-                    });
-                }
-            }
+        for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
+            let arch = self.scene.archetypes_mut().get_mut(arch_id);
+            let len = arch.len();
+            let col = &mut arch.columns_mut()[col_idx] as *mut _;
+            accesses.push(QueryMutAccess { col, len, row: 0 });
         }
         QueryMutFiltered {
             inner: QueryMut {
@@ -592,23 +568,21 @@ impl<'a, A: Component, B: Component> QueryPairMutBuilder<'a, A, B> {
 
     pub fn iter(self) -> QueryPairMutFiltered<'a, A, B> {
         let mut accesses = Vec::new();
-        for arch in self.scene.archetypes_mut().iter_mut() {
-            if let (Some(a_idx), Some(b_idx)) = (
-                arch.column_index(A::type_id()),
-                arch.column_index(B::type_id()),
-            ) {
-                if self.tags.iter().all(|t| arch.column_index(*t).is_some()) {
-                    let cols = arch.columns_mut();
-                    let a_col = &mut cols[a_idx] as *mut _;
-                    let b_col = &mut cols[b_idx] as *mut _;
-                    accesses.push(QueryPairMutAccess {
-                        a_col,
-                        b_col,
-                        len: arch.len(),
-                        row: 0,
-                    });
-                }
-            }
+        for (arch_id, a_idx, b_idx) in self
+            .scene
+            .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
+        {
+            let arch = self.scene.archetypes_mut().get_mut(arch_id);
+            let len = arch.len();
+            let cols = arch.columns_mut();
+            let a_col = &mut cols[a_idx] as *mut _;
+            let b_col = &mut cols[b_idx] as *mut _;
+            accesses.push(QueryPairMutAccess {
+                a_col,
+                b_col,
+                len,
+                row: 0,
+            });
         }
         QueryPairMutFiltered {
             inner: QueryPairMut {
