@@ -2,6 +2,7 @@
 pub struct SparseSet<T> {
     sparse: Vec<Option<Vec<Option<usize>>>>,
     dense: Vec<T>,
+    dense_to_external: Vec<usize>,
     page_size: usize,
 }
 
@@ -10,6 +11,7 @@ impl<T> SparseSet<T> {
         Self {
             sparse: Vec::new(),
             dense: Vec::with_capacity(capacity),
+            dense_to_external: Vec::with_capacity(capacity),
             page_size,
         }
     }
@@ -35,6 +37,7 @@ impl<T> SparseSet<T> {
         }
 
         self.dense.push(value);
+        self.dense_to_external.push(index);
     }
 
     pub fn dense_index(&self, index: usize) -> Option<usize> {
@@ -51,14 +54,15 @@ impl<T> SparseSet<T> {
 
         if dense_index != last_index {
             self.dense.swap(dense_index, last_index);
-            if let Some(ext_index) = self.find_external_index(last_index) {
-                if let Some(page_vec) = self
-                    .sparse
-                    .get_mut(ext_index / self.page_size)
-                    .and_then(|x| x.as_mut())
-                {
-                    page_vec[ext_index % self.page_size] = Some(dense_index);
-                }
+            self.dense_to_external.swap(dense_index, last_index);
+
+            let swapped_external = self.dense_to_external[dense_index];
+            if let Some(page_vec) = self
+                .sparse
+                .get_mut(swapped_external / self.page_size)
+                .and_then(|x| x.as_mut())
+            {
+                page_vec[swapped_external % self.page_size] = Some(dense_index);
             }
         }
 
@@ -70,6 +74,7 @@ impl<T> SparseSet<T> {
             page_vec[index % self.page_size] = None;
         }
 
+        let _ = self.dense_to_external.pop();
         self.dense.pop()
     }
 
@@ -94,19 +99,36 @@ impl<T> SparseSet<T> {
             .and_then(|page_vec| page_vec.get(index % self.page_size))
             .and_then(|x| *x)
     }
+}
 
-    fn find_external_index(&self, dense_index: usize) -> Option<usize> {
-        for (page_idx, page_opt) in self.sparse.iter().enumerate() {
-            if let Some(page) = page_opt {
-                for (offset, entry) in page.iter().enumerate() {
-                    if let Some(idx) = entry {
-                        if *idx == dense_index {
-                            return Some(page_idx * self.page_size + offset);
-                        }
-                    }
-                }
-            }
-        }
-        None
+#[cfg(test)]
+mod tests {
+    use super::SparseSet;
+
+    #[test]
+    fn remove_updates_swapped_back_reference() {
+        let mut set = SparseSet::new(4, 16);
+        set.insert(10, "a");
+        set.insert(42, "b");
+        set.insert(77, "c");
+
+        let removed = set.remove(42);
+        assert_eq!(removed, Some("b"));
+        assert_eq!(set.get(42), None);
+        assert_eq!(set.get(10), Some(&"a"));
+        assert_eq!(set.get(77), Some(&"c"));
+        assert_eq!(set.dense_len(), 2);
+    }
+
+    #[test]
+    fn insert_existing_keeps_dense_index_stable() {
+        let mut set = SparseSet::new(2, 8);
+        set.insert(3, 10);
+        let idx_before = set.dense_index(3);
+        set.insert(3, 20);
+
+        assert_eq!(set.get(3), Some(&20));
+        assert_eq!(set.dense_index(3), idx_before);
+        assert_eq!(set.dense_len(), 1);
     }
 }
