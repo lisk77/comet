@@ -55,45 +55,97 @@ pub struct QueryPairMut<'a, A: Component, B: Component> {
 pub struct QueryBuilder<'a, C: Component> {
     scene: &'a Scene,
     tags: Vec<std::any::TypeId>,
-    filter: Option<Box<dyn Fn(&C) -> bool + 'a>>,
+    _marker: PhantomData<&'a C>,
 }
 
 pub struct QueryPairBuilder<'a, A: Component, B: Component> {
     scene: &'a Scene,
     tags: Vec<std::any::TypeId>,
-    filter: Option<Box<dyn Fn(&A, &B) -> bool + 'a>>,
+    _marker: PhantomData<(&'a A, &'a B)>,
 }
 
 pub struct QueryMutBuilder<'a, C: Component> {
     scene: &'a mut Scene,
     tags: Vec<std::any::TypeId>,
-    filter: Option<Box<dyn Fn(&C) -> bool + 'a>>,
+    _marker: PhantomData<&'a mut C>,
 }
 
 pub struct QueryPairMutBuilder<'a, A: Component, B: Component> {
     scene: &'a mut Scene,
     tags: Vec<std::any::TypeId>,
-    filter: Option<Box<dyn Fn(&A, &B) -> bool + 'a>>,
+    _marker: PhantomData<(&'a mut A, &'a mut B)>,
 }
 
-pub struct QueryMutFiltered<'a, C: Component> {
-    inner: QueryMut<'a, C>,
-    filter: Option<Box<dyn Fn(&C) -> bool + 'a>>,
+pub struct QueryBuilderFiltered<'a, C: Component, F>
+where
+    F: Fn(&C) -> bool + 'a,
+{
+    scene: &'a Scene,
+    tags: Vec<std::any::TypeId>,
+    filter: F,
+    _marker: PhantomData<&'a C>,
 }
 
-pub struct QueryPairMutFiltered<'a, A: Component, B: Component> {
-    inner: QueryPairMut<'a, A, B>,
-    filter: Option<Box<dyn Fn(&A, &B) -> bool + 'a>>,
+pub struct QueryPairBuilderFiltered<'a, A: Component, B: Component, F>
+where
+    F: Fn(&A, &B) -> bool + 'a,
+{
+    scene: &'a Scene,
+    tags: Vec<std::any::TypeId>,
+    filter: F,
+    _marker: PhantomData<(&'a A, &'a B)>,
 }
 
-pub struct QueryFiltered<'a, C: Component> {
+pub struct QueryMutBuilderFiltered<'a, C: Component, F>
+where
+    F: Fn(&C) -> bool + 'a,
+{
+    scene: &'a mut Scene,
+    tags: Vec<std::any::TypeId>,
+    filter: F,
+    _marker: PhantomData<&'a mut C>,
+}
+
+pub struct QueryPairMutBuilderFiltered<'a, A: Component, B: Component, F>
+where
+    F: Fn(&A, &B) -> bool + 'a,
+{
+    scene: &'a mut Scene,
+    tags: Vec<std::any::TypeId>,
+    filter: F,
+    _marker: PhantomData<(&'a mut A, &'a mut B)>,
+}
+
+pub struct QueryFiltered<'a, C: Component, F>
+where
+    F: Fn(&C) -> bool + 'a,
+{
     inner: Query<'a, C>,
-    filter: Option<Box<dyn Fn(&C) -> bool + 'a>>,
+    filter: F,
 }
 
-pub struct QueryPairFiltered<'a, A: Component, B: Component> {
+pub struct QueryPairFiltered<'a, A: Component, B: Component, F>
+where
+    F: Fn(&A, &B) -> bool + 'a,
+{
     inner: QueryPair<'a, A, B>,
-    filter: Option<Box<dyn Fn(&A, &B) -> bool + 'a>>,
+    filter: F,
+}
+
+pub struct QueryMutFiltered<'a, C: Component, F>
+where
+    F: Fn(&C) -> bool + 'a,
+{
+    inner: QueryMut<'a, C>,
+    filter: F,
+}
+
+pub struct QueryPairMutFiltered<'a, A: Component, B: Component, F>
+where
+    F: Fn(&A, &B) -> bool + 'a,
+{
+    inner: QueryPairMut<'a, A, B>,
+    filter: F,
 }
 
 pub trait QueryTuple<'a> {
@@ -113,7 +165,7 @@ impl<'a, C: Component> QueryTuple<'a> for (C,) {
         QueryBuilder {
             scene,
             tags: Vec::new(),
-            filter: None,
+            _marker: PhantomData,
         }
     }
 }
@@ -125,7 +177,7 @@ impl<'a, A: Component, B: Component> QueryTuple<'a> for (A, B) {
         QueryPairBuilder {
             scene,
             tags: Vec::new(),
-            filter: None,
+            _marker: PhantomData,
         }
     }
 }
@@ -137,7 +189,7 @@ impl<'a, C: Component> QueryTupleMut<'a> for (C,) {
         QueryMutBuilder {
             scene,
             tags: Vec::new(),
-            filter: None,
+            _marker: PhantomData,
         }
     }
 }
@@ -149,7 +201,7 @@ impl<'a, A: Component, B: Component> QueryTupleMut<'a> for (A, B) {
         QueryPairMutBuilder {
             scene,
             tags: Vec::new(),
-            filter: None,
+            _marker: PhantomData,
         }
     }
 }
@@ -161,7 +213,7 @@ impl<'a, C: Component> QueryTuple<'a> for C {
         QueryBuilder {
             scene,
             tags: Vec::new(),
-            filter: None,
+            _marker: PhantomData,
         }
     }
 }
@@ -173,7 +225,7 @@ impl<'a, C: Component> QueryTupleMut<'a> for C {
         QueryMutBuilder {
             scene,
             tags: Vec::new(),
-            filter: None,
+            _marker: PhantomData,
         }
     }
 }
@@ -380,15 +432,58 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
         self
     }
 
-    pub fn filter<F>(mut self, f: F) -> Self
+    pub fn filter<F>(self, f: F) -> QueryBuilderFiltered<'a, C, F>
     where
         F: Fn(&C) -> bool + 'a,
     {
-        self.filter = Some(Box::new(f));
+        QueryBuilderFiltered {
+            scene: self.scene,
+            tags: self.tags,
+            filter: f,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn iter(self) -> Query<'a, C> {
+        let mut accesses = Vec::new();
+        for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
+            let arch = self.scene.archetypes().get(arch_id);
+            let col = &arch.columns()[col_idx] as *const _;
+            accesses.push(QueryAccess {
+                col,
+                len: arch.len(),
+                row: 0,
+            });
+        }
+        Query {
+            accesses,
+            idx: 0,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn iter_unfiltered(self) -> Query<'a, C> {
+        self.iter()
+    }
+
+    pub fn for_each(self, mut f: impl FnMut(&C)) {
+        let mut iter = self.iter();
+        while let Some(item) = iter.next() {
+            f(item);
+        }
+    }
+}
+
+impl<'a, C: Component, F> QueryBuilderFiltered<'a, C, F>
+where
+    F: Fn(&C) -> bool + 'a,
+{
+    pub fn with<T: Tag>(mut self) -> Self {
+        self.tags.push(T::type_id());
         self
     }
 
-    pub fn iter(self) -> QueryFiltered<'a, C> {
+    pub fn iter(self) -> QueryFiltered<'a, C, F> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
             let arch = self.scene.archetypes().get(arch_id);
@@ -409,10 +504,6 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
         }
     }
 
-    pub fn iter_unfiltered(self) -> Query<'a, C> {
-        self.scene.query_iter::<C>()
-    }
-
     pub fn for_each(self, mut f: impl FnMut(&C)) {
         let mut iter = self.iter();
         while let Some(item) = iter.next() {
@@ -427,15 +518,64 @@ impl<'a, A: Component, B: Component> QueryPairBuilder<'a, A, B> {
         self
     }
 
-    pub fn filter<F>(mut self, f: F) -> Self
+    pub fn filter<F>(self, f: F) -> QueryPairBuilderFiltered<'a, A, B, F>
     where
         F: Fn(&A, &B) -> bool + 'a,
     {
-        self.filter = Some(Box::new(f));
+        QueryPairBuilderFiltered {
+            scene: self.scene,
+            tags: self.tags,
+            filter: f,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn iter(self) -> QueryPair<'a, A, B> {
+        let mut accesses = Vec::new();
+        for (arch_id, a_idx, b_idx) in self
+            .scene
+            .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
+        {
+            let arch = self.scene.archetypes().get(arch_id);
+            let cols = arch.columns();
+            let a_col = &cols[a_idx] as *const _;
+            let b_col = &cols[b_idx] as *const _;
+            accesses.push(QueryPairAccess {
+                a_col,
+                b_col,
+                len: arch.len(),
+                row: 0,
+            });
+        }
+        QueryPair {
+            accesses,
+            idx: 0,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn iter_unfiltered(self) -> QueryPair<'a, A, B> {
+        self.iter()
+    }
+
+    pub fn for_each(self, mut f: impl FnMut(&A, &B)) {
+        let mut iter = self.iter();
+        while let Some((a, b)) = iter.next() {
+            f(a, b);
+        }
+    }
+}
+
+impl<'a, A: Component, B: Component, F> QueryPairBuilderFiltered<'a, A, B, F>
+where
+    F: Fn(&A, &B) -> bool + 'a,
+{
+    pub fn with<T: Tag>(mut self) -> Self {
+        self.tags.push(T::type_id());
         self
     }
 
-    pub fn iter(self) -> QueryPairFiltered<'a, A, B> {
+    pub fn iter(self) -> QueryPairFiltered<'a, A, B, F> {
         let mut accesses = Vec::new();
         for (arch_id, a_idx, b_idx) in self
             .scene
@@ -462,10 +602,6 @@ impl<'a, A: Component, B: Component> QueryPairBuilder<'a, A, B> {
         }
     }
 
-    pub fn iter_unfiltered(self) -> QueryPair<'a, A, B> {
-        self.scene.query_pair_iter::<A, B>()
-    }
-
     pub fn for_each(self, mut f: impl FnMut(&A, &B)) {
         let mut iter = self.iter();
         while let Some((a, b)) = iter.next() {
@@ -474,34 +610,32 @@ impl<'a, A: Component, B: Component> QueryPairBuilder<'a, A, B> {
     }
 }
 
-impl<'a, C: Component> Iterator for QueryFiltered<'a, C> {
+impl<'a, C: Component, F> Iterator for QueryFiltered<'a, C, F>
+where
+    F: Fn(&C) -> bool + 'a,
+{
     type Item = &'a C;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let item = self.inner.next()?;
-            if let Some(filter) = &self.filter {
-                if filter(item) {
-                    return Some(item);
-                }
-            } else {
+            if (self.filter)(item) {
                 return Some(item);
             }
         }
     }
 }
 
-impl<'a, A: Component, B: Component> Iterator for QueryPairFiltered<'a, A, B> {
+impl<'a, A: Component, B: Component, F> Iterator for QueryPairFiltered<'a, A, B, F>
+where
+    F: Fn(&A, &B) -> bool + 'a,
+{
     type Item = (&'a A, &'a B);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let (a, b) = self.inner.next()?;
-            if let Some(filter) = &self.filter {
-                if filter(a, b) {
-                    return Some((a, b));
-                }
-            } else {
+            if (self.filter)(a, b) {
                 return Some((a, b));
             }
         }
@@ -514,15 +648,55 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
         self
     }
 
-    pub fn filter<F>(mut self, f: F) -> Self
+    pub fn filter<F>(self, f: F) -> QueryMutBuilderFiltered<'a, C, F>
     where
         F: Fn(&C) -> bool + 'a,
     {
-        self.filter = Some(Box::new(f));
+        QueryMutBuilderFiltered {
+            scene: self.scene,
+            tags: self.tags,
+            filter: f,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn iter(self) -> QueryMut<'a, C> {
+        let mut accesses = Vec::new();
+        for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
+            let arch = self.scene.archetypes_mut().get_mut(arch_id);
+            let len = arch.len();
+            let col = &mut arch.columns_mut()[col_idx] as *mut _;
+            accesses.push(QueryMutAccess { col, len, row: 0 });
+        }
+        QueryMut {
+            accesses,
+            idx: 0,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn iter_unfiltered(self) -> QueryMut<'a, C> {
+        self.iter()
+    }
+
+    pub fn for_each(self, mut f: impl FnMut(&mut C)) {
+        let mut iter = self.iter();
+        while let Some(item) = iter.next() {
+            f(item);
+        }
+    }
+}
+
+impl<'a, C: Component, F> QueryMutBuilderFiltered<'a, C, F>
+where
+    F: Fn(&C) -> bool + 'a,
+{
+    pub fn with<T: Tag>(mut self) -> Self {
+        self.tags.push(T::type_id());
         self
     }
 
-    pub fn iter(self) -> QueryMutFiltered<'a, C> {
+    pub fn iter(self) -> QueryMutFiltered<'a, C, F> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
@@ -540,10 +714,6 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
         }
     }
 
-    pub fn iter_unfiltered(self) -> QueryMut<'a, C> {
-        self.scene.query_mut_iter::<C>()
-    }
-
     pub fn for_each(self, mut f: impl FnMut(&mut C)) {
         let mut iter = self.iter();
         while let Some(item) = iter.next() {
@@ -558,15 +728,65 @@ impl<'a, A: Component, B: Component> QueryPairMutBuilder<'a, A, B> {
         self
     }
 
-    pub fn filter<F>(mut self, f: F) -> Self
+    pub fn filter<F>(self, f: F) -> QueryPairMutBuilderFiltered<'a, A, B, F>
     where
         F: Fn(&A, &B) -> bool + 'a,
     {
-        self.filter = Some(Box::new(f));
+        QueryPairMutBuilderFiltered {
+            scene: self.scene,
+            tags: self.tags,
+            filter: f,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn iter(self) -> QueryPairMut<'a, A, B> {
+        let mut accesses = Vec::new();
+        for (arch_id, a_idx, b_idx) in self
+            .scene
+            .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
+        {
+            let arch = self.scene.archetypes_mut().get_mut(arch_id);
+            let len = arch.len();
+            let cols = arch.columns_mut();
+            let a_col = &mut cols[a_idx] as *mut _;
+            let b_col = &mut cols[b_idx] as *mut _;
+            accesses.push(QueryPairMutAccess {
+                a_col,
+                b_col,
+                len,
+                row: 0,
+            });
+        }
+        QueryPairMut {
+            accesses,
+            idx: 0,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn iter_unfiltered(self) -> QueryPairMut<'a, A, B> {
+        self.iter()
+    }
+
+    pub fn for_each(self, mut f: impl FnMut(&mut A, &mut B)) {
+        let mut iter = self.iter();
+        while let Some((a, b)) = iter.next() {
+            f(a, b);
+        }
+    }
+}
+
+impl<'a, A: Component, B: Component, F> QueryPairMutBuilderFiltered<'a, A, B, F>
+where
+    F: Fn(&A, &B) -> bool + 'a,
+{
+    pub fn with<T: Tag>(mut self) -> Self {
+        self.tags.push(T::type_id());
         self
     }
 
-    pub fn iter(self) -> QueryPairMutFiltered<'a, A, B> {
+    pub fn iter(self) -> QueryPairMutFiltered<'a, A, B, F> {
         let mut accesses = Vec::new();
         for (arch_id, a_idx, b_idx) in self
             .scene
@@ -594,10 +814,6 @@ impl<'a, A: Component, B: Component> QueryPairMutBuilder<'a, A, B> {
         }
     }
 
-    pub fn iter_unfiltered(self) -> QueryPairMut<'a, A, B> {
-        self.scene.query_pair_mut_iter::<A, B>()
-    }
-
     pub fn for_each(self, mut f: impl FnMut(&mut A, &mut B)) {
         let mut iter = self.iter();
         while let Some((a, b)) = iter.next() {
@@ -606,34 +822,32 @@ impl<'a, A: Component, B: Component> QueryPairMutBuilder<'a, A, B> {
     }
 }
 
-impl<'a, C: Component> Iterator for QueryMutFiltered<'a, C> {
+impl<'a, C: Component, F> Iterator for QueryMutFiltered<'a, C, F>
+where
+    F: Fn(&C) -> bool + 'a,
+{
     type Item = &'a mut C;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let item = self.inner.next()?;
-            if let Some(filter) = &self.filter {
-                if filter(&*item) {
-                    return Some(item);
-                }
-            } else {
+            if (self.filter)(&*item) {
                 return Some(item);
             }
         }
     }
 }
 
-impl<'a, A: Component, B: Component> Iterator for QueryPairMutFiltered<'a, A, B> {
+impl<'a, A: Component, B: Component, F> Iterator for QueryPairMutFiltered<'a, A, B, F>
+where
+    F: Fn(&A, &B) -> bool + 'a,
+{
     type Item = (&'a mut A, &'a mut B);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let (a, b) = self.inner.next()?;
-            if let Some(filter) = &self.filter {
-                if filter(&*a, &*b) {
-                    return Some((a, b));
-                }
-            } else {
+            if (self.filter)(&*a, &*b) {
                 return Some((a, b));
             }
         }
