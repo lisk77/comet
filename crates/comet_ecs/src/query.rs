@@ -1,7 +1,6 @@
-use crate::{Component, Scene};
+use crate::{Component, Scene, Tag};
 use comet_log::error;
 use std::marker::PhantomData;
-use std::mem;
 
 struct QueryAccess {
     col: *const comet_structs::Column,
@@ -388,11 +387,8 @@ impl<'a, A: Component, B: Component> Iterator for QueryPairMut<'a, A, B> {
 }
 
 impl<'a, C: Component> QueryBuilder<'a, C> {
-    pub fn with<Tag: Component>(mut self) -> Self {
-        if mem::size_of::<Tag>() != 0 {
-            panic!("with::<Tag>() requires a ZST tag component");
-        }
-        self.tags.push(Tag::type_id());
+    pub fn with<T: Tag>(mut self) -> Self {
+        self.tags.push(T::type_id());
         self
     }
 
@@ -441,11 +437,8 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
 }
 
 impl<'a, A: Component, B: Component> QueryPairBuilder<'a, A, B> {
-    pub fn with<Tag: Component>(mut self) -> Self {
-        if mem::size_of::<Tag>() != 0 {
-            panic!("with::<Tag>() requires a ZST tag component");
-        }
-        self.tags.push(Tag::type_id());
+    pub fn with<T: Tag>(mut self) -> Self {
+        self.tags.push(T::type_id());
         self
     }
 
@@ -534,11 +527,8 @@ impl<'a, A: Component, B: Component> Iterator for QueryPairFiltered<'a, A, B> {
 }
 
 impl<'a, C: Component> QueryMutBuilder<'a, C> {
-    pub fn with<Tag: Component>(mut self) -> Self {
-        if mem::size_of::<Tag>() != 0 {
-            panic!("with::<Tag>() requires a ZST tag component");
-        }
-        self.tags.push(Tag::type_id());
+    pub fn with<T: Tag>(mut self) -> Self {
+        self.tags.push(T::type_id());
         self
     }
 
@@ -587,11 +577,8 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
 }
 
 impl<'a, A: Component, B: Component> QueryPairMutBuilder<'a, A, B> {
-    pub fn with<Tag: Component>(mut self) -> Self {
-        if mem::size_of::<Tag>() != 0 {
-            panic!("with::<Tag>() requires a ZST tag component");
-        }
-        self.tags.push(Tag::type_id());
+    pub fn with<T: Tag>(mut self) -> Self {
+        self.tags.push(T::type_id());
         self
     }
 

@@ -128,6 +128,8 @@ pub trait Component: Send + Sync + 'static {
     }
 }
 
+pub trait Tag: Component {}
+
 pub trait Collider {
     fn is_colliding(&self, other: &Self) -> bool;
 }

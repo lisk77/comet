@@ -112,3 +112,31 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+#[proc_macro_derive(Tag)]
+pub fn tag_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+
+    if !matches!(input.data, Data::Struct(_)) {
+        panic!("Tag derive macro only works on structs");
+    }
+
+    let expanded = quote! {
+        const _: [(); 0] = [(); std::mem::size_of::<#name>()];
+
+        impl Component for #name {
+            fn type_id() -> std::any::TypeId {
+                std::any::TypeId::of::<Self>()
+            }
+
+            fn type_name() -> String {
+                std::any::type_name::<Self>().to_string()
+            }
+        }
+
+        impl Tag for #name {}
+    };
+
+    TokenStream::from(expanded)
+}
