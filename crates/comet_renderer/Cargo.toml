@@ -3,6 +3,10 @@ name = "comet_renderer"
 version = "0.2.0"
 edition = "2021"
 
+[features]
+default = []
+comet_debug = []
+
 [dependencies]
 comet_ecs = { path = "../comet_ecs" }
 comet_math = { path = "../comet_math" }

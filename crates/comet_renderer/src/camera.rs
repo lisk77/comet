@@ -1,11 +1,13 @@
 use comet_ecs::{Camera2D, Transform2D};
 use comet_math::{m4, v2, v3};
 
+#[allow(unused)]
 pub struct CameraManager {
     cameras: Vec<RenderCamera>,
     active_camera: usize,
 }
 
+#[allow(unused)]
 impl CameraManager {
     pub fn new() -> Self {
         Self {

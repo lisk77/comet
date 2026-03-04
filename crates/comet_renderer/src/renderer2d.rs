@@ -752,7 +752,7 @@ impl<'a> Renderer2D<'a> {
             .textures()
             .contains_key(texture_path)
         {
-            #[cfg(comet_debug)]
+            #[cfg(feature = "comet_debug")]
             error!("Texture {} not found in atlas", texture_path);
         }
         self.resource_manager
@@ -767,7 +767,7 @@ impl<'a> Renderer2D<'a> {
         match self.resource_manager.font_atlas().textures().get(&key) {
             Some(region) => region,
             None => {
-                #[cfg(comet_debug)]
+                #[cfg(feature = "comet_debug")]
                 warn!(
                     "Missing glyph for character '{}' in font '{}', using fallback.",
                     glyph, font
@@ -1150,7 +1150,7 @@ impl<'a> Renderer2D<'a> {
         }
 
         if resources.get_bind_group_layout("Font").is_none() {
-            #[cfg(comet_debug)]
+            #[cfg(feature = "comet_debug")]
             debug!("Font pass not initialized yet; skipping Font camera bind group setup.");
         }
     }
