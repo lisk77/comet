@@ -1,7 +1,7 @@
 // This is the simple_move_2d example but using bundles
 use comet::prelude::*;
 
-#[derive(Component)]
+#[derive(Tag)]
 struct Player;
 
 bundle!(Camera {
