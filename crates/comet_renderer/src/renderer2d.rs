@@ -13,7 +13,6 @@ use comet_math::{m4, v2, v3};
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
-use comet_ecs::Render;
 use std::{sync::Arc, time::{Duration, Instant}};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
