@@ -258,7 +258,10 @@ impl Column {
     }
 
     pub fn swap(&mut self, index1: usize, index2: usize) {
-        assert!(index1 < self.len && index2 < self.len, "Index out of bounds");
+        assert!(
+            index1 < self.len && index2 < self.len,
+            "Index out of bounds"
+        );
 
         if index1 == index2 || self.item_layout.size() == 0 {
             return;

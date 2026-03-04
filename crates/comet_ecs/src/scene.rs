@@ -2,11 +2,11 @@ use crate::archetypes::{Archetypes, ComponentInfo};
 use crate::bundles::Bundle;
 use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
-use crate::{Component, Entity, IdQueue, EntityLocation};
+use crate::{Component, Entity, EntityLocation, IdQueue};
 use comet_log::*;
 use comet_structs::ComponentSet;
-use std::any::TypeId;
 use std::alloc::Layout;
+use std::any::TypeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ptr;
@@ -67,13 +67,11 @@ impl Scene {
             prefabs: PrefabManager::new(),
         };
         let empty_set = ComponentSet::new();
-        let _ = scene
-            .archetypes
-            .get_or_create(
-                empty_set,
-                &scene.component_info,
-                &scene.component_registry,
-            );
+        let _ = scene.archetypes.get_or_create(
+            empty_set,
+            &scene.component_info,
+            &scene.component_registry,
+        );
         scene
     }
 
@@ -127,13 +125,11 @@ impl Scene {
         }
 
         let empty_set = ComponentSet::new();
-        let empty_arch = self
-            .archetypes
-            .get_or_create(
-                empty_set,
-                &self.component_info,
-                &self.component_registry,
-            );
+        let empty_arch = self.archetypes.get_or_create(
+            empty_set,
+            &self.component_info,
+            &self.component_registry,
+        );
         let row = self.archetypes.get_mut(empty_arch).push_entity(id);
         if index as usize >= self.entity_locations.len() {
             self.entity_locations.resize(index as usize + 1, None);
@@ -235,17 +231,18 @@ impl Scene {
         &mut self,
         a: usize,
         b: usize,
-    ) -> (&mut crate::archetypes::Archetype, &mut crate::archetypes::Archetype) {
+    ) -> (
+        &mut crate::archetypes::Archetype,
+        &mut crate::archetypes::Archetype,
+    ) {
         self.archetypes.get_two_mut(a, b)
     }
 
     fn ensure_archetype(&mut self, set: ComponentSet) -> usize {
         let before = self.archetypes.len();
-        let id = self.archetypes.get_or_create(
-            set,
-            &self.component_info,
-            &self.component_registry,
-        );
+        let id = self
+            .archetypes
+            .get_or_create(set, &self.component_info, &self.component_registry);
         self.bump_archetype_version_if_changed(before);
         id
     }
@@ -270,7 +267,9 @@ impl Scene {
         components: &mut Vec<ErasedComponent>,
         type_id: TypeId,
     ) -> Option<ErasedComponent> {
-        let idx = components.iter().rposition(|component| component.type_id == type_id)?;
+        let idx = components
+            .iter()
+            .rposition(|component| component.type_id == type_id)?;
         Some(components.swap_remove(idx))
     }
 
@@ -292,7 +291,10 @@ impl Scene {
         let mut matches = Vec::new();
         for (arch_id, arch) in self.archetypes.iter().enumerate() {
             if let Some(col_idx) = arch.column_index(component) {
-                if normalized_tags.iter().all(|t| arch.column_index(*t).is_some()) {
+                if normalized_tags
+                    .iter()
+                    .all(|t| arch.column_index(*t).is_some())
+                {
                     matches.push((arch_id, col_idx));
                 }
             }
@@ -323,7 +325,10 @@ impl Scene {
         let mut matches = Vec::new();
         for (arch_id, arch) in self.archetypes.iter().enumerate() {
             if let (Some(a_idx), Some(b_idx)) = (arch.column_index(a), arch.column_index(b)) {
-                if normalized_tags.iter().all(|t| arch.column_index(*t).is_some()) {
+                if normalized_tags
+                    .iter()
+                    .all(|t| arch.column_index(*t).is_some())
+                {
                     matches.push((arch_id, a_idx, b_idx));
                 }
             }
@@ -446,7 +451,12 @@ impl Scene {
         };
         let old_arch_id = loc.archetype;
 
-        if self.archetypes.get(old_arch_id).column_index(type_id).is_some() {
+        if self
+            .archetypes
+            .get(old_arch_id)
+            .column_index(type_id)
+            .is_some()
+        {
             let arch = self.archetypes.get_mut(old_arch_id);
             if let Some(col_idx) = arch.column_index(type_id) {
                 let _ = arch.columns_mut()[col_idx].set::<C>(loc.row, component);
@@ -523,7 +533,12 @@ impl Scene {
             None => return,
         };
         let old_arch_id = loc.archetype;
-        if self.archetypes.get(old_arch_id).column_index(type_id).is_none() {
+        if self
+            .archetypes
+            .get(old_arch_id)
+            .column_index(type_id)
+            .is_none()
+        {
             return;
         }
 
@@ -603,8 +618,7 @@ impl Scene {
     }
 
     pub fn has<C: Component + 'static>(&self, entity_id: Entity) -> bool {
-        self.is_alive(entity_id)
-            && self.get_component::<C>(entity_id).is_some()
+        self.is_alive(entity_id) && self.get_component::<C>(entity_id).is_some()
     }
 
     fn component_indices_from_type_ids(&self, components: &[TypeId]) -> Option<Vec<usize>> {
@@ -750,11 +764,7 @@ impl Scene {
         self.add_with_components(entity, bundle.into_components());
     }
 
-    pub fn add_with_components(
-        &mut self,
-        entity_id: Entity,
-        mut components: Vec<ErasedComponent>,
-    ) {
+    pub fn add_with_components(&mut self, entity_id: Entity, mut components: Vec<ErasedComponent>) {
         if !self.is_alive(entity_id) || components.is_empty() {
             return;
         }
@@ -833,7 +843,6 @@ impl Scene {
             old_arch.pop_entity();
             self.set_location(entity_id, new_arch_id, new_row);
         }
-
     }
 
     pub fn spawn_with_components(&mut self, components: Vec<ErasedComponent>) -> Entity {

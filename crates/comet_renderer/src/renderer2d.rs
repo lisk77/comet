@@ -3,10 +3,11 @@ use crate::{
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
     render_events::Renderer2DEvent,
-    render_pass::{RenderPass, universal_clear_execute, universal_load_execute},
+    render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
     renderer::{Renderer, RendererHandle},
 };
 use comet_colors::Color;
+use comet_ecs::Render;
 use comet_log::*;
 use comet_math::{m4, v2, v3};
 use comet_resources::{
@@ -64,7 +65,7 @@ pub struct Renderer2D<'a> {
     render_passes: Vec<RenderPass>,
     last_frame_time: std::time::Instant,
     delta_time: f32,
-    event_sender: flume::Sender<Renderer2DEvent>
+    event_sender: flume::Sender<Renderer2DEvent>,
 }
 
 pub struct RenderHandle2D {
@@ -79,11 +80,15 @@ impl RenderHandle2D {
     }
 
     pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
-        let _ = self.command_sender.send(Renderer2DCommand::InitAtlasFromPaths(paths));
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::InitAtlasFromPaths(paths));
     }
 
     pub fn load_font(&mut self, path: &str, size: f32) {
-        let _ = self.command_sender.send(Renderer2DCommand::LoadFont(path.to_string(), size));
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::LoadFont(path.to_string(), size));
     }
 
     pub fn size(&mut self) -> PhysicalSize<u32> {
@@ -188,7 +193,9 @@ impl RenderHandle2D {
                 ));
             }
         }
-        let Some((camera_pos, camera_rot, camera_zoom, camera_dims, camera_priority)) = selected_camera else {
+        let Some((camera_pos, camera_rot, camera_zoom, camera_dims, camera_priority)) =
+            selected_camera
+        else {
             return;
         };
 
@@ -209,7 +216,10 @@ impl RenderHandle2D {
         draws.sort_by_key(|draw| draw.draw_index);
 
         let mut texts = Vec::new();
-        for (transform, text) in scene.query::<(comet_ecs::Transform2D, comet_ecs::Text)>().iter() {
+        for (transform, text) in scene
+            .query::<(comet_ecs::Transform2D, comet_ecs::Text)>()
+            .iter()
+        {
             if !text.is_visible() {
                 continue;
             }
@@ -219,7 +229,12 @@ impl RenderHandle2D {
                 content: text.content().to_string(),
                 font: text.font(),
                 size: text.font_size(),
-                color: [color.r as f32, color.g as f32, color.b as f32, color.a as f32],
+                color: [
+                    color.r as f32,
+                    color.g as f32,
+                    color.b as f32,
+                    color.a as f32,
+                ],
                 visible: true,
             });
         }
@@ -232,9 +247,9 @@ impl RenderHandle2D {
             priority: camera_priority,
         };
 
-        let _ = self
-            .command_sender
-            .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts));
+        let _ =
+            self.command_sender
+                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts));
     }
 }
 
@@ -968,25 +983,29 @@ impl<'a> Renderer2D<'a> {
                 (
                     world_corners[0].0 * cos_angle - world_corners[0].1 * sin_angle
                         + draw.position[0],
-                    world_corners[0].0 * sin_angle + world_corners[0].1 * cos_angle
+                    world_corners[0].0 * sin_angle
+                        + world_corners[0].1 * cos_angle
                         + draw.position[1],
                 ),
                 (
                     world_corners[1].0 * cos_angle - world_corners[1].1 * sin_angle
                         + draw.position[0],
-                    world_corners[1].0 * sin_angle + world_corners[1].1 * cos_angle
+                    world_corners[1].0 * sin_angle
+                        + world_corners[1].1 * cos_angle
                         + draw.position[1],
                 ),
                 (
                     world_corners[2].0 * cos_angle - world_corners[2].1 * sin_angle
                         + draw.position[0],
-                    world_corners[2].0 * sin_angle + world_corners[2].1 * cos_angle
+                    world_corners[2].0 * sin_angle
+                        + world_corners[2].1 * cos_angle
                         + draw.position[1],
                 ),
                 (
                     world_corners[3].0 * cos_angle - world_corners[3].1 * sin_angle
                         + draw.position[0],
-                    world_corners[3].0 * sin_angle + world_corners[3].1 * cos_angle
+                    world_corners[3].0 * sin_angle
+                        + world_corners[3].1 * cos_angle
                         + draw.position[1],
                 ),
             ];
@@ -1015,22 +1034,38 @@ impl<'a> Renderer2D<'a> {
 
             vertex_buffer.extend_from_slice(&[
                 Vertex::new(
-                    [snapped_screen_corners[0].0, snapped_screen_corners[0].1, 0.0],
+                    [
+                        snapped_screen_corners[0].0,
+                        snapped_screen_corners[0].1,
+                        0.0,
+                    ],
                     [region.u0(), region.v0()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [snapped_screen_corners[1].0, snapped_screen_corners[1].1, 0.0],
+                    [
+                        snapped_screen_corners[1].0,
+                        snapped_screen_corners[1].1,
+                        0.0,
+                    ],
                     [region.u0(), region.v1()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [snapped_screen_corners[2].0, snapped_screen_corners[2].1, 0.0],
+                    [
+                        snapped_screen_corners[2].0,
+                        snapped_screen_corners[2].1,
+                        0.0,
+                    ],
                     [region.u1(), region.v1()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [snapped_screen_corners[3].0, snapped_screen_corners[3].1, 0.0],
+                    [
+                        snapped_screen_corners[3].0,
+                        snapped_screen_corners[3].1,
+                        0.0,
+                    ],
                     [region.u1(), region.v0()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
@@ -1158,8 +1193,12 @@ impl<'a> Renderer2D<'a> {
 
 impl<'a> Renderer for Renderer2D<'a> {
     type Handle = RenderHandle2D;
-    
-    fn new(window: Arc<Window>, clear_color: Option<impl Color>, event_sender: flume::Sender<Renderer2DEvent>) -> Self {
+
+    fn new(
+        window: Arc<Window>,
+        clear_color: Option<impl Color>,
+        event_sender: flume::Sender<Renderer2DEvent>,
+    ) -> Self {
         Self {
             render_context: RenderContext::new(window, clear_color),
             resource_manager: GraphicResourceManager::new(),
@@ -1176,15 +1215,28 @@ impl<'a> Renderer for Renderer2D<'a> {
             Renderer2DCommand::InitAtlas => self.init_atlas(),
             Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
             Renderer2DCommand::Size => {
-                let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));            
+                let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));
             }
             Renderer2DCommand::ScaleFactor => {
-                let _ = self.event_sender.send(Renderer2DEvent::ScaleFactor(self.scale_factor()));
+                let _ = self
+                    .event_sender
+                    .send(Renderer2DEvent::ScaleFactor(self.scale_factor()));
             }
-            Renderer2DCommand::LoadFont(font_path, font_size) => self.load_font(font_path.as_str(), font_size),
-            Renderer2DCommand::PrecomputedTextBounds { text, font_path, font_size } => {
+            Renderer2DCommand::LoadFont(font_path, font_size) => {
+                self.load_font(font_path.as_str(), font_size)
+            }
+            Renderer2DCommand::PrecomputedTextBounds {
+                text,
+                font_path,
+                font_size,
+            } => {
                 let bounds = self.precompute_text_bounds(&text, font_path.as_str(), font_size);
-                let _ = self.event_sender.send(Renderer2DEvent::PrecomputedTextBounds { width: bounds.x(), height: bounds.y() });
+                let _ = self
+                    .event_sender
+                    .send(Renderer2DEvent::PrecomputedTextBounds {
+                        width: bounds.x(),
+                        height: bounds.y(),
+                    });
             }
             Renderer2DCommand::SubmitFrame(camera, draws, texts) => {
                 self.submit_frame(camera, draws, texts)

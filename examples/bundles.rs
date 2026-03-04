@@ -68,4 +68,3 @@ fn main() {
         .with_preset(App2D)
         .run::<Renderer2D>(setup, update);
 }
-

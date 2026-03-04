@@ -1,5 +1,5 @@
-use super::*;
 use super::tuple_types::*;
+use super::*;
 
 impl<'a, C: Component> Iterator for Query<'a, C> {
     type Item = &'a C;

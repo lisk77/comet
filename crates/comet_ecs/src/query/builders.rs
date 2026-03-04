@@ -1,5 +1,5 @@
-use super::*;
 use super::tuple_types::*;
+use super::*;
 
 macro_rules! impl_base_tuple_query_arities {
     (
@@ -169,9 +169,9 @@ impl<'a, A: Component, B: Component> QueryPairBuilder<'a, A, B> {
 
     pub fn iter(self) -> QueryPair<'a, A, B> {
         let mut accesses = Vec::new();
-        for (arch_id, a_idx, b_idx) in self
-            .scene
-            .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
+        for (arch_id, a_idx, b_idx) in
+            self.scene
+                .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
         {
             let arch = self.scene.archetypes().get(arch_id);
             let cols = arch.columns();
@@ -231,9 +231,9 @@ impl<'a, A: Component, B: Component> QueryPairMutBuilder<'a, A, B> {
 
     pub fn iter(self) -> QueryPairMut<'a, A, B> {
         let mut accesses = Vec::new();
-        for (arch_id, a_idx, b_idx) in self
-            .scene
-            .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
+        for (arch_id, a_idx, b_idx) in
+            self.scene
+                .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
         {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
@@ -315,9 +315,9 @@ where
 
     pub fn iter(self) -> QueryPairFiltered<'a, A, B, F> {
         let mut accesses = Vec::new();
-        for (arch_id, a_idx, b_idx) in self
-            .scene
-            .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
+        for (arch_id, a_idx, b_idx) in
+            self.scene
+                .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
         {
             let arch = self.scene.archetypes().get(arch_id);
             let cols = arch.columns();
@@ -394,9 +394,9 @@ where
 
     pub fn iter(self) -> QueryPairMutFiltered<'a, A, B, F> {
         let mut accesses = Vec::new();
-        for (arch_id, a_idx, b_idx) in self
-            .scene
-            .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
+        for (arch_id, a_idx, b_idx) in
+            self.scene
+                .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
         {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();

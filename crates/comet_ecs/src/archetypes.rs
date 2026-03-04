@@ -178,12 +178,7 @@ impl Archetypes {
                 )
             });
             types.push(type_id);
-            columns.push(Column::new_raw(
-                info.type_id,
-                info.layout,
-                info.drop_fn,
-                0,
-            ));
+            columns.push(Column::new_raw(info.type_id, info.layout, info.drop_fn, 0));
         }
 
         let archetype = Archetype::new(set.clone(), types, columns);

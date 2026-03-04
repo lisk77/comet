@@ -16,12 +16,147 @@ fn has_duplicate_type_ids(ids: &[TypeId]) -> bool {
 
 macro_rules! for_each_tuple_arity {
     ($m:ident) => {
-        $m!(Query3Builder, Query3, Query3Access, Query3MutBuilder, Query3Mut, Query3MutAccess, A, a_col, B, b_idx, b_col, C, c_idx, c_col);
-        $m!(Query4Builder, Query4, Query4Access, Query4MutBuilder, Query4Mut, Query4MutAccess, A, a_col, B, b_idx, b_col, C, c_idx, c_col, D, d_idx, d_col);
-        $m!(Query5Builder, Query5, Query5Access, Query5MutBuilder, Query5Mut, Query5MutAccess, A, a_col, B, b_idx, b_col, C, c_idx, c_col, D, d_idx, d_col, E, e_idx, e_col);
-        $m!(Query6Builder, Query6, Query6Access, Query6MutBuilder, Query6Mut, Query6MutAccess, A, a_col, B, b_idx, b_col, C, c_idx, c_col, D, d_idx, d_col, E, e_idx, e_col, F, f_idx, f_col);
-        $m!(Query7Builder, Query7, Query7Access, Query7MutBuilder, Query7Mut, Query7MutAccess, A, a_col, B, b_idx, b_col, C, c_idx, c_col, D, d_idx, d_col, E, e_idx, e_col, F, f_idx, f_col, G, g_idx, g_col);
-        $m!(Query8Builder, Query8, Query8Access, Query8MutBuilder, Query8Mut, Query8MutAccess, A, a_col, B, b_idx, b_col, C, c_idx, c_col, D, d_idx, d_col, E, e_idx, e_col, F, f_idx, f_col, G, g_idx, g_col, H, h_idx, h_col);
+        $m!(
+            Query3Builder,
+            Query3,
+            Query3Access,
+            Query3MutBuilder,
+            Query3Mut,
+            Query3MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col
+        );
+        $m!(
+            Query4Builder,
+            Query4,
+            Query4Access,
+            Query4MutBuilder,
+            Query4Mut,
+            Query4MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col
+        );
+        $m!(
+            Query5Builder,
+            Query5,
+            Query5Access,
+            Query5MutBuilder,
+            Query5Mut,
+            Query5MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col,
+            E,
+            e_idx,
+            e_col
+        );
+        $m!(
+            Query6Builder,
+            Query6,
+            Query6Access,
+            Query6MutBuilder,
+            Query6Mut,
+            Query6MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col,
+            E,
+            e_idx,
+            e_col,
+            F,
+            f_idx,
+            f_col
+        );
+        $m!(
+            Query7Builder,
+            Query7,
+            Query7Access,
+            Query7MutBuilder,
+            Query7Mut,
+            Query7MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col,
+            E,
+            e_idx,
+            e_col,
+            F,
+            f_idx,
+            f_col,
+            G,
+            g_idx,
+            g_col
+        );
+        $m!(
+            Query8Builder,
+            Query8,
+            Query8Access,
+            Query8MutBuilder,
+            Query8Mut,
+            Query8MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col,
+            E,
+            e_idx,
+            e_col,
+            F,
+            f_idx,
+            f_col,
+            G,
+            g_idx,
+            g_col,
+            H,
+            h_idx,
+            h_col
+        );
     };
 }
 
@@ -181,7 +316,7 @@ pub trait QueryTupleMut<'a> {
     fn build(scene: &'a mut Scene) -> Self::Builder;
 }
 
-mod tuple_types;
-mod scene_query;
 mod builders;
 mod iterators;
+mod scene_query;
+mod tuple_types;

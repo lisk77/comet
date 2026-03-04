@@ -1,7 +1,7 @@
 pub use column::Column;
-pub use flat_map::FlatMap;
 pub use componet_set::ComponentSet;
+pub use flat_map::FlatMap;
 
 mod column;
-mod flat_map;
 mod componet_set;
+mod flat_map;
