@@ -250,6 +250,21 @@ impl Scene {
         normalized
     }
 
+    fn normalized_tag_filters(
+        with_tags: &[TypeId],
+        without_tags: &[TypeId],
+    ) -> Option<(Vec<TypeId>, Vec<TypeId>)> {
+        let with_tags = Self::normalized_tags(with_tags);
+        let without_tags = Self::normalized_tags(without_tags);
+        if with_tags
+            .iter()
+            .any(|tag| without_tags.binary_search(tag).is_ok())
+        {
+            return None;
+        }
+        Some((with_tags, without_tags))
+    }
+
     fn take_last_component_of_type(
         components: &mut Vec<ErasedComponent>,
         type_id: TypeId,
@@ -263,14 +278,20 @@ impl Scene {
     pub(crate) fn cached_single_plan(
         &self,
         component: TypeId,
-        tags: &[TypeId],
+        with_tags: &[TypeId],
+        without_tags: &[TypeId],
     ) -> Vec<(usize, usize)> {
-        let normalized_tags = Self::normalized_tags(tags);
+        let Some((with_tags, without_tags)) = Self::normalized_tag_filters(with_tags, without_tags)
+        else {
+            return Vec::new();
+        };
 
         {
             let mut cache = self.query_plan_cache.borrow_mut();
             cache.sync_version(self.archetype_version);
-            if let Some(matches) = cache.get_single_cloned(component, &normalized_tags) {
+            if let Some(matches) =
+                cache.get_single_cloned(component, &with_tags, &without_tags)
+            {
                 return matches;
             }
         }
@@ -278,9 +299,12 @@ impl Scene {
         let mut matches = Vec::new();
         for (arch_id, arch) in self.archetypes.iter().enumerate() {
             if let Some(col_idx) = arch.column_index(component) {
-                if normalized_tags
+                if with_tags
                     .iter()
                     .all(|t| arch.column_index(*t).is_some())
+                    && without_tags
+                        .iter()
+                        .all(|t| arch.column_index(*t).is_none())
                 {
                     matches.push((arch_id, col_idx));
                 }
@@ -289,41 +313,7 @@ impl Scene {
 
         let mut cache = self.query_plan_cache.borrow_mut();
         cache.sync_version(self.archetype_version);
-        cache.insert_single(component, &normalized_tags, matches.clone());
-        matches
-    }
-
-    pub(crate) fn cached_pair_plan(
-        &self,
-        a: TypeId,
-        b: TypeId,
-        tags: &[TypeId],
-    ) -> Vec<(usize, usize, usize)> {
-        let normalized_tags = Self::normalized_tags(tags);
-
-        {
-            let mut cache = self.query_plan_cache.borrow_mut();
-            cache.sync_version(self.archetype_version);
-            if let Some(matches) = cache.get_pair_cloned(a, b, &normalized_tags) {
-                return matches;
-            }
-        }
-
-        let mut matches = Vec::new();
-        for (arch_id, arch) in self.archetypes.iter().enumerate() {
-            if let (Some(a_idx), Some(b_idx)) = (arch.column_index(a), arch.column_index(b)) {
-                if normalized_tags
-                    .iter()
-                    .all(|t| arch.column_index(*t).is_some())
-                {
-                    matches.push((arch_id, a_idx, b_idx));
-                }
-            }
-        }
-
-        let mut cache = self.query_plan_cache.borrow_mut();
-        cache.sync_version(self.archetype_version);
-        cache.insert_pair(a, b, &normalized_tags, matches.clone());
+        cache.insert_single(component, &with_tags, &without_tags, matches.clone());
         matches
     }
 
@@ -785,7 +775,7 @@ impl Scene {
 #[cfg(test)]
 mod tests {
     use super::Scene;
-    use crate::{Component, ErasedComponent};
+    use crate::{Component, ErasedComponent, Tag};
 
     struct A;
     impl Component for A {}
@@ -799,6 +789,14 @@ mod tests {
 
     struct Unregistered;
     impl Component for Unregistered {}
+
+    struct IncludeTag;
+    impl Component for IncludeTag {}
+    impl Tag for IncludeTag {}
+
+    struct ExcludeTag;
+    impl Component for ExcludeTag {}
+    impl Tag for ExcludeTag {}
 
     #[test]
     fn deregister_component_is_blocked_while_live_instances_exist() {
@@ -873,5 +871,51 @@ mod tests {
 
         assert_eq!(tags_abab, tags_ba);
         assert_eq!(tags_abab.len(), 2);
+    }
+
+    #[test]
+    fn query_with_and_without_filters_entities() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<IncludeTag>();
+        scene.register_component::<ExcludeTag>();
+
+        let keep = scene.new_entity();
+        scene.add_component(keep, Value(10));
+        scene.add_component(keep, IncludeTag);
+
+        let filtered_out = scene.new_entity();
+        scene.add_component(filtered_out, Value(20));
+        scene.add_component(filtered_out, IncludeTag);
+        scene.add_component(filtered_out, ExcludeTag);
+
+        let values: Vec<i32> = scene
+            .query::<Value>()
+            .with::<IncludeTag>()
+            .without::<ExcludeTag>()
+            .iter()
+            .map(|v| v.0)
+            .collect();
+
+        assert_eq!(values, vec![10]);
+    }
+
+    #[test]
+    fn query_with_and_without_same_tag_is_empty() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<IncludeTag>();
+
+        let entity = scene.new_entity();
+        scene.add_component(entity, Value(1));
+        scene.add_component(entity, IncludeTag);
+
+        let mut iter = scene
+            .query::<Value>()
+            .with::<IncludeTag>()
+            .without::<IncludeTag>()
+            .iter();
+
+        assert!(iter.next().is_none());
     }
 }

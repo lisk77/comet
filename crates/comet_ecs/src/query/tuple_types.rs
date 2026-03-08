@@ -41,12 +41,14 @@ macro_rules! define_tuple_types_arity {
         pub struct $builder<'a, $first_ty: Component, $($ty: Component),+> {
             pub(super) scene: &'a Scene,
             pub(super) tags: Vec<TypeId>,
+            pub(super) without_tags: Vec<TypeId>,
             pub(super) _marker: PhantomData<(&'a $first_ty, $(&'a $ty),+)>,
         }
 
         pub struct $builder_mut<'a, $first_ty: Component, $($ty: Component),+> {
             pub(super) scene: &'a mut Scene,
             pub(super) tags: Vec<TypeId>,
+            pub(super) without_tags: Vec<TypeId>,
             pub(super) _marker: PhantomData<(&'a mut $first_ty, $(&'a mut $ty),+)>,
         }
     };

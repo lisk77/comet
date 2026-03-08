@@ -1,7 +1,7 @@
 use super::tuple_types::*;
 use super::*;
 
-impl<'a, C: Component> Iterator for Query<'a, C> {
+impl<'a, C: Component> Iterator for QueryIter<'a, C> {
     type Item = &'a C;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -21,7 +21,7 @@ impl<'a, C: Component> Iterator for Query<'a, C> {
     }
 }
 
-impl<'a, C: Component> Iterator for QueryMut<'a, C> {
+impl<'a, C: Component> Iterator for QueryIterMut<'a, C> {
     type Item = &'a mut C;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -41,53 +41,7 @@ impl<'a, C: Component> Iterator for QueryMut<'a, C> {
     }
 }
 
-impl<'a, A: Component, B: Component> Iterator for QueryPair<'a, A, B> {
-    type Item = (&'a A, &'a B);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let access = self.accesses.get_mut(self.idx)?;
-            if access.row >= access.len {
-                self.idx += 1;
-                continue;
-            }
-            let row = access.row;
-            access.row += 1;
-            unsafe {
-                let a_col = &*access.a_col;
-                let b_col = &*access.b_col;
-                let a = a_col.get::<A>(row)?;
-                let b = b_col.get::<B>(row)?;
-                return Some((a, b));
-            }
-        }
-    }
-}
-
-impl<'a, A: Component, B: Component> Iterator for QueryPairMut<'a, A, B> {
-    type Item = (&'a mut A, &'a mut B);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let access = self.accesses.get_mut(self.idx)?;
-            if access.row >= access.len {
-                self.idx += 1;
-                continue;
-            }
-            let row = access.row;
-            access.row += 1;
-            unsafe {
-                let a_col = &mut *access.a_col;
-                let b_col = &mut *access.b_col;
-                let a = a_col.get_mut::<A>(row)?;
-                let b = b_col.get_mut::<B>(row)?;
-                return Some((a, b));
-            }
-        }
-    }
-}
-
-impl<'a, C: Component, F> Iterator for QueryFiltered<'a, C, F>
+impl<'a, C: Component, F> Iterator for QueryIterFiltered<'a, C, F>
 where
     F: Fn(&C) -> bool + 'a,
 {
@@ -103,23 +57,7 @@ where
     }
 }
 
-impl<'a, A: Component, B: Component, F> Iterator for QueryPairFiltered<'a, A, B, F>
-where
-    F: Fn(&A, &B) -> bool + 'a,
-{
-    type Item = (&'a A, &'a B);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let (a, b) = self.inner.next()?;
-            if (self.filter)(a, b) {
-                return Some((a, b));
-            }
-        }
-    }
-}
-
-impl<'a, C: Component, F> Iterator for QueryMutFiltered<'a, C, F>
+impl<'a, C: Component, F> Iterator for QueryIterMutFiltered<'a, C, F>
 where
     F: Fn(&C) -> bool + 'a,
 {
@@ -130,22 +68,6 @@ where
             let item = self.inner.next()?;
             if (self.filter)(&*item) {
                 return Some(item);
-            }
-        }
-    }
-}
-
-impl<'a, A: Component, B: Component, F> Iterator for QueryPairMutFiltered<'a, A, B, F>
-where
-    F: Fn(&A, &B) -> bool + 'a,
-{
-    type Item = (&'a mut A, &'a mut B);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let (a, b) = self.inner.next()?;
-            if (self.filter)(&*a, &*b) {
-                return Some((a, b));
             }
         }
     }

@@ -185,66 +185,30 @@ struct QueryMutAccess {
     row: usize,
 }
 
-struct QueryPairAccess {
-    a_col: *const comet_structs::Column,
-    b_col: *const comet_structs::Column,
-    len: usize,
-    row: usize,
-}
-
-struct QueryPairMutAccess {
-    a_col: *mut comet_structs::Column,
-    b_col: *mut comet_structs::Column,
-    len: usize,
-    row: usize,
-}
-
-pub struct Query<'a, C: Component> {
+pub struct QueryIter<'a, C: Component> {
     accesses: Vec<QueryAccess>,
     idx: usize,
     _marker: PhantomData<&'a C>,
 }
 
-pub struct QueryMut<'a, C: Component> {
+pub struct QueryIterMut<'a, C: Component> {
     accesses: Vec<QueryMutAccess>,
     idx: usize,
     _marker: PhantomData<&'a mut C>,
 }
 
-pub struct QueryPair<'a, A: Component, B: Component> {
-    accesses: Vec<QueryPairAccess>,
-    idx: usize,
-    _marker: PhantomData<(&'a A, &'a B)>,
-}
-
-pub struct QueryPairMut<'a, A: Component, B: Component> {
-    accesses: Vec<QueryPairMutAccess>,
-    idx: usize,
-    _marker: PhantomData<(&'a mut A, &'a mut B)>,
-}
-
 pub struct QueryBuilder<'a, C: Component> {
     scene: &'a Scene,
     tags: Vec<TypeId>,
+    without_tags: Vec<TypeId>,
     _marker: PhantomData<&'a C>,
-}
-
-pub struct QueryPairBuilder<'a, A: Component, B: Component> {
-    scene: &'a Scene,
-    tags: Vec<TypeId>,
-    _marker: PhantomData<(&'a A, &'a B)>,
 }
 
 pub struct QueryMutBuilder<'a, C: Component> {
     scene: &'a mut Scene,
     tags: Vec<TypeId>,
+    without_tags: Vec<TypeId>,
     _marker: PhantomData<&'a mut C>,
-}
-
-pub struct QueryPairMutBuilder<'a, A: Component, B: Component> {
-    scene: &'a mut Scene,
-    tags: Vec<TypeId>,
-    _marker: PhantomData<(&'a mut A, &'a mut B)>,
 }
 
 pub struct QueryBuilderFiltered<'a, C: Component, F>
@@ -253,18 +217,9 @@ where
 {
     scene: &'a Scene,
     tags: Vec<TypeId>,
+    without_tags: Vec<TypeId>,
     filter: F,
     _marker: PhantomData<&'a C>,
-}
-
-pub struct QueryPairBuilderFiltered<'a, A: Component, B: Component, F>
-where
-    F: Fn(&A, &B) -> bool + 'a,
-{
-    scene: &'a Scene,
-    tags: Vec<TypeId>,
-    filter: F,
-    _marker: PhantomData<(&'a A, &'a B)>,
 }
 
 pub struct QueryMutBuilderFiltered<'a, C: Component, F>
@@ -273,58 +228,33 @@ where
 {
     scene: &'a mut Scene,
     tags: Vec<TypeId>,
+    without_tags: Vec<TypeId>,
     filter: F,
     _marker: PhantomData<&'a mut C>,
 }
 
-pub struct QueryPairMutBuilderFiltered<'a, A: Component, B: Component, F>
-where
-    F: Fn(&A, &B) -> bool + 'a,
-{
-    scene: &'a mut Scene,
-    tags: Vec<TypeId>,
-    filter: F,
-    _marker: PhantomData<(&'a mut A, &'a mut B)>,
-}
-
-pub struct QueryFiltered<'a, C: Component, F>
+pub struct QueryIterFiltered<'a, C: Component, F>
 where
     F: Fn(&C) -> bool + 'a,
 {
-    inner: Query<'a, C>,
+    inner: QueryIter<'a, C>,
     filter: F,
 }
 
-pub struct QueryPairFiltered<'a, A: Component, B: Component, F>
-where
-    F: Fn(&A, &B) -> bool + 'a,
-{
-    inner: QueryPair<'a, A, B>,
-    filter: F,
-}
-
-pub struct QueryMutFiltered<'a, C: Component, F>
+pub struct QueryIterMutFiltered<'a, C: Component, F>
 where
     F: Fn(&C) -> bool + 'a,
 {
-    inner: QueryMut<'a, C>,
+    inner: QueryIterMut<'a, C>,
     filter: F,
 }
 
-pub struct QueryPairMutFiltered<'a, A: Component, B: Component, F>
-where
-    F: Fn(&A, &B) -> bool + 'a,
-{
-    inner: QueryPairMut<'a, A, B>,
-    filter: F,
-}
-
-pub trait QueryTuple<'a> {
+pub trait QuerySpec<'a> {
     type Builder;
     fn build(scene: &'a Scene) -> Self::Builder;
 }
 
-pub trait QueryTupleMut<'a> {
+pub trait QuerySpecMut<'a> {
     type Builder;
     fn build(scene: &'a mut Scene) -> Self::Builder;
 }

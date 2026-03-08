@@ -13,7 +13,7 @@ macro_rules! impl_base_tuple_query_arities {
         ),+ $(,)?
     ) => {
         $(
-            impl<'a, $($gen: Component),+> QueryTuple<'a> for $tuple {
+            impl<'a, $($gen: Component),+> QuerySpec<'a> for $tuple {
                 type Builder = $builder;
 
                 fn build(scene: &'a Scene) -> Self::Builder {
@@ -21,7 +21,7 @@ macro_rules! impl_base_tuple_query_arities {
                 }
             }
 
-            impl<'a, $($gen: Component),+> QueryTupleMut<'a> for $tuple {
+            impl<'a, $($gen: Component),+> QuerySpecMut<'a> for $tuple {
                 type Builder = $builder_mut;
 
                 fn build(scene: &'a mut Scene) -> Self::Builder {
@@ -37,12 +37,18 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
         Self {
             scene,
             tags: Vec::new(),
+            without_tags: Vec::new(),
             _marker: PhantomData,
         }
     }
 
     pub fn with<T: Tag>(mut self) -> Self {
         self.tags.push(T::type_id());
+        self
+    }
+
+    pub fn without<T: Tag>(mut self) -> Self {
+        self.without_tags.push(T::type_id());
         self
     }
 
@@ -53,14 +59,18 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
         QueryBuilderFiltered {
             scene: self.scene,
             tags: self.tags,
+            without_tags: self.without_tags,
             filter: f,
             _marker: PhantomData,
         }
     }
 
-    pub fn iter(self) -> Query<'a, C> {
+    pub fn iter(self) -> QueryIter<'a, C> {
         let mut accesses = Vec::new();
-        for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
+        for (arch_id, col_idx) in
+            self.scene
+                .cached_single_plan(C::type_id(), &self.tags, &self.without_tags)
+        {
             let arch = self.scene.archetypes().get(arch_id);
             let col = &arch.columns()[col_idx] as *const _;
             accesses.push(QueryAccess {
@@ -69,14 +79,14 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
                 row: 0,
             });
         }
-        Query {
+        QueryIter {
             accesses,
             idx: 0,
             _marker: PhantomData,
         }
     }
 
-    pub fn iter_unfiltered(self) -> Query<'a, C> {
+    pub fn iter_unfiltered(self) -> QueryIter<'a, C> {
         self.iter()
     }
 
@@ -93,12 +103,18 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
         Self {
             scene,
             tags: Vec::new(),
+            without_tags: Vec::new(),
             _marker: PhantomData,
         }
     }
 
     pub fn with<T: Tag>(mut self) -> Self {
         self.tags.push(T::type_id());
+        self
+    }
+
+    pub fn without<T: Tag>(mut self) -> Self {
+        self.without_tags.push(T::type_id());
         self
     }
 
@@ -109,27 +125,31 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
         QueryMutBuilderFiltered {
             scene: self.scene,
             tags: self.tags,
+            without_tags: self.without_tags,
             filter: f,
             _marker: PhantomData,
         }
     }
 
-    pub fn iter(self) -> QueryMut<'a, C> {
+    pub fn iter(self) -> QueryIterMut<'a, C> {
         let mut accesses = Vec::new();
-        for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
+        for (arch_id, col_idx) in
+            self.scene
+                .cached_single_plan(C::type_id(), &self.tags, &self.without_tags)
+        {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
             let col = &mut arch.columns_mut()[col_idx] as *mut _;
             accesses.push(QueryMutAccess { col, len, row: 0 });
         }
-        QueryMut {
+        QueryIterMut {
             accesses,
             idx: 0,
             _marker: PhantomData,
         }
     }
 
-    pub fn iter_unfiltered(self) -> QueryMut<'a, C> {
+    pub fn iter_unfiltered(self) -> QueryIterMut<'a, C> {
         self.iter()
     }
 
@@ -137,149 +157,6 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
         let mut iter = self.iter();
         while let Some(item) = iter.next() {
             f(item);
-        }
-    }
-}
-
-impl<'a, A: Component, B: Component> QueryPairBuilder<'a, A, B> {
-    fn new(scene: &'a Scene) -> Self {
-        Self {
-            scene,
-            tags: Vec::new(),
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn with<T: Tag>(mut self) -> Self {
-        self.tags.push(T::type_id());
-        self
-    }
-
-    pub fn filter<F>(self, f: F) -> QueryPairBuilderFiltered<'a, A, B, F>
-    where
-        F: Fn(&A, &B) -> bool + 'a,
-    {
-        QueryPairBuilderFiltered {
-            scene: self.scene,
-            tags: self.tags,
-            filter: f,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn iter(self) -> QueryPair<'a, A, B> {
-        if A::type_id() == B::type_id() {
-            error!("query_pair called with identical component types");
-            return QueryPair {
-                accesses: Vec::new(),
-                idx: 0,
-                _marker: PhantomData,
-            };
-        }
-
-        let mut accesses = Vec::new();
-        for (arch_id, a_idx, b_idx) in
-            self.scene
-                .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
-        {
-            let arch = self.scene.archetypes().get(arch_id);
-            let cols = arch.columns();
-            let a_col = &cols[a_idx] as *const _;
-            let b_col = &cols[b_idx] as *const _;
-            accesses.push(QueryPairAccess {
-                a_col,
-                b_col,
-                len: arch.len(),
-                row: 0,
-            });
-        }
-        QueryPair {
-            accesses,
-            idx: 0,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn iter_unfiltered(self) -> QueryPair<'a, A, B> {
-        self.iter()
-    }
-
-    pub fn for_each(self, mut f: impl FnMut(&A, &B)) {
-        let mut iter = self.iter();
-        while let Some((a, b)) = iter.next() {
-            f(a, b);
-        }
-    }
-}
-
-impl<'a, A: Component, B: Component> QueryPairMutBuilder<'a, A, B> {
-    fn new(scene: &'a mut Scene) -> Self {
-        Self {
-            scene,
-            tags: Vec::new(),
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn with<T: Tag>(mut self) -> Self {
-        self.tags.push(T::type_id());
-        self
-    }
-
-    pub fn filter<F>(self, f: F) -> QueryPairMutBuilderFiltered<'a, A, B, F>
-    where
-        F: Fn(&A, &B) -> bool + 'a,
-    {
-        QueryPairMutBuilderFiltered {
-            scene: self.scene,
-            tags: self.tags,
-            filter: f,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn iter(self) -> QueryPairMut<'a, A, B> {
-        if A::type_id() == B::type_id() {
-            error!("query_pair_mut called with identical component types");
-            return QueryPairMut {
-                accesses: Vec::new(),
-                idx: 0,
-                _marker: PhantomData,
-            };
-        }
-
-        let mut accesses = Vec::new();
-        for (arch_id, a_idx, b_idx) in
-            self.scene
-                .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
-        {
-            let arch = self.scene.archetypes_mut().get_mut(arch_id);
-            let len = arch.len();
-            let cols = arch.columns_mut();
-            let a_col = &mut cols[a_idx] as *mut _;
-            let b_col = &mut cols[b_idx] as *mut _;
-            accesses.push(QueryPairMutAccess {
-                a_col,
-                b_col,
-                len,
-                row: 0,
-            });
-        }
-        QueryPairMut {
-            accesses,
-            idx: 0,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn iter_unfiltered(self) -> QueryPairMut<'a, A, B> {
-        self.iter()
-    }
-
-    pub fn for_each(self, mut f: impl FnMut(&mut A, &mut B)) {
-        let mut iter = self.iter();
-        while let Some((a, b)) = iter.next() {
-            f(a, b);
         }
     }
 }
@@ -293,9 +170,17 @@ where
         self
     }
 
-    pub fn iter(self) -> QueryFiltered<'a, C, F> {
+    pub fn without<T: Tag>(mut self) -> Self {
+        self.without_tags.push(T::type_id());
+        self
+    }
+
+    pub fn iter(self) -> QueryIterFiltered<'a, C, F> {
         let mut accesses = Vec::new();
-        for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
+        for (arch_id, col_idx) in
+            self.scene
+                .cached_single_plan(C::type_id(), &self.tags, &self.without_tags)
+        {
             let arch = self.scene.archetypes().get(arch_id);
             let col = &arch.columns()[col_idx] as *const _;
             accesses.push(QueryAccess {
@@ -304,8 +189,8 @@ where
                 row: 0,
             });
         }
-        QueryFiltered {
-            inner: Query {
+        QueryIterFiltered {
+            inner: QueryIter {
                 accesses,
                 idx: 0,
                 _marker: PhantomData,
@@ -322,62 +207,6 @@ where
     }
 }
 
-impl<'a, A: Component, B: Component, F> QueryPairBuilderFiltered<'a, A, B, F>
-where
-    F: Fn(&A, &B) -> bool + 'a,
-{
-    pub fn with<T: Tag>(mut self) -> Self {
-        self.tags.push(T::type_id());
-        self
-    }
-
-    pub fn iter(self) -> QueryPairFiltered<'a, A, B, F> {
-        if A::type_id() == B::type_id() {
-            error!("query_pair called with identical component types");
-            return QueryPairFiltered {
-                inner: QueryPair {
-                    accesses: Vec::new(),
-                    idx: 0,
-                    _marker: PhantomData,
-                },
-                filter: self.filter,
-            };
-        }
-
-        let mut accesses = Vec::new();
-        for (arch_id, a_idx, b_idx) in
-            self.scene
-                .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
-        {
-            let arch = self.scene.archetypes().get(arch_id);
-            let cols = arch.columns();
-            let a_col = &cols[a_idx] as *const _;
-            let b_col = &cols[b_idx] as *const _;
-            accesses.push(QueryPairAccess {
-                a_col,
-                b_col,
-                len: arch.len(),
-                row: 0,
-            });
-        }
-        QueryPairFiltered {
-            inner: QueryPair {
-                accesses,
-                idx: 0,
-                _marker: PhantomData,
-            },
-            filter: self.filter,
-        }
-    }
-
-    pub fn for_each(self, mut f: impl FnMut(&A, &B)) {
-        let mut iter = self.iter();
-        while let Some((a, b)) = iter.next() {
-            f(a, b);
-        }
-    }
-}
-
 impl<'a, C: Component, F> QueryMutBuilderFiltered<'a, C, F>
 where
     F: Fn(&C) -> bool + 'a,
@@ -387,16 +216,24 @@ where
         self
     }
 
-    pub fn iter(self) -> QueryMutFiltered<'a, C, F> {
+    pub fn without<T: Tag>(mut self) -> Self {
+        self.without_tags.push(T::type_id());
+        self
+    }
+
+    pub fn iter(self) -> QueryIterMutFiltered<'a, C, F> {
         let mut accesses = Vec::new();
-        for (arch_id, col_idx) in self.scene.cached_single_plan(C::type_id(), &self.tags) {
+        for (arch_id, col_idx) in
+            self.scene
+                .cached_single_plan(C::type_id(), &self.tags, &self.without_tags)
+        {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
             let col = &mut arch.columns_mut()[col_idx] as *mut _;
             accesses.push(QueryMutAccess { col, len, row: 0 });
         }
-        QueryMutFiltered {
-            inner: QueryMut {
+        QueryIterMutFiltered {
+            inner: QueryIterMut {
                 accesses,
                 idx: 0,
                 _marker: PhantomData,
@@ -413,63 +250,6 @@ where
     }
 }
 
-impl<'a, A: Component, B: Component, F> QueryPairMutBuilderFiltered<'a, A, B, F>
-where
-    F: Fn(&A, &B) -> bool + 'a,
-{
-    pub fn with<T: Tag>(mut self) -> Self {
-        self.tags.push(T::type_id());
-        self
-    }
-
-    pub fn iter(self) -> QueryPairMutFiltered<'a, A, B, F> {
-        if A::type_id() == B::type_id() {
-            error!("query_pair_mut called with identical component types");
-            return QueryPairMutFiltered {
-                inner: QueryPairMut {
-                    accesses: Vec::new(),
-                    idx: 0,
-                    _marker: PhantomData,
-                },
-                filter: self.filter,
-            };
-        }
-
-        let mut accesses = Vec::new();
-        for (arch_id, a_idx, b_idx) in
-            self.scene
-                .cached_pair_plan(A::type_id(), B::type_id(), &self.tags)
-        {
-            let arch = self.scene.archetypes_mut().get_mut(arch_id);
-            let len = arch.len();
-            let cols = arch.columns_mut();
-            let a_col = &mut cols[a_idx] as *mut _;
-            let b_col = &mut cols[b_idx] as *mut _;
-            accesses.push(QueryPairMutAccess {
-                a_col,
-                b_col,
-                len,
-                row: 0,
-            });
-        }
-        QueryPairMutFiltered {
-            inner: QueryPairMut {
-                accesses,
-                idx: 0,
-                _marker: PhantomData,
-            },
-            filter: self.filter,
-        }
-    }
-
-    pub fn for_each(self, mut f: impl FnMut(&mut A, &mut B)) {
-        let mut iter = self.iter();
-        while let Some((a, b)) = iter.next() {
-            f(a, b);
-        }
-    }
-}
-
 macro_rules! impl_tuple_builders_arity {
     (
         $builder:ident,
@@ -482,25 +262,27 @@ macro_rules! impl_tuple_builders_arity {
         $first_col:ident,
         $($ty:ident, $idx:ident, $col:ident),+
     ) => {
-        impl<'a, $first_ty: Component, $($ty: Component),+> QueryTuple<'a> for ($first_ty, $($ty,)+) {
+        impl<'a, $first_ty: Component, $($ty: Component),+> QuerySpec<'a> for ($first_ty, $($ty,)+) {
             type Builder = $builder<'a, $first_ty, $($ty),+>;
 
             fn build(scene: &'a Scene) -> Self::Builder {
                 $builder {
                     scene,
                     tags: Vec::new(),
+                    without_tags: Vec::new(),
                     _marker: PhantomData,
                 }
             }
         }
 
-        impl<'a, $first_ty: Component, $($ty: Component),+> QueryTupleMut<'a> for ($first_ty, $($ty,)+) {
+        impl<'a, $first_ty: Component, $($ty: Component),+> QuerySpecMut<'a> for ($first_ty, $($ty,)+) {
             type Builder = $builder_mut<'a, $first_ty, $($ty),+>;
 
             fn build(scene: &'a mut Scene) -> Self::Builder {
                 $builder_mut {
                     scene,
                     tags: Vec::new(),
+                    without_tags: Vec::new(),
                     _marker: PhantomData,
                 }
             }
@@ -509,6 +291,11 @@ macro_rules! impl_tuple_builders_arity {
         impl<'a, $first_ty: Component, $($ty: Component),+> $builder<'a, $first_ty, $($ty),+> {
             pub fn with<T: Tag>(mut self) -> Self {
                 self.tags.push(T::type_id());
+                self
+            }
+
+            pub fn without<T: Tag>(mut self) -> Self {
+                self.without_tags.push(T::type_id());
                 self
             }
 
@@ -526,7 +313,7 @@ macro_rules! impl_tuple_builders_arity {
 
                 for (arch_id, first_idx) in self
                     .scene
-                    .cached_single_plan($first_ty::type_id(), &self.tags)
+                    .cached_single_plan($first_ty::type_id(), &self.tags, &self.without_tags)
                 {
                     let arch = self.scene.archetypes().get(arch_id);
                     $(let $idx = match arch.column_index($ty::type_id()) {
@@ -565,6 +352,11 @@ macro_rules! impl_tuple_builders_arity {
                 self
             }
 
+            pub fn without<T: Tag>(mut self) -> Self {
+                self.without_tags.push(T::type_id());
+                self
+            }
+
             pub fn iter(self) -> $iter_mut<'a, $first_ty, $($ty),+> {
                 let mut accesses = Vec::new();
                 let required = [$first_ty::type_id(), $($ty::type_id()),+];
@@ -579,7 +371,7 @@ macro_rules! impl_tuple_builders_arity {
 
                 for (arch_id, first_idx) in self
                     .scene
-                    .cached_single_plan($first_ty::type_id(), &self.tags)
+                    .cached_single_plan($first_ty::type_id(), &self.tags, &self.without_tags)
                 {
                     let arch = self.scene.archetypes_mut().get_mut(arch_id);
                     $(let $idx = match arch.column_index($ty::type_id()) {
@@ -615,7 +407,7 @@ macro_rules! impl_tuple_builders_arity {
     };
 }
 
-impl<'a, C: Component> QueryTuple<'a> for C {
+impl<'a, C: Component> QuerySpec<'a> for C {
     type Builder = QueryBuilder<'a, C>;
 
     fn build(scene: &'a Scene) -> Self::Builder {
@@ -623,7 +415,7 @@ impl<'a, C: Component> QueryTuple<'a> for C {
     }
 }
 
-impl<'a, C: Component> QueryTupleMut<'a> for C {
+impl<'a, C: Component> QuerySpecMut<'a> for C {
     type Builder = QueryMutBuilder<'a, C>;
 
     fn build(scene: &'a mut Scene) -> Self::Builder {
