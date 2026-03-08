@@ -1,6 +1,6 @@
 use comet_colors::{Color as ColorTrait, LinearRgba};
 use comet_ecs::{
-    Camera2D, Component, ComponentTuple, Entity, Render2D, Scene, Text, Transform2D, Transform3D,
+    Camera2D, Component, Entity, Render2D, Scene, Text, Transform2D, Transform3D,
 };
 use comet_input::keyboard::Key;
 use comet_log::*;
@@ -250,11 +250,6 @@ impl App {
         self.scene.get_entity(entity_id)
     }
 
-    /// Gets a mutable reference to an entity by its ID.
-    pub fn get_entity_mut(&mut self, entity_id: Entity) -> Option<&mut Entity> {
-        self.scene.get_entity_mut(entity_id)
-    }
-
     /// Registers a new component in the `Scene`.
     pub fn register_component<C: Component>(&mut self) {
         self.scene.register_component::<C>()
@@ -291,16 +286,6 @@ impl App {
     /// Otherwise it would be a factorial complexity chaos.
     pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
         self.scene.delete_entities_with(components)
-    }
-
-    /// Deletes all entities that have the component tuple.
-    pub fn delete_entities_with_types<Cs: ComponentTuple>(&mut self) {
-        self.scene.delete_entities_with_types::<Cs>()
-    }
-
-    /// Iterates over all entities that have the two given components and calls the given function.
-    pub fn foreach<C: Component, K: Component>(&mut self, func: fn(&mut C, &mut K)) {
-        self.scene.foreach::<C, K>(func)
     }
 
     /// Returns whether an entity has the given component.

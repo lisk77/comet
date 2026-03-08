@@ -168,6 +168,15 @@ impl<'a, A: Component, B: Component> QueryPairBuilder<'a, A, B> {
     }
 
     pub fn iter(self) -> QueryPair<'a, A, B> {
+        if A::type_id() == B::type_id() {
+            error!("query_pair called with identical component types");
+            return QueryPair {
+                accesses: Vec::new(),
+                idx: 0,
+                _marker: PhantomData,
+            };
+        }
+
         let mut accesses = Vec::new();
         for (arch_id, a_idx, b_idx) in
             self.scene
@@ -230,6 +239,15 @@ impl<'a, A: Component, B: Component> QueryPairMutBuilder<'a, A, B> {
     }
 
     pub fn iter(self) -> QueryPairMut<'a, A, B> {
+        if A::type_id() == B::type_id() {
+            error!("query_pair_mut called with identical component types");
+            return QueryPairMut {
+                accesses: Vec::new(),
+                idx: 0,
+                _marker: PhantomData,
+            };
+        }
+
         let mut accesses = Vec::new();
         for (arch_id, a_idx, b_idx) in
             self.scene
@@ -314,6 +332,18 @@ where
     }
 
     pub fn iter(self) -> QueryPairFiltered<'a, A, B, F> {
+        if A::type_id() == B::type_id() {
+            error!("query_pair called with identical component types");
+            return QueryPairFiltered {
+                inner: QueryPair {
+                    accesses: Vec::new(),
+                    idx: 0,
+                    _marker: PhantomData,
+                },
+                filter: self.filter,
+            };
+        }
+
         let mut accesses = Vec::new();
         for (arch_id, a_idx, b_idx) in
             self.scene
@@ -393,6 +423,18 @@ where
     }
 
     pub fn iter(self) -> QueryPairMutFiltered<'a, A, B, F> {
+        if A::type_id() == B::type_id() {
+            error!("query_pair_mut called with identical component types");
+            return QueryPairMutFiltered {
+                inner: QueryPairMut {
+                    accesses: Vec::new(),
+                    idx: 0,
+                    _marker: PhantomData,
+                },
+                filter: self.filter,
+            };
+        }
+
         let mut accesses = Vec::new();
         for (arch_id, a_idx, b_idx) in
             self.scene
@@ -591,7 +633,6 @@ impl<'a, C: Component> QueryTupleMut<'a> for C {
 
 impl_base_tuple_query_arities!(
     (A; (A,), QueryBuilder<'a, A>, QueryMutBuilder<'a, A>),
-    (A, B; (A, B), QueryPairBuilder<'a, A, B>, QueryPairMutBuilder<'a, A, B>),
 );
 
 for_each_tuple_arity!(impl_tuple_builders_arity);

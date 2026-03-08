@@ -154,16 +154,6 @@ impl Scene {
             .and_then(|e| e.as_ref())
     }
 
-    /// Gets a mutable reference to an entity by its ID.
-    pub fn get_entity_mut(&mut self, entity_id: Entity) -> Option<&mut Entity> {
-        if !self.is_alive(entity_id) {
-            return None;
-        }
-        self.entities
-            .get_mut(entity_id.index as usize)
-            .and_then(|e| e.as_mut())
-    }
-
     /// Deletes an entity by its ID.
     pub fn delete_entity(&mut self, entity_id: Entity) {
         if !self.is_alive(entity_id) {
@@ -664,66 +654,6 @@ impl Scene {
         self.delete_entities_with_indices(&indices);
     }
 
-    /// Deletes all entities that have the component tuple.
-    pub fn delete_entities_with_types<Cs: ComponentTuple>(&mut self) {
-        self.delete_entities_with(Cs::type_ids());
-    }
-
-    /// Iterates over all entities that have the two given components and calls the given function.
-    pub fn foreach<C: Component, K: Component>(&mut self, mut func: impl FnMut(&mut C, &mut K)) {
-        if C::type_id() == K::type_id() {
-            error!("foreach called with identical component types");
-            return;
-        }
-
-        let c_index = match self.component_index.get(&C::type_id()).copied() {
-            Some(index) => index,
-            None => return,
-        };
-        let k_index = match self.component_index.get(&K::type_id()).copied() {
-            Some(index) => index,
-            None => return,
-        };
-        let required = ComponentSet::from_indices(vec![c_index, k_index]);
-        for arch in self.archetypes.iter_mut() {
-            if required.is_subset(arch.set()) {
-                let c_idx = match arch.column_index(C::type_id()) {
-                    Some(idx) => idx,
-                    None => continue,
-                };
-                let k_idx = match arch.column_index(K::type_id()) {
-                    Some(idx) => idx,
-                    None => continue,
-                };
-
-                let len = arch.len();
-                if c_idx < k_idx {
-                    let (left, right) = arch.columns_mut().split_at_mut(k_idx);
-                    let c_col = &mut left[c_idx];
-                    let k_col = &mut right[0];
-                    for row in 0..len {
-                        if let (Some(c), Some(k)) =
-                            (c_col.get_mut::<C>(row), k_col.get_mut::<K>(row))
-                        {
-                            func(c, k);
-                        }
-                    }
-                } else {
-                    let (left, right) = arch.columns_mut().split_at_mut(c_idx);
-                    let k_col = &mut left[k_idx];
-                    let c_col = &mut right[0];
-                    for row in 0..len {
-                        if let (Some(c), Some(k)) =
-                            (c_col.get_mut::<C>(row), k_col.get_mut::<K>(row))
-                        {
-                            func(c, k);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     /// Registers a prefab with the given name and factory function.
     pub fn register_prefab(&mut self, name: &str, factory: crate::prefabs::PrefabFactory) {
         self.prefabs.register(name, factory);
@@ -764,7 +694,7 @@ impl Scene {
         self.add_with_components(entity, bundle.into_components());
     }
 
-    pub fn add_with_components(&mut self, entity_id: Entity, mut components: Vec<ErasedComponent>) {
+    pub(crate) fn add_with_components(&mut self, entity_id: Entity, mut components: Vec<ErasedComponent>) {
         if !self.is_alive(entity_id) || components.is_empty() {
             return;
         }
@@ -863,6 +793,13 @@ mod tests {
     struct A;
     impl Component for A {}
 
+    struct B;
+    impl Component for B {}
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct Value(i32);
+    impl Component for Value {}
+
     struct Unregistered;
     impl Component for Unregistered {}
 
@@ -891,5 +828,36 @@ mod tests {
         scene.add_with_components(entity, vec![ErasedComponent::new(Unregistered)]);
 
         assert!(scene.get_component::<Unregistered>(entity).is_none());
+    }
+
+    #[test]
+    fn query_mut_pair_rejects_identical_component_types() {
+        let mut scene = Scene::new();
+        scene.register_component::<A>();
+
+        let entity = scene.new_entity();
+        scene.add_component(entity, A);
+
+        let mut iter = scene.query_mut::<(A, A)>().iter();
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn add_component_moves_entity_between_archetypes_and_preserves_swapped_entity_location() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<B>();
+
+        let e1 = scene.new_entity();
+        let e2 = scene.new_entity();
+        scene.add_component(e1, Value(10));
+        scene.add_component(e2, Value(20));
+
+        scene.add_component(e1, B);
+
+        assert_eq!(scene.get_component::<Value>(e1).map(|v| v.0), Some(10));
+        assert!(scene.get_component::<B>(e1).is_some());
+        assert_eq!(scene.get_component::<Value>(e2).map(|v| v.0), Some(20));
+        assert!(scene.get_component::<B>(e2).is_none());
     }
 }

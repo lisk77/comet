@@ -17,6 +17,19 @@ fn has_duplicate_type_ids(ids: &[TypeId]) -> bool {
 macro_rules! for_each_tuple_arity {
     ($m:ident) => {
         $m!(
+            Query2Builder,
+            Query2,
+            Query2Access,
+            Query2MutBuilder,
+            Query2Mut,
+            Query2MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col
+        );
+        $m!(
             Query3Builder,
             Query3,
             Query3Access,
