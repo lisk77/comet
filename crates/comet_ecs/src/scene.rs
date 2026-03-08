@@ -244,12 +244,9 @@ impl Scene {
     }
 
     fn normalized_tags(tags: &[TypeId]) -> Vec<TypeId> {
-        let mut normalized = Vec::with_capacity(tags.len());
-        for tag in tags {
-            if !normalized.contains(tag) {
-                normalized.push(*tag);
-            }
-        }
+        let mut normalized = tags.to_vec();
+        normalized.sort_unstable();
+        normalized.dedup();
         normalized
     }
 
@@ -859,5 +856,22 @@ mod tests {
         assert!(scene.get_component::<B>(e1).is_some());
         assert_eq!(scene.get_component::<Value>(e2).map(|v| v.0), Some(20));
         assert!(scene.get_component::<B>(e2).is_none());
+    }
+
+    #[test]
+    fn normalized_tags_are_order_independent_and_deduplicated() {
+        let tags_abab = Scene::normalized_tags(&[
+            std::any::TypeId::of::<A>(),
+            std::any::TypeId::of::<B>(),
+            std::any::TypeId::of::<A>(),
+            std::any::TypeId::of::<B>(),
+        ]);
+        let tags_ba = Scene::normalized_tags(&[
+            std::any::TypeId::of::<B>(),
+            std::any::TypeId::of::<A>(),
+        ]);
+
+        assert_eq!(tags_abab, tags_ba);
+        assert_eq!(tags_abab.len(), 2);
     }
 }
