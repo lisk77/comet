@@ -52,7 +52,7 @@ fn handle_input(app: &mut App, dt: f32) {
     }
 
     if direction != v2::ZERO {
-        app.query_mut::<Transform2D>()
+        app.query::<&mut Transform2D>()
             .with::<Player>()
             .for_each(|t| {
                 let normalized_dir = direction.normalize();

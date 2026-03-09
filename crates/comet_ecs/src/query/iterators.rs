@@ -1,8 +1,8 @@
 use super::tuple_types::*;
 use super::*;
 
-impl<'a, C: Component> Iterator for QueryIter<'a, C> {
-    type Item = &'a C;
+impl<'a, P: ReadFetch<'a>> Iterator for QueryIter<'a, P> {
+    type Item = P::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -13,16 +13,13 @@ impl<'a, C: Component> Iterator for QueryIter<'a, C> {
             }
             let row = access.row;
             access.row += 1;
-            unsafe {
-                let col = &*access.col;
-                return col.get::<C>(row);
-            }
+            unsafe { return P::get(access.col, row); }
         }
     }
 }
 
-impl<'a, C: Component> Iterator for QueryIterMut<'a, C> {
-    type Item = &'a mut C;
+impl<'a, P: WriteFetch<'a>> Iterator for QueryIterMut<'a, P> {
+    type Item = P::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -33,40 +30,37 @@ impl<'a, C: Component> Iterator for QueryIterMut<'a, C> {
             }
             let row = access.row;
             access.row += 1;
-            unsafe {
-                let col = &mut *access.col;
-                return col.get_mut::<C>(row);
-            }
+            unsafe { return P::get(access.col, row); }
         }
     }
 }
 
-impl<'a, C: Component, F> Iterator for QueryIterFiltered<'a, C, F>
+impl<'a, P: ReadFetch<'a>, F> Iterator for QueryIterFiltered<'a, P, F>
 where
-    F: Fn(&C) -> bool + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
 {
-    type Item = &'a C;
+    type Item = P::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let item = self.inner.next()?;
-            if (self.filter)(item) {
+            if (self.filter)(P::as_ref(&item)) {
                 return Some(item);
             }
         }
     }
 }
 
-impl<'a, C: Component, F> Iterator for QueryIterMutFiltered<'a, C, F>
+impl<'a, P: WriteFetch<'a>, F> Iterator for QueryIterMutFiltered<'a, P, F>
 where
-    F: Fn(&C) -> bool + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
 {
-    type Item = &'a mut C;
+    type Item = P::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let item = self.inner.next()?;
-            if (self.filter)(&*item) {
+            if (self.filter)(P::as_ref(&item)) {
                 return Some(item);
             }
         }
@@ -85,8 +79,8 @@ macro_rules! impl_tuple_iterators_arity {
         $first_col:ident,
         $($ty:ident, $idx:ident, $col:ident),+
     ) => {
-        impl<'a, $first_ty: Component, $($ty: Component),+> Iterator for $iter<'a, $first_ty, $($ty),+> {
-            type Item = (&'a $first_ty, $(&'a $ty),+);
+        impl<'a, $first_ty: ReadFetch<'a>, $($ty: ReadFetch<'a>),+> Iterator for $iter<'a, $first_ty, $($ty),+> {
+            type Item = ($first_ty::Item, $($ty::Item),+);
 
             fn next(&mut self) -> Option<Self::Item> {
                 loop {
@@ -99,16 +93,16 @@ macro_rules! impl_tuple_iterators_arity {
                     access.row += 1;
                     unsafe {
                         return Some((
-                            (&*access.$first_col).get::<$first_ty>(row)?,
-                            $((&*access.$col).get::<$ty>(row)?,)+
+                            $first_ty::get(access.$first_col, row)?,
+                            $($ty::get(access.$col, row)?,)+
                         ));
                     }
                 }
             }
         }
 
-        impl<'a, $first_ty: Component, $($ty: Component),+> Iterator for $iter_mut<'a, $first_ty, $($ty),+> {
-            type Item = (&'a mut $first_ty, $(&'a mut $ty),+);
+        impl<'a, $first_ty: WriteFetch<'a>, $($ty: WriteFetch<'a>),+> Iterator for $iter_mut<'a, $first_ty, $($ty),+> {
+            type Item = ($first_ty::Item, $($ty::Item),+);
 
             fn next(&mut self) -> Option<Self::Item> {
                 loop {
@@ -121,8 +115,8 @@ macro_rules! impl_tuple_iterators_arity {
                     access.row += 1;
                     unsafe {
                         return Some((
-                            (&mut *access.$first_col).get_mut::<$first_ty>(row)?,
-                            $((&mut *access.$col).get_mut::<$ty>(row)?,)+
+                            $first_ty::get(access.$first_col, row)?,
+                            $($ty::get(access.$col, row)?,)+
                         ));
                     }
                 }

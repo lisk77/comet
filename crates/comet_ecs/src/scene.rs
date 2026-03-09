@@ -833,7 +833,7 @@ mod tests {
         let entity = scene.new_entity();
         scene.add_component(entity, A);
 
-        let mut iter = scene.query_mut::<(A, A)>().iter();
+        let mut iter = scene.query_mut::<(&mut A, &mut A)>().iter();
         assert!(iter.next().is_none());
     }
 
@@ -890,7 +890,7 @@ mod tests {
         scene.add_component(filtered_out, ExcludeTag);
 
         let values: Vec<i32> = scene
-            .query::<Value>()
+            .query::<&Value>()
             .with::<IncludeTag>()
             .without::<ExcludeTag>()
             .iter()
@@ -911,7 +911,7 @@ mod tests {
         scene.add_component(entity, IncludeTag);
 
         let mut iter = scene
-            .query::<Value>()
+            .query::<&Value>()
             .with::<IncludeTag>()
             .without::<IncludeTag>()
             .iter();

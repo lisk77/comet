@@ -13,7 +13,7 @@ macro_rules! impl_base_tuple_query_arities {
         ),+ $(,)?
     ) => {
         $(
-            impl<'a, $($gen: Component),+> QuerySpec<'a> for $tuple {
+            impl<'a, $($gen: ReadFetch<'a> + 'a),+> QuerySpec<'a> for $tuple {
                 type Builder = $builder;
 
                 fn build(scene: &'a Scene) -> Self::Builder {
@@ -21,7 +21,7 @@ macro_rules! impl_base_tuple_query_arities {
                 }
             }
 
-            impl<'a, $($gen: Component),+> QuerySpecMut<'a> for $tuple {
+            impl<'a, $($gen: WriteFetch<'a> + 'a),+> QuerySpecMut<'a> for $tuple {
                 type Builder = $builder_mut;
 
                 fn build(scene: &'a mut Scene) -> Self::Builder {
@@ -32,7 +32,7 @@ macro_rules! impl_base_tuple_query_arities {
     };
 }
 
-impl<'a, C: Component> QueryBuilder<'a, C> {
+impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
     fn new(scene: &'a Scene) -> Self {
         Self {
             scene,
@@ -52,9 +52,9 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
         self
     }
 
-    pub fn filter<F>(self, f: F) -> QueryBuilderFiltered<'a, C, F>
+    pub fn filter<F>(self, f: F) -> QueryBuilderFiltered<'a, P, F>
     where
-        F: Fn(&C) -> bool + 'a,
+        F: Fn(&P::Component) -> bool + 'a,
     {
         QueryBuilderFiltered {
             scene: self.scene,
@@ -65,11 +65,11 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
         }
     }
 
-    pub fn iter(self) -> QueryIter<'a, C> {
+    pub fn iter(self) -> QueryIter<'a, P> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
             self.scene
-                .cached_single_plan(C::type_id(), &self.tags, &self.without_tags)
+                .cached_single_plan(P::type_id(), &self.tags, &self.without_tags)
         {
             let arch = self.scene.archetypes().get(arch_id);
             let col = &arch.columns()[col_idx] as *const _;
@@ -86,11 +86,11 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
         }
     }
 
-    pub fn iter_unfiltered(self) -> QueryIter<'a, C> {
+    pub fn iter_unfiltered(self) -> QueryIter<'a, P> {
         self.iter()
     }
 
-    pub fn for_each(self, mut f: impl FnMut(&C)) {
+    pub fn for_each(self, mut f: impl FnMut(P::Item)) {
         let mut iter = self.iter();
         while let Some(item) = iter.next() {
             f(item);
@@ -98,7 +98,7 @@ impl<'a, C: Component> QueryBuilder<'a, C> {
     }
 }
 
-impl<'a, C: Component> QueryMutBuilder<'a, C> {
+impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
     fn new(scene: &'a mut Scene) -> Self {
         Self {
             scene,
@@ -118,9 +118,9 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
         self
     }
 
-    pub fn filter<F>(self, f: F) -> QueryMutBuilderFiltered<'a, C, F>
+    pub fn filter<F>(self, f: F) -> QueryMutBuilderFiltered<'a, P, F>
     where
-        F: Fn(&C) -> bool + 'a,
+        F: Fn(&P::Component) -> bool + 'a,
     {
         QueryMutBuilderFiltered {
             scene: self.scene,
@@ -131,11 +131,11 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
         }
     }
 
-    pub fn iter(self) -> QueryIterMut<'a, C> {
+    pub fn iter(self) -> QueryIterMut<'a, P> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
             self.scene
-                .cached_single_plan(C::type_id(), &self.tags, &self.without_tags)
+                .cached_single_plan(P::type_id(), &self.tags, &self.without_tags)
         {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
@@ -149,11 +149,11 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
         }
     }
 
-    pub fn iter_unfiltered(self) -> QueryIterMut<'a, C> {
+    pub fn iter_unfiltered(self) -> QueryIterMut<'a, P> {
         self.iter()
     }
 
-    pub fn for_each(self, mut f: impl FnMut(&mut C)) {
+    pub fn for_each(self, mut f: impl FnMut(P::Item)) {
         let mut iter = self.iter();
         while let Some(item) = iter.next() {
             f(item);
@@ -161,9 +161,9 @@ impl<'a, C: Component> QueryMutBuilder<'a, C> {
     }
 }
 
-impl<'a, C: Component, F> QueryBuilderFiltered<'a, C, F>
+impl<'a, P: ReadFetch<'a> + 'a, F> QueryBuilderFiltered<'a, P, F>
 where
-    F: Fn(&C) -> bool + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
 {
     pub fn with<T: Tag>(mut self) -> Self {
         self.tags.push(T::type_id());
@@ -175,11 +175,11 @@ where
         self
     }
 
-    pub fn iter(self) -> QueryIterFiltered<'a, C, F> {
+    pub fn iter(self) -> QueryIterFiltered<'a, P, F> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
             self.scene
-                .cached_single_plan(C::type_id(), &self.tags, &self.without_tags)
+                .cached_single_plan(P::type_id(), &self.tags, &self.without_tags)
         {
             let arch = self.scene.archetypes().get(arch_id);
             let col = &arch.columns()[col_idx] as *const _;
@@ -196,10 +196,11 @@ where
                 _marker: PhantomData,
             },
             filter: self.filter,
+            _marker: PhantomData,
         }
     }
 
-    pub fn for_each(self, mut f: impl FnMut(&C)) {
+    pub fn for_each(self, mut f: impl FnMut(P::Item)) {
         let mut iter = self.iter();
         while let Some(item) = iter.next() {
             f(item);
@@ -207,9 +208,9 @@ where
     }
 }
 
-impl<'a, C: Component, F> QueryMutBuilderFiltered<'a, C, F>
+impl<'a, P: WriteFetch<'a> + 'a, F> QueryMutBuilderFiltered<'a, P, F>
 where
-    F: Fn(&C) -> bool + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
 {
     pub fn with<T: Tag>(mut self) -> Self {
         self.tags.push(T::type_id());
@@ -221,11 +222,11 @@ where
         self
     }
 
-    pub fn iter(self) -> QueryIterMutFiltered<'a, C, F> {
+    pub fn iter(self) -> QueryIterMutFiltered<'a, P, F> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
             self.scene
-                .cached_single_plan(C::type_id(), &self.tags, &self.without_tags)
+                .cached_single_plan(P::type_id(), &self.tags, &self.without_tags)
         {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
@@ -239,10 +240,11 @@ where
                 _marker: PhantomData,
             },
             filter: self.filter,
+            _marker: PhantomData,
         }
     }
 
-    pub fn for_each(self, mut f: impl FnMut(&mut C)) {
+    pub fn for_each(self, mut f: impl FnMut(P::Item)) {
         let mut iter = self.iter();
         while let Some(item) = iter.next() {
             f(item);
@@ -262,7 +264,7 @@ macro_rules! impl_tuple_builders_arity {
         $first_col:ident,
         $($ty:ident, $idx:ident, $col:ident),+
     ) => {
-        impl<'a, $first_ty: Component, $($ty: Component),+> QuerySpec<'a> for ($first_ty, $($ty,)+) {
+        impl<'a, $first_ty: ReadFetch<'a> + 'a, $($ty: ReadFetch<'a> + 'a),+> QuerySpec<'a> for ($first_ty, $($ty,)+) {
             type Builder = $builder<'a, $first_ty, $($ty),+>;
 
             fn build(scene: &'a Scene) -> Self::Builder {
@@ -275,7 +277,7 @@ macro_rules! impl_tuple_builders_arity {
             }
         }
 
-        impl<'a, $first_ty: Component, $($ty: Component),+> QuerySpecMut<'a> for ($first_ty, $($ty,)+) {
+        impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+> QuerySpecMut<'a> for ($first_ty, $($ty,)+) {
             type Builder = $builder_mut<'a, $first_ty, $($ty),+>;
 
             fn build(scene: &'a mut Scene) -> Self::Builder {
@@ -288,7 +290,7 @@ macro_rules! impl_tuple_builders_arity {
             }
         }
 
-        impl<'a, $first_ty: Component, $($ty: Component),+> $builder<'a, $first_ty, $($ty),+> {
+        impl<'a, $first_ty: ReadFetch<'a> + 'a, $($ty: ReadFetch<'a> + 'a),+> $builder<'a, $first_ty, $($ty),+> {
             pub fn with<T: Tag>(mut self) -> Self {
                 self.tags.push(T::type_id());
                 self
@@ -338,7 +340,7 @@ macro_rules! impl_tuple_builders_arity {
                 }
             }
 
-            pub fn for_each(self, mut f: impl FnMut((&$first_ty, $(&$ty),+))) {
+            pub fn for_each(self, mut f: impl FnMut(($first_ty::Item, $($ty::Item),+))) {
                 let mut iter = self.iter();
                 while let Some(item) = iter.next() {
                     f(item);
@@ -346,7 +348,7 @@ macro_rules! impl_tuple_builders_arity {
             }
         }
 
-        impl<'a, $first_ty: Component, $($ty: Component),+> $builder_mut<'a, $first_ty, $($ty),+> {
+        impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+> $builder_mut<'a, $first_ty, $($ty),+> {
             pub fn with<T: Tag>(mut self) -> Self {
                 self.tags.push(T::type_id());
                 self
@@ -397,7 +399,7 @@ macro_rules! impl_tuple_builders_arity {
                 }
             }
 
-            pub fn for_each(self, mut f: impl FnMut((&mut $first_ty, $(&mut $ty),+))) {
+            pub fn for_each(self, mut f: impl FnMut(($first_ty::Item, $($ty::Item),+))) {
                 let mut iter = self.iter();
                 while let Some(item) = iter.next() {
                     f(item);
@@ -407,24 +409,24 @@ macro_rules! impl_tuple_builders_arity {
     };
 }
 
-impl<'a, C: Component> QuerySpec<'a> for C {
-    type Builder = QueryBuilder<'a, C>;
+impl<'a, P: ReadFetch<'a> + 'a> QuerySpec<'a> for P {
+    type Builder = QueryBuilder<'a, P>;
 
     fn build(scene: &'a Scene) -> Self::Builder {
         QueryBuilder::new(scene)
     }
 }
 
-impl<'a, C: Component> QuerySpecMut<'a> for C {
-    type Builder = QueryMutBuilder<'a, C>;
+impl<'a, P: WriteFetch<'a> + 'a> QuerySpecMut<'a> for P {
+    type Builder = Query<'a, P>;
 
     fn build(scene: &'a mut Scene) -> Self::Builder {
-        QueryMutBuilder::new(scene)
+        Query::new(scene)
     }
 }
 
 impl_base_tuple_query_arities!(
-    (A; (A,), QueryBuilder<'a, A>, QueryMutBuilder<'a, A>),
+    (A; (A,), QueryBuilder<'a, A>, Query<'a, A>),
 );
 
 for_each_tuple_arity!(impl_tuple_builders_arity);

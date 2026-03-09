@@ -201,14 +201,7 @@ impl App {
         self.scene.spawn_bundle(bundle)
     }
 
-    pub fn query<'a, Q>(&'a self) -> <Q as comet_ecs::QuerySpec<'a>>::Builder
-    where
-        Q: comet_ecs::QuerySpec<'a>,
-    {
-        self.scene.query::<Q>()
-    }
-
-    pub fn query_mut<'a, Q>(&'a mut self) -> <Q as comet_ecs::QuerySpecMut<'a>>::Builder
+    pub fn query<'a, Q>(&'a mut self) -> <Q as comet_ecs::QuerySpecMut<'a>>::Builder
     where
         Q: comet_ecs::QuerySpecMut<'a>,
     {

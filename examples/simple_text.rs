@@ -33,7 +33,7 @@ fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
 
     // Recalculating the position of the text every frame to ensure the same relative position
     if size.width > 0 && size.height > 0 {
-        let mut text_query = app.query_mut::<(Transform2D, Text)>().iter();
+        let mut text_query = app.query::<(&mut Transform2D, &Text)>().iter();
         if let Some((transform, _)) = text_query.next() {
             transform.position_mut().set_x(-((size.width - 50) as f32));
             transform.position_mut().set_y((size.height - 100) as f32);

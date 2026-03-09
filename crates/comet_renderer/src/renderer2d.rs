@@ -176,7 +176,7 @@ impl RenderHandle2D {
     pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
         let mut selected_camera: Option<([f32; 2], f32, f32, [f32; 2], u8)> = None;
         for (transform, camera) in scene
-            .query::<(comet_ecs::Transform2D, comet_ecs::Camera2D)>()
+            .query::<(&comet_ecs::Transform2D, &comet_ecs::Camera2D)>()
             .iter()
         {
             let should_replace = selected_camera
@@ -200,7 +200,7 @@ impl RenderHandle2D {
 
         let mut draws = Vec::new();
         for (transform, render) in scene
-            .query::<(comet_ecs::Transform2D, comet_ecs::Render2D)>()
+            .query::<(&comet_ecs::Transform2D, &comet_ecs::Render2D)>()
             .iter()
         {
             draws.push(Draw2D {
@@ -216,7 +216,7 @@ impl RenderHandle2D {
 
         let mut texts = Vec::new();
         for (transform, text) in scene
-            .query::<(comet_ecs::Transform2D, comet_ecs::Text)>()
+            .query::<(&comet_ecs::Transform2D, &comet_ecs::Text)>()
             .iter()
         {
             if !text.is_visible() {

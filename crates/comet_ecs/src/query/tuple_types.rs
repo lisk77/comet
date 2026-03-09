@@ -26,30 +26,30 @@ macro_rules! define_tuple_types_arity {
             pub(super) row: usize,
         }
 
-        pub struct $iter<'a, $first_ty: Component, $($ty: Component),+> {
+        pub struct $iter<'a, $first_ty, $($ty),+> {
             pub(super) accesses: Vec<$access>,
             pub(super) idx: usize,
-            pub(super) _marker: PhantomData<(&'a $first_ty, $(&'a $ty),+)>,
+            pub(super) _marker: PhantomData<(&'a (), $first_ty, $($ty),+)>,
         }
 
-        pub struct $iter_mut<'a, $first_ty: Component, $($ty: Component),+> {
+        pub struct $iter_mut<'a, $first_ty, $($ty),+> {
             pub(super) accesses: Vec<$access_mut>,
             pub(super) idx: usize,
-            pub(super) _marker: PhantomData<(&'a mut $first_ty, $(&'a mut $ty),+)>,
+            pub(super) _marker: PhantomData<(&'a (), $first_ty, $($ty),+)>,
         }
 
-        pub struct $builder<'a, $first_ty: Component, $($ty: Component),+> {
+        pub struct $builder<'a, $first_ty, $($ty),+> {
             pub(super) scene: &'a Scene,
             pub(super) tags: Vec<TypeId>,
             pub(super) without_tags: Vec<TypeId>,
-            pub(super) _marker: PhantomData<(&'a $first_ty, $(&'a $ty),+)>,
+            pub(super) _marker: PhantomData<($first_ty, $($ty),+)>,
         }
 
-        pub struct $builder_mut<'a, $first_ty: Component, $($ty: Component),+> {
+        pub struct $builder_mut<'a, $first_ty, $($ty),+> {
             pub(super) scene: &'a mut Scene,
             pub(super) tags: Vec<TypeId>,
             pub(super) without_tags: Vec<TypeId>,
-            pub(super) _marker: PhantomData<(&'a mut $first_ty, $(&'a mut $ty),+)>,
+            pub(super) _marker: PhantomData<($first_ty, $($ty),+)>,
         }
     };
 }

@@ -185,68 +185,135 @@ struct QueryMutAccess {
     row: usize,
 }
 
-pub struct QueryIter<'a, C: Component> {
+pub trait ReadFetch<'a> {
+    type Component: Component;
+    type Item;
+
+    fn type_id() -> TypeId {
+        TypeId::of::<Self::Component>()
+    }
+
+    unsafe fn get(col: *const comet_structs::Column, row: usize) -> Option<Self::Item>;
+
+    fn as_ref(item: &Self::Item) -> &Self::Component;
+}
+
+impl<'a, C: Component> ReadFetch<'a> for &'a C {
+    type Component = C;
+    type Item = &'a C;
+
+    unsafe fn get(col: *const comet_structs::Column, row: usize) -> Option<Self::Item> {
+        unsafe { (&*col).get::<C>(row) }
+    }
+
+    fn as_ref(item: &Self::Item) -> &Self::Component {
+        item
+    }
+}
+
+pub trait WriteFetch<'a> {
+    type Component: Component;
+    type Item;
+
+    fn type_id() -> TypeId {
+        TypeId::of::<Self::Component>()
+    }
+
+    unsafe fn get(col: *mut comet_structs::Column, row: usize) -> Option<Self::Item>;
+
+    fn as_ref(item: &Self::Item) -> &Self::Component;
+}
+
+impl<'a, C: Component> WriteFetch<'a> for &'a mut C {
+    type Component = C;
+    type Item = &'a mut C;
+
+    unsafe fn get(col: *mut comet_structs::Column, row: usize) -> Option<Self::Item> {
+        unsafe { (&mut *col).get_mut::<C>(row) }
+    }
+
+    fn as_ref(item: &Self::Item) -> &Self::Component {
+        item
+    }
+}
+
+impl<'a, C: Component> WriteFetch<'a> for &'a C {
+    type Component = C;
+    type Item = &'a C;
+
+    unsafe fn get(col: *mut comet_structs::Column, row: usize) -> Option<Self::Item> {
+        unsafe { (&*col).get::<C>(row) }
+    }
+
+    fn as_ref(item: &Self::Item) -> &Self::Component {
+        item
+    }
+}
+
+pub struct QueryIter<'a, P: ReadFetch<'a>> {
     accesses: Vec<QueryAccess>,
     idx: usize,
-    _marker: PhantomData<&'a C>,
+    _marker: PhantomData<&'a P>,
 }
 
-pub struct QueryIterMut<'a, C: Component> {
+pub struct QueryIterMut<'a, P: WriteFetch<'a>> {
     accesses: Vec<QueryMutAccess>,
     idx: usize,
-    _marker: PhantomData<&'a mut C>,
+    _marker: PhantomData<&'a P>,
 }
 
-pub struct QueryBuilder<'a, C: Component> {
+pub struct QueryBuilder<'a, P: ReadFetch<'a>> {
     scene: &'a Scene,
     tags: Vec<TypeId>,
     without_tags: Vec<TypeId>,
-    _marker: PhantomData<&'a C>,
+    _marker: PhantomData<P>,
 }
 
-pub struct QueryMutBuilder<'a, C: Component> {
+pub struct Query<'a, P: WriteFetch<'a>> {
     scene: &'a mut Scene,
     tags: Vec<TypeId>,
     without_tags: Vec<TypeId>,
-    _marker: PhantomData<&'a mut C>,
+    _marker: PhantomData<P>,
 }
 
-pub struct QueryBuilderFiltered<'a, C: Component, F>
+pub struct QueryBuilderFiltered<'a, P: ReadFetch<'a>, F>
 where
-    F: Fn(&C) -> bool + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
 {
     scene: &'a Scene,
     tags: Vec<TypeId>,
     without_tags: Vec<TypeId>,
     filter: F,
-    _marker: PhantomData<&'a C>,
+    _marker: PhantomData<P>,
 }
 
-pub struct QueryMutBuilderFiltered<'a, C: Component, F>
+pub struct QueryMutBuilderFiltered<'a, P: WriteFetch<'a>, F>
 where
-    F: Fn(&C) -> bool + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
 {
     scene: &'a mut Scene,
     tags: Vec<TypeId>,
     without_tags: Vec<TypeId>,
     filter: F,
-    _marker: PhantomData<&'a mut C>,
+    _marker: PhantomData<P>,
 }
 
-pub struct QueryIterFiltered<'a, C: Component, F>
+pub struct QueryIterFiltered<'a, P: ReadFetch<'a>, F>
 where
-    F: Fn(&C) -> bool + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
 {
-    inner: QueryIter<'a, C>,
+    inner: QueryIter<'a, P>,
     filter: F,
+    _marker: PhantomData<&'a P>,
 }
 
-pub struct QueryIterMutFiltered<'a, C: Component, F>
+pub struct QueryIterMutFiltered<'a, P: WriteFetch<'a>, F>
 where
-    F: Fn(&C) -> bool + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
 {
-    inner: QueryIterMut<'a, C>,
+    inner: QueryIterMut<'a, P>,
     filter: F,
+    _marker: PhantomData<&'a P>,
 }
 
 pub trait QuerySpec<'a> {
