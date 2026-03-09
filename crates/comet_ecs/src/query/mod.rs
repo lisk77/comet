@@ -1,4 +1,4 @@
-use crate::{Component, Scene, Tag};
+use crate::{Component, Scene};
 use comet_log::error;
 use std::any::TypeId;
 use std::marker::PhantomData;

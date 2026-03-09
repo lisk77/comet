@@ -42,13 +42,13 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
         }
     }
 
-    pub fn with<T: Tag>(mut self) -> Self {
-        self.tags.push(T::type_id());
+    pub fn with<C: Component>(mut self) -> Self {
+        self.tags.push(C::type_id());
         self
     }
 
-    pub fn without<T: Tag>(mut self) -> Self {
-        self.without_tags.push(T::type_id());
+    pub fn without<C: Component>(mut self) -> Self {
+        self.without_tags.push(C::type_id());
         self
     }
 
@@ -108,13 +108,13 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
         }
     }
 
-    pub fn with<T: Tag>(mut self) -> Self {
-        self.tags.push(T::type_id());
+    pub fn with<C: Component>(mut self) -> Self {
+        self.tags.push(C::type_id());
         self
     }
 
-    pub fn without<T: Tag>(mut self) -> Self {
-        self.without_tags.push(T::type_id());
+    pub fn without<C: Component>(mut self) -> Self {
+        self.without_tags.push(C::type_id());
         self
     }
 
@@ -165,13 +165,13 @@ impl<'a, P: ReadFetch<'a> + 'a, F> QueryBuilderFiltered<'a, P, F>
 where
     F: Fn(&P::Component) -> bool + 'a,
 {
-    pub fn with<T: Tag>(mut self) -> Self {
-        self.tags.push(T::type_id());
+    pub fn with<C: Component>(mut self) -> Self {
+        self.tags.push(C::type_id());
         self
     }
 
-    pub fn without<T: Tag>(mut self) -> Self {
-        self.without_tags.push(T::type_id());
+    pub fn without<C: Component>(mut self) -> Self {
+        self.without_tags.push(C::type_id());
         self
     }
 
@@ -212,13 +212,13 @@ impl<'a, P: WriteFetch<'a> + 'a, F> QueryMutBuilderFiltered<'a, P, F>
 where
     F: Fn(&P::Component) -> bool + 'a,
 {
-    pub fn with<T: Tag>(mut self) -> Self {
-        self.tags.push(T::type_id());
+    pub fn with<C: Component>(mut self) -> Self {
+        self.tags.push(C::type_id());
         self
     }
 
-    pub fn without<T: Tag>(mut self) -> Self {
-        self.without_tags.push(T::type_id());
+    pub fn without<C: Component>(mut self) -> Self {
+        self.without_tags.push(C::type_id());
         self
     }
 
@@ -291,13 +291,13 @@ macro_rules! impl_tuple_builders_arity {
         }
 
         impl<'a, $first_ty: ReadFetch<'a> + 'a, $($ty: ReadFetch<'a> + 'a),+> $builder<'a, $first_ty, $($ty),+> {
-            pub fn with<T: Tag>(mut self) -> Self {
-                self.tags.push(T::type_id());
+            pub fn with<Co: Component>(mut self) -> Self {
+                self.tags.push(Co::type_id());
                 self
             }
 
-            pub fn without<T: Tag>(mut self) -> Self {
-                self.without_tags.push(T::type_id());
+            pub fn without<Co: Component>(mut self) -> Self {
+                self.without_tags.push(Co::type_id());
                 self
             }
 
@@ -349,13 +349,13 @@ macro_rules! impl_tuple_builders_arity {
         }
 
         impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+> $builder_mut<'a, $first_ty, $($ty),+> {
-            pub fn with<T: Tag>(mut self) -> Self {
-                self.tags.push(T::type_id());
+            pub fn with<Co: Component>(mut self) -> Self {
+                self.tags.push(Co::type_id());
                 self
             }
 
-            pub fn without<T: Tag>(mut self) -> Self {
-                self.without_tags.push(T::type_id());
+            pub fn without<Co: Component>(mut self) -> Self {
+                self.without_tags.push(Co::type_id());
                 self
             }
 
@@ -363,7 +363,7 @@ macro_rules! impl_tuple_builders_arity {
                 let mut accesses = Vec::new();
                 let required = [$first_ty::type_id(), $($ty::type_id()),+];
                 if has_duplicate_type_ids(&required) {
-                    error!("query_mut called with duplicate component types");
+                    error!("query called with duplicate component types");
                     return $iter_mut {
                         accesses,
                         idx: 0,
