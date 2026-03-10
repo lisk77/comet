@@ -1,7 +1,7 @@
 use super::*;
 
 impl Scene {
-    pub fn query_iter<'a, P: ReadFetch<'a>>(&'a self) -> QueryIter<'a, P> {
+    pub(crate) fn query_iter<'a, P: ReadFetch<'a>>(&'a self) -> QueryIter<'a, P> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in self.cached_single_plan(P::type_id(), &[], &[]) {
             let arch = self.archetypes().get(arch_id);
@@ -19,7 +19,7 @@ impl Scene {
         }
     }
 
-    pub fn query_mut_iter<'a, P: WriteFetch<'a>>(&'a mut self) -> QueryIterMut<'a, P> {
+    pub(crate) fn query_mut_iter<'a, P: WriteFetch<'a>>(&'a mut self) -> QueryIterMut<'a, P> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in self.cached_single_plan(P::type_id(), &[], &[]) {
             let arch = self.archetypes_mut().get_mut(arch_id);

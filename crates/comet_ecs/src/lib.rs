@@ -4,9 +4,8 @@ pub use component::*;
 pub use component_derive::*;
 pub use entity::*;
 pub use id::*;
-pub use prefabs::ErasedComponent;
-pub use prefabs::PrefabFactory;
-pub use query::*;
+pub use prefabs::{ErasedComponent, PrefabFactory};
+pub use query::{Query, QuerySpec, QuerySpecMut};
 pub use scene::*;
 pub use sparse_set::SparseSet;
 
