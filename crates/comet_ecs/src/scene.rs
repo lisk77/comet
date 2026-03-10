@@ -826,6 +826,7 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "query called with duplicate component types")]
     fn query_mut_pair_rejects_identical_component_types() {
         let mut scene = Scene::new();
         scene.register_component::<A>();
@@ -833,8 +834,7 @@ mod tests {
         let entity = scene.new_entity();
         scene.add_component(entity, A);
 
-        let mut iter = scene.query_mut::<(&mut A, &mut A)>().iter();
-        assert!(iter.next().is_none());
+        let _ = scene.query_mut::<(&mut A, &mut A)>().iter();
     }
 
     #[test]

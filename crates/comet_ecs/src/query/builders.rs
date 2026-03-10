@@ -304,14 +304,10 @@ macro_rules! impl_tuple_builders_arity {
             pub fn iter(self) -> $iter<'a, $first_ty, $($ty),+> {
                 let mut accesses = Vec::new();
                 let required = [$first_ty::type_id(), $($ty::type_id()),+];
-                if has_duplicate_type_ids(&required) {
-                    error!("query called with duplicate component types");
-                    return $iter {
-                        accesses,
-                        idx: 0,
-                        _marker: PhantomData,
-                    };
-                }
+                assert!(
+                    !has_duplicate_type_ids(&required),
+                    "query called with duplicate component types"
+                );
 
                 for (arch_id, first_idx) in self
                     .scene
@@ -362,14 +358,10 @@ macro_rules! impl_tuple_builders_arity {
             pub fn iter(self) -> $iter_mut<'a, $first_ty, $($ty),+> {
                 let mut accesses = Vec::new();
                 let required = [$first_ty::type_id(), $($ty::type_id()),+];
-                if has_duplicate_type_ids(&required) {
-                    error!("query called with duplicate component types");
-                    return $iter_mut {
-                        accesses,
-                        idx: 0,
-                        _marker: PhantomData,
-                    };
-                }
+                assert!(
+                    !has_duplicate_type_ids(&required),
+                    "query called with duplicate component types"
+                );
 
                 for (arch_id, first_idx) in self
                     .scene
