@@ -1,4 +1,4 @@
-use crate::{Component, Scene};
+use crate::{Component, Entity, Scene};
 use std::any::TypeId;
 use std::marker::PhantomData;
 
@@ -172,6 +172,175 @@ macro_rules! for_each_tuple_arity {
     };
 }
 
+macro_rules! for_each_entity_tuple_arity {
+    ($m:ident) => {
+        $m!(
+            EntityQuery1Builder,
+            EntityQuery1,
+            EntityQuery1Access,
+            EntityQuery1MutBuilder,
+            EntityQuery1Mut,
+            EntityQuery1MutAccess,
+            A,
+            a_col
+        );
+        $m!(
+            EntityQuery2Builder,
+            EntityQuery2,
+            EntityQuery2Access,
+            EntityQuery2MutBuilder,
+            EntityQuery2Mut,
+            EntityQuery2MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col
+        );
+        $m!(
+            EntityQuery3Builder,
+            EntityQuery3,
+            EntityQuery3Access,
+            EntityQuery3MutBuilder,
+            EntityQuery3Mut,
+            EntityQuery3MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col
+        );
+        $m!(
+            EntityQuery4Builder,
+            EntityQuery4,
+            EntityQuery4Access,
+            EntityQuery4MutBuilder,
+            EntityQuery4Mut,
+            EntityQuery4MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col
+        );
+        $m!(
+            EntityQuery5Builder,
+            EntityQuery5,
+            EntityQuery5Access,
+            EntityQuery5MutBuilder,
+            EntityQuery5Mut,
+            EntityQuery5MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col,
+            E,
+            e_idx,
+            e_col
+        );
+        $m!(
+            EntityQuery6Builder,
+            EntityQuery6,
+            EntityQuery6Access,
+            EntityQuery6MutBuilder,
+            EntityQuery6Mut,
+            EntityQuery6MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col,
+            E,
+            e_idx,
+            e_col,
+            F,
+            f_idx,
+            f_col
+        );
+        $m!(
+            EntityQuery7Builder,
+            EntityQuery7,
+            EntityQuery7Access,
+            EntityQuery7MutBuilder,
+            EntityQuery7Mut,
+            EntityQuery7MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col,
+            E,
+            e_idx,
+            e_col,
+            F,
+            f_idx,
+            f_col,
+            G,
+            g_idx,
+            g_col
+        );
+        $m!(
+            EntityQuery8Builder,
+            EntityQuery8,
+            EntityQuery8Access,
+            EntityQuery8MutBuilder,
+            EntityQuery8Mut,
+            EntityQuery8MutAccess,
+            A,
+            a_col,
+            B,
+            b_idx,
+            b_col,
+            C,
+            c_idx,
+            c_col,
+            D,
+            d_idx,
+            d_col,
+            E,
+            e_idx,
+            e_col,
+            F,
+            f_idx,
+            f_col,
+            G,
+            g_idx,
+            g_col,
+            H,
+            h_idx,
+            h_col
+        );
+    };
+}
+
 struct QueryAccess {
     col: *const comet_structs::Column,
     len: usize,
@@ -182,6 +351,24 @@ struct QueryMutAccess {
     col: *mut comet_structs::Column,
     len: usize,
     row: usize,
+}
+
+pub trait EntityFetch {
+    type Item;
+
+    unsafe fn get(entities: *const Entity, len: usize, row: usize) -> Option<Self::Item>;
+}
+
+impl EntityFetch for Entity {
+    type Item = Entity;
+
+    unsafe fn get(entities: *const Entity, len: usize, row: usize) -> Option<Self::Item> {
+        if row >= len {
+            return None;
+        }
+
+        Some(*entities.add(row))
+    }
 }
 
 pub trait ReadFetch<'a> {
@@ -263,15 +450,15 @@ pub struct QueryIterMut<'a, P: WriteFetch<'a>> {
 
 pub struct QueryBuilder<'a, P: ReadFetch<'a>> {
     scene: &'a Scene,
-    tags: Vec<TypeId>,
-    without_tags: Vec<TypeId>,
+    with_components: Vec<TypeId>,
+    without_components: Vec<TypeId>,
     _marker: PhantomData<P>,
 }
 
 pub struct Query<'a, P: WriteFetch<'a>> {
     scene: &'a mut Scene,
-    tags: Vec<TypeId>,
-    without_tags: Vec<TypeId>,
+    with_components: Vec<TypeId>,
+    without_components: Vec<TypeId>,
     _marker: PhantomData<P>,
 }
 
@@ -280,8 +467,8 @@ where
     F: Fn(&P::Component) -> bool + 'a,
 {
     scene: &'a Scene,
-    tags: Vec<TypeId>,
-    without_tags: Vec<TypeId>,
+    with_components: Vec<TypeId>,
+    without_components: Vec<TypeId>,
     filter: F,
     _marker: PhantomData<P>,
 }
@@ -291,8 +478,8 @@ where
     F: Fn(&P::Component) -> bool + 'a,
 {
     scene: &'a mut Scene,
-    tags: Vec<TypeId>,
-    without_tags: Vec<TypeId>,
+    with_components: Vec<TypeId>,
+    without_components: Vec<TypeId>,
     filter: F,
     _marker: PhantomData<P>,
 }

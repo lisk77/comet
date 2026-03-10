@@ -243,26 +243,26 @@ impl Scene {
         }
     }
 
-    fn normalized_tags(tags: &[TypeId]) -> Vec<TypeId> {
-        let mut normalized = tags.to_vec();
+    fn normalized_components(with_components: &[TypeId]) -> Vec<TypeId> {
+        let mut normalized = with_components.to_vec();
         normalized.sort_unstable();
         normalized.dedup();
         normalized
     }
 
-    fn normalized_tag_filters(
-        with_tags: &[TypeId],
-        without_tags: &[TypeId],
+    fn normalized_component_filters(
+        with_components: &[TypeId],
+        without_components: &[TypeId],
     ) -> Option<(Vec<TypeId>, Vec<TypeId>)> {
-        let with_tags = Self::normalized_tags(with_tags);
-        let without_tags = Self::normalized_tags(without_tags);
-        if with_tags
+        let with_components = Self::normalized_components(with_components);
+        let without_components = Self::normalized_components(without_components);
+        if with_components
             .iter()
-            .any(|tag| without_tags.binary_search(tag).is_ok())
+            .any(|component_type| without_components.binary_search(component_type).is_ok())
         {
             return None;
         }
-        Some((with_tags, without_tags))
+        Some((with_components, without_components))
     }
 
     fn take_last_component_of_type(
@@ -278,10 +278,10 @@ impl Scene {
     pub(crate) fn cached_single_plan(
         &self,
         component: TypeId,
-        with_tags: &[TypeId],
-        without_tags: &[TypeId],
+        with_components: &[TypeId],
+        without_components: &[TypeId],
     ) -> Vec<(usize, usize)> {
-        let Some((with_tags, without_tags)) = Self::normalized_tag_filters(with_tags, without_tags)
+        let Some((with_components, without_components)) = Self::normalized_component_filters(with_components, without_components)
         else {
             return Vec::new();
         };
@@ -290,7 +290,7 @@ impl Scene {
             let mut cache = self.query_plan_cache.borrow_mut();
             cache.sync_version(self.archetype_version);
             if let Some(matches) =
-                cache.get_single_cloned(component, &with_tags, &without_tags)
+                cache.get_single_cloned(component, &with_components, &without_components)
             {
                 return matches;
             }
@@ -299,10 +299,10 @@ impl Scene {
         let mut matches = Vec::new();
         for (arch_id, arch) in self.archetypes.iter().enumerate() {
             if let Some(col_idx) = arch.column_index(component) {
-                if with_tags
+                if with_components
                     .iter()
                     .all(|t| arch.column_index(*t).is_some())
-                    && without_tags
+                    && without_components
                         .iter()
                         .all(|t| arch.column_index(*t).is_none())
                 {
@@ -313,7 +313,7 @@ impl Scene {
 
         let mut cache = self.query_plan_cache.borrow_mut();
         cache.sync_version(self.archetype_version);
-        cache.insert_single(component, &with_tags, &without_tags, matches.clone());
+        cache.insert_single(component, &with_components, &without_components, matches.clone());
         matches
     }
 
@@ -838,6 +838,38 @@ mod tests {
     }
 
     #[test]
+    fn query_includes_entity_id_for_read_tuples() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+
+        let e = scene.new_entity();
+        scene.add_component(e, Value(42));
+
+        let mut iter = scene.query::<(crate::Entity, &Value)>().iter();
+        let (entity, value) = iter.next().expect("expected one result");
+        assert_eq!(entity, e);
+        assert_eq!(value.0, 42);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn query_mut_includes_entity_id_for_write_tuples() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+
+        let e = scene.new_entity();
+        scene.add_component(e, Value(7));
+
+        let mut iter = scene.query_mut::<(crate::Entity, &mut Value)>().iter();
+        let (entity, value) = iter.next().expect("expected one result");
+        assert_eq!(entity, e);
+        value.0 = 11;
+        assert!(iter.next().is_none());
+
+        assert_eq!(scene.get_component::<Value>(e).map(|v| v.0), Some(11));
+    }
+
+    #[test]
     fn add_component_moves_entity_between_archetypes_and_preserves_swapped_entity_location() {
         let mut scene = Scene::new();
         scene.register_component::<Value>();
@@ -857,20 +889,20 @@ mod tests {
     }
 
     #[test]
-    fn normalized_tags_are_order_independent_and_deduplicated() {
-        let tags_abab = Scene::normalized_tags(&[
+    fn normalized_components_are_order_independent_and_deduplicated() {
+        let components_abab = Scene::normalized_components(&[
             std::any::TypeId::of::<A>(),
             std::any::TypeId::of::<B>(),
             std::any::TypeId::of::<A>(),
             std::any::TypeId::of::<B>(),
         ]);
-        let tags_ba = Scene::normalized_tags(&[
+        let components_ba = Scene::normalized_components(&[
             std::any::TypeId::of::<B>(),
             std::any::TypeId::of::<A>(),
         ]);
 
-        assert_eq!(tags_abab, tags_ba);
-        assert_eq!(tags_abab.len(), 2);
+        assert_eq!(components_abab, components_ba);
+        assert_eq!(components_abab.len(), 2);
     }
 
     #[test]

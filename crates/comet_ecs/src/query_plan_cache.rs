@@ -4,8 +4,8 @@ use std::collections::HashMap;
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct SinglePlanKey {
     component: TypeId,
-    with_tags: Vec<TypeId>,
-    without_tags: Vec<TypeId>,
+    with_components: Vec<TypeId>,
+    without_components: Vec<TypeId>,
 }
 
 #[derive(Default)]
@@ -25,14 +25,14 @@ impl QueryPlanCache {
     pub(crate) fn get_single_cloned(
         &self,
         component: TypeId,
-        with_tags: &[TypeId],
-        without_tags: &[TypeId],
+        with_components: &[TypeId],
+        without_components: &[TypeId],
     ) -> Option<Vec<(usize, usize)>> {
         self.single
             .get(&SinglePlanKey {
                 component,
-                with_tags: with_tags.to_vec(),
-                without_tags: without_tags.to_vec(),
+                with_components: with_components.to_vec(),
+                without_components: without_components.to_vec(),
             })
             .cloned()
     }
@@ -40,15 +40,15 @@ impl QueryPlanCache {
     pub(crate) fn insert_single(
         &mut self,
         component: TypeId,
-        with_tags: &[TypeId],
-        without_tags: &[TypeId],
+        with_components: &[TypeId],
+        without_components: &[TypeId],
         matches: Vec<(usize, usize)>,
     ) {
         self.single.insert(
             SinglePlanKey {
                 component,
-                with_tags: with_tags.to_vec(),
-                without_tags: without_tags.to_vec(),
+                with_components: with_components.to_vec(),
+                without_components: without_components.to_vec(),
             },
             matches,
         );
