@@ -121,6 +121,7 @@ impl Column {
         assert_eq!(self.type_id, type_id, "Type mismatch");
     }
 
+    #[inline(always)]
     fn reserve_exact(&mut self, additional: usize) {
         if self.item_layout.size() == 0 {
             return;
@@ -170,7 +171,7 @@ impl Column {
         self.capacity = new_capacity;
     }
 
-    #[inline]
+    #[inline(always)]
     unsafe fn elem_ptr(&self, index: usize) -> *mut u8 {
         debug_assert!(index < self.len);
         self.data.as_ptr().add(index * self.stride)
@@ -211,6 +212,7 @@ impl Column {
 
     /// # Safety
     /// Caller must guarantee that `T` matches this column's component type.
+    #[inline(always)]
     pub unsafe fn push_unchecked<T: 'static>(&mut self, item: T) {
         if self.item_layout.size() == 0 {
             self.len += 1;

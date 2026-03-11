@@ -4,6 +4,8 @@ use std::alloc::Layout;
 use std::any::TypeId;
 use std::collections::HashMap;
 
+const DEFAULT_ARCHETYPE_CAPACITY: usize = 64;
+
 #[derive(Clone)]
 pub struct ComponentInfo {
     pub type_id: TypeId,
@@ -34,7 +36,7 @@ impl Archetype {
             type_to_index,
             add_edges: HashMap::new(),
             remove_edges: HashMap::new(),
-            entities: Vec::new(),
+            entities: Vec::with_capacity(DEFAULT_ARCHETYPE_CAPACITY),
             columns,
         }
     }
@@ -47,6 +49,7 @@ impl Archetype {
         &self.types
     }
 
+    #[inline(always)]
     pub fn column_index(&self, type_id: TypeId) -> Option<usize> {
         self.type_to_index.get(&type_id).copied()
     }
@@ -63,14 +66,17 @@ impl Archetype {
         &self.columns
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.entities.len()
     }
 
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }
 
+    #[inline(always)]
     pub fn push_entity(&mut self, entity: Entity) -> usize {
         let row = self.entities.len();
         self.entities.push(entity);
@@ -178,7 +184,12 @@ impl Archetypes {
                 )
             });
             types.push(type_id);
-            columns.push(Column::new_raw(info.type_id, info.layout, info.drop_fn, 0));
+            columns.push(Column::new_raw(
+                info.type_id,
+                info.layout,
+                info.drop_fn,
+                DEFAULT_ARCHETYPE_CAPACITY,
+            ));
         }
 
         let archetype = Archetype::new(set.clone(), types, columns);

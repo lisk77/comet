@@ -10,7 +10,10 @@ use std::any::TypeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ptr;
+use std::slice;
 use std::sync::Arc;
+
+const DEFAULT_ENTITY_STORAGE_CAPACITY: usize = 256;
 
 pub trait ComponentTuple {
     fn type_ids() -> Vec<TypeId>;
@@ -52,6 +55,7 @@ pub struct Scene {
     next_id: u32,
     generations: Vec<u32>,
     entities: Vec<Option<Entity>>,
+    active_entities: u32,
     component_registry: Vec<Option<TypeId>>,
     component_index: HashMap<TypeId, usize>,
     component_info: HashMap<TypeId, ComponentInfo>,
@@ -68,12 +72,13 @@ impl Scene {
         let mut scene = Self {
             id_queue: IdQueue::new(),
             next_id: 0,
-            generations: Vec::new(),
-            entities: Vec::new(),
+            generations: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
+            entities: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
+            active_entities: 0,
             component_registry: Vec::new(),
             component_index: HashMap::new(),
             component_info: HashMap::new(),
-            entity_locations: Vec::new(),
+            entity_locations: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
             archetypes: Archetypes::new(),
             archetype_version: 0,
             query_plan_cache: RefCell::new(QueryPlanCache::default()),
@@ -91,19 +96,15 @@ impl Scene {
 
     /// Returns the number of how many entities exist in the current Scene.
     pub fn active_entities(&self) -> u32 {
-        self.entities.len() as u32 - self.id_queue.size()
+        self.active_entities
     }
 
+    #[inline(always)]
     fn get_next_id(&mut self) {
-        if self.id_queue.is_empty() {
-            self.next_id = self.entities.len() as u32;
-            return;
-        }
-        if self.next_id > self.id_queue.front().unwrap()
-            || self.entities[self.next_id as usize] != None
-        {
-            self.next_id = self.id_queue.dequeue().unwrap();
-        }
+        self.next_id = self
+            .id_queue
+            .dequeue()
+            .unwrap_or_else(|| self.entities.len() as u32);
     }
 
     fn is_alive(&self, id: Entity) -> bool {
@@ -121,6 +122,7 @@ impl Scene {
         &self.entities
     }
 
+    #[inline(always)]
     fn allocate_entity_slot(&mut self) -> Entity {
         let index = self.next_id;
         let gen = if (index as usize) >= self.generations.len() {
@@ -137,10 +139,12 @@ impl Scene {
             self.entities[index as usize] = Some(id);
         }
 
+        self.active_entities += 1;
         self.get_next_id();
         id
     }
 
+    #[inline(always)]
     fn place_entity_in_archetype(&mut self, entity: Entity, archetype: usize) -> usize {
         let row = self.archetypes.get_mut(archetype).push_entity(entity);
         self.set_location(entity, archetype, row);
@@ -212,6 +216,7 @@ impl Scene {
         }
         self.id_queue.sorted_enqueue(entity_id.index);
         self.get_next_id();
+        self.active_entities -= 1;
     }
 
     fn get_location(&self, entity_id: Entity) -> Option<EntityLocation> {
@@ -221,6 +226,7 @@ impl Scene {
             .filter(|l| l.gen == entity_id.gen)
     }
 
+    #[inline(always)]
     fn set_location(&mut self, entity_id: Entity, archetype: usize, row: usize) {
         let index = entity_id.index as usize;
         if index >= self.entity_locations.len() {
@@ -893,9 +899,8 @@ impl Scene {
         if component_types.is_empty() {
             return self.new_entity();
         }
-        let plan = if let Some(plan) = self.bundle_spawn_cache.get(&bundle_type) {
-            plan.clone()
-        } else {
+
+        if !self.bundle_spawn_cache.contains_key(&bundle_type) {
             if !self.validate_type_ids_registered(component_types) {
                 return self.new_entity();
             }
@@ -920,19 +925,33 @@ impl Scene {
                 column_indices.push(col_idx);
             }
 
-            let plan = BundleSpawnPlan {
-                archetype,
-                column_indices: Arc::from(column_indices),
-            };
-            self.bundle_spawn_cache
-                .insert(bundle_type, plan.clone());
-            plan
+            self.bundle_spawn_cache.insert(
+                bundle_type,
+                BundleSpawnPlan {
+                    archetype,
+                    column_indices: Arc::from(column_indices),
+                },
+            );
+        }
+
+        let (archetype, column_indices_ptr, column_indices_len) = {
+            let plan = self
+                .bundle_spawn_cache
+                .get(&bundle_type)
+                .unwrap_or_else(|| panic!("bundle spawn plan unexpectedly missing"));
+            (
+                plan.archetype,
+                plan.column_indices.as_ptr(),
+                plan.column_indices.len(),
+            )
         };
 
         let entity_id = self.allocate_entity_slot();
-        let row = self.place_entity_in_archetype(entity_id, plan.archetype);
-        let arch = self.archetypes.get_mut(plan.archetype);
-        writer(arch.columns_mut(), &plan.column_indices, row);
+        let row = self.place_entity_in_archetype(entity_id, archetype);
+        let arch = self.archetypes.get_mut(archetype);
+        // SAFETY: bundle_spawn_cache is not mutated between pointer capture and use.
+        let column_indices = unsafe { slice::from_raw_parts(column_indices_ptr, column_indices_len) };
+        writer(arch.columns_mut(), column_indices, row);
 
         debug_assert!(
             arch.columns().iter().all(|col| col.len() == row + 1),

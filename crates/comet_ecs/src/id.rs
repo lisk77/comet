@@ -19,6 +19,7 @@ impl IdQueue {
         }
     }
 
+    #[inline(always)]
     pub fn front(&self) -> Option<u32> {
         self.queue.peek().map(|Reverse(id)| *id)
     }
@@ -31,14 +32,17 @@ impl IdQueue {
         self.enqueue(id);
     }
 
+    #[inline(always)]
     pub fn dequeue(&mut self) -> Option<u32> {
         self.queue.pop().map(|Reverse(id)| id)
     }
 
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
 
+    #[inline(always)]
     pub fn size(&self) -> u32 {
         self.queue.len() as u32
     }
