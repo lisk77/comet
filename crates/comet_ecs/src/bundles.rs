@@ -40,6 +40,7 @@ macro_rules! bundle {
                     )*
                 ];
                 scene.__spawn_bundle_typed(
+                    std::any::TypeId::of::<$name>(),
                     &component_types,
                     move |columns, column_indices, _row| {
                         let mut __bundle_col_i = 0usize;
@@ -47,7 +48,9 @@ macro_rules! bundle {
                             {
                                 let col_idx = column_indices[__bundle_col_i];
                                 __bundle_col_i += 1;
-                                columns[col_idx].push::<$ty>(self.$field);
+                                unsafe {
+                                    columns[col_idx].push_unchecked::<$ty>(self.$field);
+                                }
                             }
                         )*
                     },

@@ -10,6 +10,7 @@ use std::any::TypeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ptr;
+use std::sync::Arc;
 
 pub trait ComponentTuple {
     fn type_ids() -> Vec<TypeId>;
@@ -43,7 +44,7 @@ impl_component_tuple!(A, B, C, D, E, F, G, H);
 #[derive(Clone)]
 struct BundleSpawnPlan {
     archetype: usize,
-    column_indices: Vec<usize>,
+    column_indices: Arc<[usize]>,
 }
 
 pub struct Scene {
@@ -58,7 +59,7 @@ pub struct Scene {
     archetypes: Archetypes,
     archetype_version: usize,
     query_plan_cache: RefCell<QueryPlanCache>,
-    bundle_spawn_cache: HashMap<Vec<TypeId>, BundleSpawnPlan>,
+    bundle_spawn_cache: HashMap<TypeId, BundleSpawnPlan>,
     prefabs: PrefabManager,
 }
 
@@ -880,14 +881,19 @@ impl Scene {
     }
 
     #[doc(hidden)]
-    pub fn __spawn_bundle_typed<F>(&mut self, component_types: &[TypeId], writer: F) -> Entity
+    pub fn __spawn_bundle_typed<F>(
+        &mut self,
+        bundle_type: TypeId,
+        component_types: &[TypeId],
+        writer: F,
+    ) -> Entity
     where
         F: FnOnce(&mut [Column], &[usize], usize),
     {
         if component_types.is_empty() {
             return self.new_entity();
         }
-        let plan = if let Some(plan) = self.bundle_spawn_cache.get(component_types) {
+        let plan = if let Some(plan) = self.bundle_spawn_cache.get(&bundle_type) {
             plan.clone()
         } else {
             if !self.validate_type_ids_registered(component_types) {
@@ -916,10 +922,10 @@ impl Scene {
 
             let plan = BundleSpawnPlan {
                 archetype,
-                column_indices,
+                column_indices: Arc::from(column_indices),
             };
             self.bundle_spawn_cache
-                .insert(component_types.to_vec(), plan.clone());
+                .insert(bundle_type, plan.clone());
             plan
         };
 
