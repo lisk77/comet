@@ -83,6 +83,13 @@ impl Archetype {
         row
     }
 
+    pub fn reserve_rows(&mut self, additional: usize) {
+        self.entities.reserve(additional);
+        for col in &mut self.columns {
+            col.reserve(additional);
+        }
+    }
+
     pub fn swap_rows(&mut self, a: usize, b: usize) {
         if a == b {
             return;

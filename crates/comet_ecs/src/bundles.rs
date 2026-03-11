@@ -15,6 +15,13 @@ pub trait Bundle {
     {
         scene.add_with_components(entity, self.into_components());
     }
+
+    fn spawn_batch(scene: &mut Scene, bundles: Vec<Self>) -> Vec<crate::Entity>
+    where
+        Self: Sized,
+    {
+        bundles.into_iter().map(|bundle| bundle.spawn(scene)).collect()
+    }
 }
 
 #[macro_export]
@@ -50,6 +57,31 @@ macro_rules! bundle {
                                 __bundle_col_i += 1;
                                 unsafe {
                                     columns[col_idx].push_unchecked::<$ty>(self.$field);
+                                }
+                            }
+                        )*
+                    },
+                )
+            }
+
+            fn spawn_batch(scene: &mut $crate::Scene, bundles: Vec<Self>) -> Vec<$crate::Entity> {
+                let component_types = [
+                    $(
+                        std::any::TypeId::of::<$ty>(),
+                    )*
+                ];
+                scene.__spawn_bundle_typed_batch(
+                    std::any::TypeId::of::<$name>(),
+                    &component_types,
+                    bundles,
+                    |columns, column_indices, _row, bundle| {
+                        let mut __bundle_col_i = 0usize;
+                        $(
+                            {
+                                let col_idx = column_indices[__bundle_col_i];
+                                __bundle_col_i += 1;
+                                unsafe {
+                                    columns[col_idx].push_unchecked::<$ty>(bundle.$field);
                                 }
                             }
                         )*

@@ -762,6 +762,10 @@ impl Scene {
         bundle.spawn(self)
     }
 
+    pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
+        B::spawn_batch(self, bundles)
+    }
+
     pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
         self.add_with_components(entity, bundle.into_components());
     }
@@ -959,6 +963,130 @@ impl Scene {
         );
 
         entity_id
+    }
+
+    #[doc(hidden)]
+    pub fn __spawn_bundle_typed_batch<T, F>(
+        &mut self,
+        bundle_type: TypeId,
+        component_types: &[TypeId],
+        bundles: Vec<T>,
+        mut writer: F,
+    ) -> Vec<Entity>
+    where
+        F: FnMut(&mut [Column], &[usize], usize, T),
+    {
+        if bundles.is_empty() {
+            return Vec::new();
+        }
+        if component_types.is_empty() {
+            return bundles.into_iter().map(|_| self.new_entity()).collect();
+        }
+
+        if !self.bundle_spawn_cache.contains_key(&bundle_type) {
+            if !self.validate_type_ids_registered(component_types) {
+                return bundles.into_iter().map(|_| self.new_entity()).collect();
+            }
+
+            let mut component_set = ComponentSet::new();
+            for component_type in component_types {
+                let index = self
+                    .component_index
+                    .get(component_type)
+                    .copied()
+                    .unwrap_or_else(|| panic!("Component {:?} missing index", component_type));
+                component_set.insert(index);
+            }
+
+            let archetype = self.ensure_archetype(component_set);
+            let arch = self.archetypes.get(archetype);
+            let mut column_indices = Vec::with_capacity(component_types.len());
+            for component_type in component_types {
+                let col_idx = arch
+                    .column_index(*component_type)
+                    .unwrap_or_else(|| panic!("Archetype missing column for {:?}", component_type));
+                column_indices.push(col_idx);
+            }
+
+            self.bundle_spawn_cache.insert(
+                bundle_type,
+                BundleSpawnPlan {
+                    archetype,
+                    column_indices: Arc::from(column_indices),
+                },
+            );
+        }
+
+        let (archetype, column_indices_ptr, column_indices_len) = {
+            let plan = self
+                .bundle_spawn_cache
+                .get(&bundle_type)
+                .unwrap_or_else(|| panic!("bundle spawn plan unexpectedly missing"));
+            (
+                plan.archetype,
+                plan.column_indices.as_ptr(),
+                plan.column_indices.len(),
+            )
+        };
+
+        let count = bundles.len();
+        self.entities.reserve(count);
+        self.generations.reserve(count);
+        self.entity_locations.reserve(count);
+        self.archetypes.get_mut(archetype).reserve_rows(count);
+
+        let current_next_is_reusable = (self.next_id as usize) < self.entities.len()
+            && self.entities[self.next_id as usize].is_none();
+        let reusable_available = self.id_queue.size() as usize + usize::from(current_next_is_reusable);
+        let reuse_count = reusable_available.min(count);
+
+        let mut alloc_indices = Vec::with_capacity(count);
+        for _ in 0..reuse_count {
+            alloc_indices.push(self.next_id);
+            self.get_next_id();
+        }
+
+        let fresh_count = count - reuse_count;
+        let fresh_start = self.entities.len() as u32;
+        for i in 0..fresh_count {
+            alloc_indices.push(fresh_start + i as u32);
+        }
+
+        self.active_entities = self
+            .active_entities
+            .checked_add(count as u32)
+            .expect("active_entities overflow");
+
+        let mut entities = Vec::with_capacity(count);
+        for (bundle, index) in bundles.into_iter().zip(alloc_indices.into_iter()) {
+            let gen = if (index as usize) >= self.generations.len() {
+                self.generations.push(0);
+                0
+            } else {
+                self.generations[index as usize]
+            };
+            let entity_id = Entity { index, gen };
+
+            if (index as usize) >= self.entities.len() {
+                self.entities.push(Some(entity_id));
+            } else {
+                self.entities[index as usize] = Some(entity_id);
+            }
+
+            let row = self.place_entity_in_archetype(entity_id, archetype);
+            let arch = self.archetypes.get_mut(archetype);
+            // SAFETY: bundle_spawn_cache is not mutated between pointer capture and use.
+            let column_indices =
+                unsafe { slice::from_raw_parts(column_indices_ptr, column_indices_len) };
+            writer(arch.columns_mut(), column_indices, row, bundle);
+            entities.push(entity_id);
+        }
+
+        if self.id_queue.is_empty() {
+            self.next_id = self.entities.len() as u32;
+        }
+
+        entities
     }
 }
 

@@ -111,6 +111,11 @@ impl Column {
         self.capacity
     }
 
+    #[inline(always)]
+    pub fn reserve(&mut self, additional: usize) {
+        self.reserve_exact(additional);
+    }
+
     #[inline]
     fn assert_type<T: 'static>(&self) {
         assert_eq!(self.type_id, TypeId::of::<T>(), "Type mismatch");
