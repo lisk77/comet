@@ -1,5 +1,6 @@
 use super::tuple_types::*;
 use super::*;
+use crate::ComponentTuple;
 
 macro_rules! impl_base_tuple_query_arities {
     (
@@ -38,6 +39,8 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
             scene,
             with_components: Vec::new(),
             without_components: Vec::new(),
+            with_any_components: Vec::new(),
+            without_any_components: Vec::new(),
             _marker: PhantomData,
         }
     }
@@ -52,6 +55,26 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
         self
     }
 
+    pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
+        self.with_any_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
+        self.without_any_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
+        self.with_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
+        self.without_components.extend(Cs::type_ids());
+        self
+    }
+
     pub fn filter<F>(self, f: F) -> QueryBuilderFiltered<'a, P, F>
     where
         F: Fn(&P::Component) -> bool + 'a,
@@ -60,6 +83,8 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
             scene: self.scene,
             with_components: self.with_components,
             without_components: self.without_components,
+            with_any_components: self.with_any_components,
+            without_any_components: self.without_any_components,
             filter: f,
             _marker: PhantomData,
         }
@@ -69,7 +94,7 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
             self.scene
-                .cached_single_plan(P::type_id(), &self.with_components, &self.without_components)
+                .cached_single_plan(P::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
         {
             let arch = self.scene.archetypes().get(arch_id);
             let col = &arch.columns()[col_idx] as *const _;
@@ -104,6 +129,8 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
             scene,
             with_components: Vec::new(),
             without_components: Vec::new(),
+            with_any_components: Vec::new(),
+            without_any_components: Vec::new(),
             _marker: PhantomData,
         }
     }
@@ -118,6 +145,26 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
         self
     }
 
+    pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
+        self.with_any_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
+        self.without_any_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
+        self.with_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
+        self.without_components.extend(Cs::type_ids());
+        self
+    }
+
     pub fn filter<F>(self, f: F) -> QueryMutBuilderFiltered<'a, P, F>
     where
         F: Fn(&P::Component) -> bool + 'a,
@@ -126,6 +173,8 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
             scene: self.scene,
             with_components: self.with_components,
             without_components: self.without_components,
+            with_any_components: self.with_any_components,
+            without_any_components: self.without_any_components,
             filter: f,
             _marker: PhantomData,
         }
@@ -135,7 +184,7 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
             self.scene
-                .cached_single_plan(P::type_id(), &self.with_components, &self.without_components)
+                .cached_single_plan(P::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
         {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
@@ -175,11 +224,31 @@ where
         self
     }
 
+    pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
+        self.with_any_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
+        self.without_any_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
+        self.with_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
+        self.without_components.extend(Cs::type_ids());
+        self
+    }
+
     pub fn iter(self) -> QueryIterFiltered<'a, P, F> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
             self.scene
-                .cached_single_plan(P::type_id(), &self.with_components, &self.without_components)
+                .cached_single_plan(P::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
         {
             let arch = self.scene.archetypes().get(arch_id);
             let col = &arch.columns()[col_idx] as *const _;
@@ -222,11 +291,31 @@ where
         self
     }
 
+    pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
+        self.with_any_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
+        self.without_any_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
+        self.with_components.extend(Cs::type_ids());
+        self
+    }
+
+    pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
+        self.without_components.extend(Cs::type_ids());
+        self
+    }
+
     pub fn iter(self) -> QueryIterMutFiltered<'a, P, F> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
             self.scene
-                .cached_single_plan(P::type_id(), &self.with_components, &self.without_components)
+                .cached_single_plan(P::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
         {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
@@ -272,6 +361,8 @@ macro_rules! impl_tuple_builders_arity {
                     scene,
                     with_components: Vec::new(),
                     without_components: Vec::new(),
+                    with_any_components: Vec::new(),
+                    without_any_components: Vec::new(),
                     _marker: PhantomData,
                 }
             }
@@ -285,6 +376,8 @@ macro_rules! impl_tuple_builders_arity {
                     scene,
                     with_components: Vec::new(),
                     without_components: Vec::new(),
+                    with_any_components: Vec::new(),
+                    without_any_components: Vec::new(),
                     _marker: PhantomData,
                 }
             }
@@ -301,6 +394,26 @@ macro_rules! impl_tuple_builders_arity {
                 self
             }
 
+            pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
+                self.with_any_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
+                self.without_any_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
+                self.with_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
+                self.without_components.extend(Cs::type_ids());
+                self
+            }
+
             pub fn iter(self) -> $iter<'a, $first_ty $(, $ty)*> {
                 let mut accesses = Vec::new();
                 let required = [$first_ty::type_id(), $($ty::type_id()),+];
@@ -311,7 +424,7 @@ macro_rules! impl_tuple_builders_arity {
 
                 for (arch_id, first_idx) in self
                     .scene
-                    .cached_single_plan($first_ty::type_id(), &self.with_components, &self.without_components)
+                    .cached_single_plan($first_ty::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
                 {
                     let arch = self.scene.archetypes().get(arch_id);
                     $(let $idx = match arch.column_index($ty::type_id()) {
@@ -355,6 +468,26 @@ macro_rules! impl_tuple_builders_arity {
                 self
             }
 
+            pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
+                self.with_any_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
+                self.without_any_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
+                self.with_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
+                self.without_components.extend(Cs::type_ids());
+                self
+            }
+
             pub fn iter(self) -> $iter_mut<'a, $first_ty, $($ty),+> {
                 let mut accesses = Vec::new();
                 let required = [$first_ty::type_id(), $($ty::type_id()),+];
@@ -365,7 +498,7 @@ macro_rules! impl_tuple_builders_arity {
 
                 for (arch_id, first_idx) in self
                     .scene
-                    .cached_single_plan($first_ty::type_id(), &self.with_components, &self.without_components)
+                    .cached_single_plan($first_ty::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
                 {
                     let arch = self.scene.archetypes_mut().get_mut(arch_id);
                     $(let $idx = match arch.column_index($ty::type_id()) {
@@ -425,6 +558,8 @@ macro_rules! impl_entity_tuple_builders_arity {
                     scene,
                     with_components: Vec::new(),
                     without_components: Vec::new(),
+                    with_any_components: Vec::new(),
+                    without_any_components: Vec::new(),
                     _marker: PhantomData,
                 }
             }
@@ -438,6 +573,8 @@ macro_rules! impl_entity_tuple_builders_arity {
                     scene,
                     with_components: Vec::new(),
                     without_components: Vec::new(),
+                    with_any_components: Vec::new(),
+                    without_any_components: Vec::new(),
                     _marker: PhantomData,
                 }
             }
@@ -454,6 +591,26 @@ macro_rules! impl_entity_tuple_builders_arity {
                 self
             }
 
+            pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
+                self.with_any_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
+                self.without_any_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
+                self.with_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
+                self.without_components.extend(Cs::type_ids());
+                self
+            }
+
             pub fn iter(self) -> $iter<'a, $first_ty $(, $ty)*> {
                 let mut accesses = Vec::new();
                 let required = [$first_ty::type_id() $(, $ty::type_id())*];
@@ -464,7 +621,7 @@ macro_rules! impl_entity_tuple_builders_arity {
 
                 for (arch_id, first_idx) in self
                     .scene
-                    .cached_single_plan($first_ty::type_id(), &self.with_components, &self.without_components)
+                    .cached_single_plan($first_ty::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
                 {
                     let arch = self.scene.archetypes().get(arch_id);
                     $(let $idx = match arch.column_index($ty::type_id()) {
@@ -510,6 +667,26 @@ macro_rules! impl_entity_tuple_builders_arity {
                 self
             }
 
+            pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
+                self.with_any_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
+                self.without_any_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
+                self.with_components.extend(Cs::type_ids());
+                self
+            }
+
+            pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
+                self.without_components.extend(Cs::type_ids());
+                self
+            }
+
             pub fn iter(self) -> $iter_mut<'a, $first_ty $(, $ty)*> {
                 let mut accesses = Vec::new();
                 let required = [$first_ty::type_id() $(, $ty::type_id())*];
@@ -520,7 +697,7 @@ macro_rules! impl_entity_tuple_builders_arity {
 
                 for (arch_id, first_idx) in self
                     .scene
-                    .cached_single_plan($first_ty::type_id(), &self.with_components, &self.without_components)
+                    .cached_single_plan($first_ty::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
                 {
                     let arch = self.scene.archetypes_mut().get_mut(arch_id);
                     $(let $idx = match arch.column_index($ty::type_id()) {

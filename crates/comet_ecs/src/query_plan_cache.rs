@@ -6,6 +6,8 @@ struct SinglePlanKey {
     component: TypeId,
     with_components: Vec<TypeId>,
     without_components: Vec<TypeId>,
+    with_any_components: Vec<TypeId>,
+    without_any_components: Vec<TypeId>,
 }
 
 #[derive(Default)]
@@ -27,12 +29,16 @@ impl QueryPlanCache {
         component: TypeId,
         with_components: &[TypeId],
         without_components: &[TypeId],
+        with_any_components: &[TypeId],
+        without_any_components: &[TypeId],
     ) -> Option<Vec<(usize, usize)>> {
         self.single
             .get(&SinglePlanKey {
                 component,
                 with_components: with_components.to_vec(),
                 without_components: without_components.to_vec(),
+                with_any_components: with_any_components.to_vec(),
+                without_any_components: without_any_components.to_vec(),
             })
             .cloned()
     }
@@ -42,6 +48,8 @@ impl QueryPlanCache {
         component: TypeId,
         with_components: &[TypeId],
         without_components: &[TypeId],
+        with_any_components: &[TypeId],
+        without_any_components: &[TypeId],
         matches: Vec<(usize, usize)>,
     ) {
         self.single.insert(
@@ -49,6 +57,8 @@ impl QueryPlanCache {
                 component,
                 with_components: with_components.to_vec(),
                 without_components: without_components.to_vec(),
+                with_any_components: with_any_components.to_vec(),
+                without_any_components: without_any_components.to_vec(),
             },
             matches,
         );

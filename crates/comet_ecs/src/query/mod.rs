@@ -452,6 +452,8 @@ pub struct QueryBuilder<'a, P: ReadFetch<'a>> {
     scene: &'a Scene,
     with_components: Vec<TypeId>,
     without_components: Vec<TypeId>,
+    with_any_components: Vec<TypeId>,
+    without_any_components: Vec<TypeId>,
     _marker: PhantomData<P>,
 }
 
@@ -459,6 +461,8 @@ pub struct Query<'a, P: WriteFetch<'a>> {
     scene: &'a mut Scene,
     with_components: Vec<TypeId>,
     without_components: Vec<TypeId>,
+    with_any_components: Vec<TypeId>,
+    without_any_components: Vec<TypeId>,
     _marker: PhantomData<P>,
 }
 
@@ -469,6 +473,8 @@ where
     scene: &'a Scene,
     with_components: Vec<TypeId>,
     without_components: Vec<TypeId>,
+    with_any_components: Vec<TypeId>,
+    without_any_components: Vec<TypeId>,
     filter: F,
     _marker: PhantomData<P>,
 }
@@ -480,6 +486,8 @@ where
     scene: &'a mut Scene,
     with_components: Vec<TypeId>,
     without_components: Vec<TypeId>,
+    with_any_components: Vec<TypeId>,
+    without_any_components: Vec<TypeId>,
     filter: F,
     _marker: PhantomData<P>,
 }

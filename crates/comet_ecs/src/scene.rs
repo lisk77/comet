@@ -34,6 +34,11 @@ macro_rules! impl_component_tuple {
 impl_component_tuple!(A);
 impl_component_tuple!(A, B);
 impl_component_tuple!(A, B, C);
+impl_component_tuple!(A, B, C, D);
+impl_component_tuple!(A, B, C, D, E);
+impl_component_tuple!(A, B, C, D, E, F);
+impl_component_tuple!(A, B, C, D, E, F, G);
+impl_component_tuple!(A, B, C, D, E, F, G, H);
 
 pub struct Scene {
     id_queue: IdQueue,
@@ -140,7 +145,7 @@ impl Scene {
             gen,
         });
         self.get_next_id();
-        info!("Created entity! ID: {} (gen {})", id.index, id.gen);
+        //info!("Created entity! ID: {} (gen {})", id.index, id.gen);
         id
     }
 
@@ -253,16 +258,36 @@ impl Scene {
     fn normalized_component_filters(
         with_components: &[TypeId],
         without_components: &[TypeId],
-    ) -> Option<(Vec<TypeId>, Vec<TypeId>)> {
+        with_any_components: &[TypeId],
+        without_any_components: &[TypeId],
+    ) -> Option<(Vec<TypeId>, Vec<TypeId>, Vec<TypeId>, Vec<TypeId>)> {
         let with_components = Self::normalized_components(with_components);
         let without_components = Self::normalized_components(without_components);
-        if with_components
+        let with_any_components = Self::normalized_components(with_any_components);
+        let without_any_components = Self::normalized_components(without_any_components);
+
+        let mut include_components = with_components.clone();
+        include_components.extend(with_any_components.iter().copied());
+        include_components.sort_unstable();
+        include_components.dedup();
+
+        let mut exclude_components = without_components.clone();
+        exclude_components.extend(without_any_components.iter().copied());
+        exclude_components.sort_unstable();
+        exclude_components.dedup();
+
+        if include_components
             .iter()
-            .any(|component_type| without_components.binary_search(component_type).is_ok())
+            .any(|component_type| exclude_components.binary_search(component_type).is_ok())
         {
             return None;
         }
-        Some((with_components, without_components))
+        Some((
+            with_components,
+            without_components,
+            with_any_components,
+            without_any_components,
+        ))
     }
 
     fn take_last_component_of_type(
@@ -280,8 +305,16 @@ impl Scene {
         component: TypeId,
         with_components: &[TypeId],
         without_components: &[TypeId],
+        with_any_components: &[TypeId],
+        without_any_components: &[TypeId],
     ) -> Vec<(usize, usize)> {
-        let Some((with_components, without_components)) = Self::normalized_component_filters(with_components, without_components)
+        let Some((with_components, without_components, with_any_components, without_any_components)) =
+            Self::normalized_component_filters(
+                with_components,
+                without_components,
+                with_any_components,
+                without_any_components,
+            )
         else {
             return Vec::new();
         };
@@ -290,7 +323,13 @@ impl Scene {
             let mut cache = self.query_plan_cache.borrow_mut();
             cache.sync_version(self.archetype_version);
             if let Some(matches) =
-                cache.get_single_cloned(component, &with_components, &without_components)
+                cache.get_single_cloned(
+                    component,
+                    &with_components,
+                    &without_components,
+                    &with_any_components,
+                    &without_any_components,
+                )
             {
                 return matches;
             }
@@ -305,6 +344,13 @@ impl Scene {
                     && without_components
                         .iter()
                         .all(|t| arch.column_index(*t).is_none())
+                    && (with_any_components.is_empty()
+                        || with_any_components
+                            .iter()
+                            .any(|t| arch.column_index(*t).is_some()))
+                    && without_any_components
+                        .iter()
+                        .all(|t| arch.column_index(*t).is_none())
                 {
                     matches.push((arch_id, col_idx));
                 }
@@ -313,7 +359,14 @@ impl Scene {
 
         let mut cache = self.query_plan_cache.borrow_mut();
         cache.sync_version(self.archetype_version);
-        cache.insert_single(component, &with_components, &without_components, matches.clone());
+        cache.insert_single(
+            component,
+            &with_components,
+            &without_components,
+            &with_any_components,
+            &without_any_components,
+            matches.clone(),
+        );
         matches
     }
 
@@ -925,6 +978,91 @@ mod tests {
             .query::<&Value>()
             .with::<IncludeTag>()
             .without::<ExcludeTag>()
+            .iter()
+            .map(|v| v.0)
+            .collect();
+
+        assert_eq!(values, vec![10]);
+    }
+
+    #[test]
+    fn query_with_all_and_without_all_filters_entities() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<IncludeTag>();
+        scene.register_component::<ExcludeTag>();
+        scene.register_component::<B>();
+
+        let keep = scene.new_entity();
+        scene.add_component(keep, Value(10));
+        scene.add_component(keep, IncludeTag);
+
+        let filtered_out = scene.new_entity();
+        scene.add_component(filtered_out, Value(20));
+        scene.add_component(filtered_out, IncludeTag);
+        scene.add_component(filtered_out, ExcludeTag);
+        scene.add_component(filtered_out, B);
+
+        let values: Vec<i32> = scene
+            .query::<&Value>()
+            .with_all::<(IncludeTag,)>()
+            .without_all::<(ExcludeTag, B)>()
+            .iter()
+            .map(|v| v.0)
+            .collect();
+
+        assert_eq!(values, vec![10]);
+    }
+
+    #[test]
+    fn query_with_any_filters_entities() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<IncludeTag>();
+        scene.register_component::<B>();
+
+        let include = scene.new_entity();
+        scene.add_component(include, Value(10));
+        scene.add_component(include, IncludeTag);
+
+        let b_only = scene.new_entity();
+        scene.add_component(b_only, Value(20));
+        scene.add_component(b_only, B);
+
+        let neither = scene.new_entity();
+        scene.add_component(neither, Value(30));
+
+        let values: Vec<i32> = scene
+            .query::<&Value>()
+            .with_any::<(IncludeTag, B)>()
+            .iter()
+            .map(|v| v.0)
+            .collect();
+
+        assert_eq!(values, vec![10, 20]);
+    }
+
+    #[test]
+    fn query_without_any_filters_entities() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<ExcludeTag>();
+        scene.register_component::<B>();
+
+        let keep = scene.new_entity();
+        scene.add_component(keep, Value(10));
+
+        let exclude_tag = scene.new_entity();
+        scene.add_component(exclude_tag, Value(20));
+        scene.add_component(exclude_tag, ExcludeTag);
+
+        let exclude_b = scene.new_entity();
+        scene.add_component(exclude_b, Value(30));
+        scene.add_component(exclude_b, B);
+
+        let values: Vec<i32> = scene
+            .query::<&Value>()
+            .without_any::<(ExcludeTag, B)>()
             .iter()
             .map(|v| v.0)
             .collect();

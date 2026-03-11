@@ -42,6 +42,8 @@ macro_rules! define_tuple_types_arity {
             pub(super) scene: &'a Scene,
             pub(super) with_components: Vec<TypeId>,
             pub(super) without_components: Vec<TypeId>,
+            pub(super) with_any_components: Vec<TypeId>,
+            pub(super) without_any_components: Vec<TypeId>,
             pub(super) _marker: PhantomData<($first_ty, $($ty),+)>,
         }
 
@@ -49,6 +51,8 @@ macro_rules! define_tuple_types_arity {
             pub(super) scene: &'a mut Scene,
             pub(super) with_components: Vec<TypeId>,
             pub(super) without_components: Vec<TypeId>,
+            pub(super) with_any_components: Vec<TypeId>,
+            pub(super) without_any_components: Vec<TypeId>,
             pub(super) _marker: PhantomData<($first_ty, $($ty),+)>,
         }
     };
@@ -102,6 +106,8 @@ macro_rules! define_entity_tuple_types_arity {
             pub(super) scene: &'a Scene,
             pub(super) with_components: Vec<TypeId>,
             pub(super) without_components: Vec<TypeId>,
+            pub(super) with_any_components: Vec<TypeId>,
+            pub(super) without_any_components: Vec<TypeId>,
             pub(super) _marker: PhantomData<($first_ty $(, $ty)*)>,
         }
 
@@ -109,6 +115,8 @@ macro_rules! define_entity_tuple_types_arity {
             pub(super) scene: &'a mut Scene,
             pub(super) with_components: Vec<TypeId>,
             pub(super) without_components: Vec<TypeId>,
+            pub(super) with_any_components: Vec<TypeId>,
+            pub(super) without_any_components: Vec<TypeId>,
             pub(super) _marker: PhantomData<($first_ty $(, $ty)*)>,
         }
     };
