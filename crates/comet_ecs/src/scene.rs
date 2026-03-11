@@ -4,7 +4,7 @@ use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
 use crate::{Component, Entity, EntityLocation, IdQueue};
 use comet_log::*;
-use comet_structs::ComponentSet;
+use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
 use std::any::TypeId;
 use std::cell::RefCell;
@@ -40,6 +40,12 @@ impl_component_tuple!(A, B, C, D, E, F);
 impl_component_tuple!(A, B, C, D, E, F, G);
 impl_component_tuple!(A, B, C, D, E, F, G, H);
 
+#[derive(Clone)]
+struct BundleSpawnPlan {
+    archetype: usize,
+    column_indices: Vec<usize>,
+}
+
 pub struct Scene {
     id_queue: IdQueue,
     next_id: u32,
@@ -52,6 +58,7 @@ pub struct Scene {
     archetypes: Archetypes,
     archetype_version: usize,
     query_plan_cache: RefCell<QueryPlanCache>,
+    bundle_spawn_cache: HashMap<Vec<TypeId>, BundleSpawnPlan>,
     prefabs: PrefabManager,
 }
 
@@ -69,6 +76,7 @@ impl Scene {
             archetypes: Archetypes::new(),
             archetype_version: 0,
             query_plan_cache: RefCell::new(QueryPlanCache::default()),
+            bundle_spawn_cache: HashMap::new(),
             prefabs: PrefabManager::new(),
         };
         let empty_set = ComponentSet::new();
@@ -112,8 +120,7 @@ impl Scene {
         &self.entities
     }
 
-    /// Creates a new entity and returns its ID.
-    pub fn new_entity(&mut self) -> Entity {
+    fn allocate_entity_slot(&mut self) -> Entity {
         let index = self.next_id;
         let gen = if (index as usize) >= self.generations.len() {
             self.generations.push(0);
@@ -129,23 +136,26 @@ impl Scene {
             self.entities[index as usize] = Some(id);
         }
 
+        self.get_next_id();
+        id
+    }
+
+    fn place_entity_in_archetype(&mut self, entity: Entity, archetype: usize) -> usize {
+        let row = self.archetypes.get_mut(archetype).push_entity(entity);
+        self.set_location(entity, archetype, row);
+        row
+    }
+
+    /// Creates a new entity and returns its ID.
+    pub fn new_entity(&mut self) -> Entity {
+        let id = self.allocate_entity_slot();
         let empty_set = ComponentSet::new();
         let empty_arch = self.archetypes.get_or_create(
             empty_set,
             &self.component_info,
             &self.component_registry,
         );
-        let row = self.archetypes.get_mut(empty_arch).push_entity(id);
-        if index as usize >= self.entity_locations.len() {
-            self.entity_locations.resize(index as usize + 1, None);
-        }
-        self.entity_locations[index as usize] = Some(EntityLocation {
-            archetype: empty_arch,
-            row,
-            gen,
-        });
-        self.get_next_id();
-        //info!("Created entity! ID: {} (gen {})", id.index, id.gen);
+        let _ = self.place_entity_in_archetype(id, empty_arch);
         id
     }
 
@@ -407,6 +417,7 @@ impl Scene {
             };
             self.component_index.insert(type_id, index);
         }
+        self.bundle_spawn_cache.clear();
 
         info!("Registered component: {}", C::type_name());
     }
@@ -432,6 +443,7 @@ impl Scene {
                 *slot = None;
             }
         }
+        self.bundle_spawn_cache.clear();
 
         if self.component_info.remove(&type_id).is_some() {
             info!("Deregistered component: {}", C::type_name());
@@ -446,6 +458,19 @@ impl Scene {
                 error!(
                     "Component TypeId {:?} not registered, cannot add bundle/components",
                     component.type_id
+                );
+                return false;
+            }
+        }
+        true
+    }
+
+    fn validate_type_ids_registered(&self, component_types: &[TypeId]) -> bool {
+        for component_type in component_types {
+            if !self.component_info.contains_key(component_type) {
+                error!(
+                    "Component TypeId {:?} not registered, cannot add bundle/components",
+                    component_type
                 );
                 return false;
             }
@@ -727,7 +752,7 @@ impl Scene {
     }
 
     pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> Entity {
-        self.spawn_with_components(bundle.into_components())
+        bundle.spawn(self)
     }
 
     pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
@@ -816,11 +841,98 @@ impl Scene {
     }
 
     pub fn spawn_with_components(&mut self, components: Vec<ErasedComponent>) -> Entity {
-        let entity_id = self.new_entity();
         if components.is_empty() {
-            return entity_id;
+            return self.new_entity();
         }
-        self.add_with_components(entity_id, components);
+        if !self.validate_components_registered(&components) {
+            return self.new_entity();
+        }
+
+        let mut component_set = ComponentSet::new();
+        for component in &components {
+            let index = self
+                .component_index
+                .get(&component.type_id)
+                .copied()
+                .unwrap_or_else(|| panic!("Component {:?} missing index", component.type_id));
+            component_set.insert(index);
+        }
+        let archetype = self.ensure_archetype(component_set);
+        let entity_id = self.allocate_entity_slot();
+        let row = self.place_entity_in_archetype(entity_id, archetype);
+        let mut components = components;
+        let arch = self.archetypes.get_mut(archetype);
+        for type_id in arch.types().to_vec() {
+            let component = Self::take_last_component_of_type(&mut components, type_id)
+                .unwrap_or_else(|| panic!("Bundle missing component {:?}", type_id));
+            let col_idx = arch
+                .column_index(type_id)
+                .unwrap_or_else(|| panic!("Archetype missing column for {:?}", type_id));
+            (component.push_fn)(component.value, &mut arch.columns_mut()[col_idx]);
+        }
+
+        debug_assert!(
+            arch.columns().iter().all(|col| col.len() == row + 1),
+            "column length mismatch after spawn_with_components"
+        );
+
+        entity_id
+    }
+
+    #[doc(hidden)]
+    pub fn __spawn_bundle_typed<F>(&mut self, component_types: &[TypeId], writer: F) -> Entity
+    where
+        F: FnOnce(&mut [Column], &[usize], usize),
+    {
+        if component_types.is_empty() {
+            return self.new_entity();
+        }
+        let plan = if let Some(plan) = self.bundle_spawn_cache.get(component_types) {
+            plan.clone()
+        } else {
+            if !self.validate_type_ids_registered(component_types) {
+                return self.new_entity();
+            }
+
+            let mut component_set = ComponentSet::new();
+            for component_type in component_types {
+                let index = self
+                    .component_index
+                    .get(component_type)
+                    .copied()
+                    .unwrap_or_else(|| panic!("Component {:?} missing index", component_type));
+                component_set.insert(index);
+            }
+
+            let archetype = self.ensure_archetype(component_set);
+            let arch = self.archetypes.get(archetype);
+            let mut column_indices = Vec::with_capacity(component_types.len());
+            for component_type in component_types {
+                let col_idx = arch
+                    .column_index(*component_type)
+                    .unwrap_or_else(|| panic!("Archetype missing column for {:?}", component_type));
+                column_indices.push(col_idx);
+            }
+
+            let plan = BundleSpawnPlan {
+                archetype,
+                column_indices,
+            };
+            self.bundle_spawn_cache
+                .insert(component_types.to_vec(), plan.clone());
+            plan
+        };
+
+        let entity_id = self.allocate_entity_slot();
+        let row = self.place_entity_in_archetype(entity_id, plan.archetype);
+        let arch = self.archetypes.get_mut(plan.archetype);
+        writer(arch.columns_mut(), &plan.column_indices, row);
+
+        debug_assert!(
+            arch.columns().iter().all(|col| col.len() == row + 1),
+            "column length mismatch after __spawn_bundle_typed"
+        );
+
         entity_id
     }
 }
