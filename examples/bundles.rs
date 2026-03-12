@@ -1,7 +1,8 @@
 // This is the simple_move_2d example but using bundles
 use comet::prelude::*;
 
-#[derive(Tag)]
+// Zero sized components are also called tags
+#[derive(Component)]
 struct Player;
 
 bundle!(Camera {
