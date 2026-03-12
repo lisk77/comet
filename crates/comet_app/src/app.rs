@@ -357,6 +357,15 @@ impl App {
         self.update_timer = 1.0 / update_rate as f32;
     }
 
+    fn begin_logic_tick(&mut self) {
+        let baseline_tick = self.scene.change_tick().wrapping_sub(1);
+        self.scene.set_query_default_tick(baseline_tick);
+    }
+
+    fn end_logic_tick(&mut self) {
+        let _ = self.scene.advance_change_tick();
+    }
+
     fn create_window(
         app_title: String,
         app_icon: &Option<Icon>,
@@ -441,6 +450,7 @@ impl App {
                         let mut steps = 0;
                         while time_stack > app.update_timer && steps < max_steps {
                             let step = app.dt();
+                            app.begin_logic_tick();
                             app.apply_tick_system_changes();
                             let mut i = 0;
                             while i < app.tick_systems.len() {
@@ -449,10 +459,12 @@ impl App {
                                 i += 1;
                             }
                             update(&mut app, &mut handle, step);
+                            app.end_logic_tick();
                             time_stack -= app.update_timer;
                             steps += 1;
                         }
                     } else {
+                        app.begin_logic_tick();
                         app.apply_tick_system_changes();
                         let mut i = 0;
                         while i < app.tick_systems.len() {
@@ -461,6 +473,7 @@ impl App {
                             i += 1;
                         }
                         update(&mut app, &mut handle, frame_dt);
+                        app.end_logic_tick();
                     }
 
                     if app.should_quit {

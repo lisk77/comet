@@ -1295,7 +1295,7 @@ impl Scene {
 #[cfg(test)]
 mod tests {
     use super::Scene;
-    use crate::{Component, ErasedComponent, Tag};
+    use crate::{Component, ErasedComponent};
 
     struct A;
     impl Component for A {}
@@ -1312,11 +1312,9 @@ mod tests {
 
     struct IncludeTag;
     impl Component for IncludeTag {}
-    impl Tag for IncludeTag {}
 
     struct ExcludeTag;
     impl Component for ExcludeTag {}
-    impl Tag for ExcludeTag {}
 
     #[test]
     fn deregister_component_is_blocked_while_live_instances_exist() {
