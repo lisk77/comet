@@ -2,6 +2,7 @@ use crate::archetypes::{Archetypes, ComponentInfo};
 use crate::bundles::Bundle;
 use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
+use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleSpawnPlan, ComponentChangeState};
 use crate::{Component, Entity, EntityLocation, IdQueue, Tick};
 use comet_log::*;
@@ -35,6 +36,7 @@ pub struct Scene {
     component_change_state: HashMap<(u32, TypeId), ComponentChangeState>,
     removed_component_events: HashMap<TypeId, Vec<(Entity, Tick)>>,
     prefabs: PrefabManager,
+    commands: SceneCommands,
 }
 
 impl Scene {
@@ -58,6 +60,7 @@ impl Scene {
             component_change_state: HashMap::new(),
             removed_component_events: HashMap::new(),
             prefabs: PrefabManager::new(),
+            commands: SceneCommands::new(),
         };
         let empty_set = ComponentSet::new();
         let _ = scene.archetypes.get_or_create(
@@ -92,6 +95,72 @@ impl Scene {
     pub fn advance_change_tick(&mut self) -> Tick {
         self.change_tick = self.change_tick.wrapping_add(1);
         self.change_tick
+    }
+
+    pub fn deferred_spawn_empty(&mut self) {
+        self.commands.spawn_empty();
+    }
+
+    pub fn deferred_delete_entity(&mut self, entity: Entity) {
+        self.commands.delete_entity(entity);
+    }
+
+    pub fn deferred_register_component<C: Component + 'static>(&mut self) {
+        self.commands.register_component::<C>();
+    }
+
+    pub fn deferred_deregister_component<C: Component + 'static>(&mut self) {
+        self.commands.deregister_component::<C>();
+    }
+
+    pub fn deferred_add_component<C: Component + 'static>(&mut self, entity: Entity, component: C) {
+        self.commands.add_component(entity, component);
+    }
+
+    pub fn deferred_remove_component<C: Component + 'static>(&mut self, entity: Entity) {
+        self.commands.remove_component::<C>(entity);
+    }
+
+    pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {
+        self.commands.push(SceneCommand::DeleteEntitiesWith(components));
+    }
+
+    pub fn deferred_register_prefab(
+        &mut self,
+        name: impl Into<String>,
+        factory: crate::prefabs::PrefabFactory,
+    ) {
+        self.commands.register_prefab(name, factory);
+    }
+
+    pub fn deferred_spawn_prefab(&mut self, name: impl Into<String>) {
+        self.commands.spawn_prefab(name);
+    }
+
+    pub fn deferred_spawn_bundle<B: Bundle>(&mut self, bundle: B) {
+        self.commands.spawn_bundle(bundle);
+    }
+
+    pub fn deferred_spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) {
+        self.commands.spawn_bundle_batch(bundles);
+    }
+
+    pub fn deferred_add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
+        self.commands.add_bundle(entity, bundle);
+    }
+
+    pub fn queued_command_count(&self) -> usize {
+        self.commands.len()
+    }
+
+    pub fn apply_commands(&mut self) {
+        let mut commands = std::mem::take(&mut self.commands);
+        commands.apply(self);
+        self.commands = commands;
+    }
+
+    pub fn apply_command(&mut self, command: SceneCommand) {
+        SceneCommands::apply_command(self, command);
     }
 
     #[inline(always)]
@@ -245,6 +314,10 @@ impl Scene {
 
     /// Creates a new entity and returns its ID.
     pub fn new_entity(&mut self) -> Entity {
+        self.new_entity_immediate()
+    }
+
+    pub(crate) fn new_entity_immediate(&mut self) -> Entity {
         let id = self.allocate_entity_slot();
         let empty_set = ComponentSet::new();
         let empty_arch = self.archetypes.get_or_create(
@@ -268,6 +341,10 @@ impl Scene {
 
     /// Deletes an entity by its ID.
     pub fn delete_entity(&mut self, entity_id: Entity) {
+        self.delete_entity_immediate(entity_id);
+    }
+
+    pub(crate) fn delete_entity_immediate(&mut self, entity_id: Entity) {
         if !self.is_alive(entity_id) {
             return;
         }
@@ -492,6 +569,10 @@ impl Scene {
 
     /// Registers a new component in the scene.
     pub fn register_component<C: Component + 'static>(&mut self) {
+        self.register_component_immediate::<C>();
+    }
+
+    pub(crate) fn register_component_immediate<C: Component + 'static>(&mut self) {
         let type_id = C::type_id();
         if self.component_info.contains_key(&type_id) {
             warn!("Component {} is already registered!", C::type_name());
@@ -528,6 +609,10 @@ impl Scene {
 
     /// Deregisters a component from the scene.
     pub fn deregister_component<C: Component + 'static>(&mut self) {
+        self.deregister_component_immediate::<C>();
+    }
+
+    pub(crate) fn deregister_component_immediate<C: Component + 'static>(&mut self) {
         let type_id = C::type_id();
         if !self.component_info.contains_key(&type_id) {
             warn!("Component {} was not registered!", C::type_name());
@@ -588,6 +673,14 @@ impl Scene {
     /// Adds a component to an entity by its ID and an instance of the component.
     /// Overwrites the previous component if another component of the same type is added.
     pub fn add_component<C: Component + 'static>(&mut self, entity_id: Entity, component: C) {
+        self.add_component_immediate(entity_id, component);
+    }
+
+    pub(crate) fn add_component_immediate<C: Component + 'static>(
+        &mut self,
+        entity_id: Entity,
+        component: C,
+    ) {
         if !self.is_alive(entity_id) {
             error!(
                 "Attempted to add component {} to dead entity {}",
@@ -688,6 +781,10 @@ impl Scene {
     }
 
     pub fn remove_component<C: Component + 'static>(&mut self, entity_id: Entity) {
+        self.remove_component_immediate::<C>(entity_id);
+    }
+
+    pub(crate) fn remove_component_immediate<C: Component + 'static>(&mut self, entity_id: Entity) {
         if !self.is_alive(entity_id) {
             return;
         }
@@ -818,12 +915,16 @@ impl Scene {
     fn delete_entities_with_indices(&mut self, components: &[usize]) {
         let entities = self.get_entities_with_indices(components);
         for entity in entities {
-            self.delete_entity(entity);
+            self.delete_entity_immediate(entity);
         }
     }
 
     /// Deletes all entities that have the given components.
     pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
+        self.delete_entities_with_immediate(components);
+    }
+
+    pub(crate) fn delete_entities_with_immediate(&mut self, components: Vec<TypeId>) {
         let Some(indices) = self.component_indices_from_type_ids(&components) else {
             return;
         };
@@ -832,11 +933,23 @@ impl Scene {
 
     /// Registers a prefab with the given name and factory function.
     pub fn register_prefab(&mut self, name: &str, factory: crate::prefabs::PrefabFactory) {
+        self.register_prefab_immediate(name, factory);
+    }
+
+    pub(crate) fn register_prefab_immediate(
+        &mut self,
+        name: &str,
+        factory: crate::prefabs::PrefabFactory,
+    ) {
         self.prefabs.register(name, factory);
     }
 
     /// Spawns a prefab with the given name.
     pub fn spawn_prefab(&mut self, name: &str) -> Option<Entity> {
+        self.spawn_prefab_immediate(name)
+    }
+
+    pub(crate) fn spawn_prefab_immediate(&mut self, name: &str) -> Option<Entity> {
         if self.prefabs.has_prefab(name) {
             if let Some(factory) = self.prefabs.prefabs.get(&name.to_string()) {
                 let factory = *factory;
@@ -871,10 +984,18 @@ impl Scene {
     }
 
     pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.add_with_components(entity, bundle.into_components());
+        self.add_with_components_immediate(entity, bundle.into_components());
     }
 
-    pub(crate) fn add_with_components(&mut self, entity_id: Entity, mut components: Vec<ErasedComponent>) {
+    pub(crate) fn add_with_components(&mut self, entity_id: Entity, components: Vec<ErasedComponent>) {
+        self.add_with_components_immediate(entity_id, components);
+    }
+
+    pub(crate) fn add_with_components_immediate(
+        &mut self,
+        entity_id: Entity,
+        mut components: Vec<ErasedComponent>,
+    ) {
         if !self.is_alive(entity_id) || components.is_empty() {
             return;
         }
@@ -975,11 +1096,15 @@ impl Scene {
     }
 
     pub fn spawn_with_components(&mut self, components: Vec<ErasedComponent>) -> Entity {
+        self.spawn_with_components_immediate(components)
+    }
+
+    pub(crate) fn spawn_with_components_immediate(&mut self, components: Vec<ErasedComponent>) -> Entity {
         if components.is_empty() {
-            return self.new_entity();
+            return self.new_entity_immediate();
         }
         if !self.validate_components_registered(&components) {
-            return self.new_entity();
+            return self.new_entity_immediate();
         }
 
         let mut component_set = ComponentSet::new();
@@ -1030,12 +1155,12 @@ impl Scene {
         F: FnOnce(&mut [Column], &[usize], usize),
     {
         if component_types.is_empty() {
-            return self.new_entity();
+            return self.new_entity_immediate();
         }
 
         if !self.bundle_spawn_cache.contains_key(&bundle_type) {
             if !self.validate_type_ids_registered(component_types) {
-                return self.new_entity();
+                return self.new_entity_immediate();
             }
 
             let mut component_set = ComponentSet::new();
@@ -1112,12 +1237,18 @@ impl Scene {
             return Vec::new();
         }
         if component_types.is_empty() {
-            return bundles.into_iter().map(|_| self.new_entity()).collect();
+            return bundles
+                .into_iter()
+                .map(|_| self.new_entity_immediate())
+                .collect();
         }
 
         if !self.bundle_spawn_cache.contains_key(&bundle_type) {
             if !self.validate_type_ids_registered(component_types) {
-                return bundles.into_iter().map(|_| self.new_entity()).collect();
+                return bundles
+                    .into_iter()
+                    .map(|_| self.new_entity_immediate())
+                    .collect();
             }
 
             let mut component_set = ComponentSet::new();

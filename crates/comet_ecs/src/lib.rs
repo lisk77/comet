@@ -8,6 +8,7 @@ pub use id::*;
 pub use prefabs::{ErasedComponent, PrefabFactory};
 pub use query::{Query, QuerySpec, QuerySpecMut};
 pub use scene::*;
+pub use scene_commands::{SceneCommand, SceneCommands};
 pub use sparse_set::SparseSet;
 
 pub type Tick = u32;
@@ -22,5 +23,6 @@ pub mod prefabs;
 mod query;
 mod query_plan_cache;
 mod scene;
+mod scene_commands;
 mod scene_internals;
 mod sparse_set;

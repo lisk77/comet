@@ -201,6 +201,66 @@ impl App {
         self.scene.spawn_bundle(bundle)
     }
 
+    pub fn deferred_spawn_empty(&mut self) {
+        self.scene.deferred_spawn_empty();
+    }
+
+    pub fn deferred_delete_entity(&mut self, entity: Entity) {
+        self.scene.deferred_delete_entity(entity);
+    }
+
+    pub fn deferred_register_component<C: Component>(&mut self) {
+        self.scene.deferred_register_component::<C>();
+    }
+
+    pub fn deferred_deregister_component<C: Component>(&mut self) {
+        self.scene.deferred_deregister_component::<C>();
+    }
+
+    pub fn deferred_add_component<C: Component>(&mut self, entity: Entity, component: C) {
+        self.scene.deferred_add_component::<C>(entity, component);
+    }
+
+    pub fn deferred_remove_component<C: Component>(&mut self, entity: Entity) {
+        self.scene.deferred_remove_component::<C>(entity);
+    }
+
+    pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {
+        self.scene.deferred_delete_entities_with(components);
+    }
+
+    pub fn deferred_register_prefab(
+        &mut self,
+        name: impl Into<String>,
+        factory: comet_ecs::PrefabFactory,
+    ) {
+        self.scene.deferred_register_prefab(name, factory);
+    }
+
+    pub fn deferred_spawn_prefab(&mut self, name: impl Into<String>) {
+        self.scene.deferred_spawn_prefab(name);
+    }
+
+    pub fn deferred_spawn_bundle<B: comet_ecs::Bundle>(&mut self, bundle: B) {
+        self.scene.deferred_spawn_bundle(bundle);
+    }
+
+    pub fn deferred_spawn_bundle_batch<B: comet_ecs::Bundle>(&mut self, bundles: Vec<B>) {
+        self.scene.deferred_spawn_bundle_batch(bundles);
+    }
+
+    pub fn deferred_add_bundle<B: comet_ecs::Bundle>(&mut self, entity: Entity, bundle: B) {
+        self.scene.deferred_add_bundle(entity, bundle);
+    }
+
+    pub fn apply_deferred_commands(&mut self) {
+        self.scene.apply_commands();
+    }
+
+    pub fn queued_deferred_command_count(&self) -> usize {
+        self.scene.queued_command_count()
+    }
+
     pub fn query<'a, Q>(&'a mut self) -> <Q as comet_ecs::QuerySpecMut<'a>>::Builder
     where
         Q: comet_ecs::QuerySpecMut<'a>,
@@ -363,6 +423,7 @@ impl App {
     }
 
     fn end_logic_tick(&mut self) {
+        self.scene.apply_commands();
         let _ = self.scene.advance_change_tick();
     }
 

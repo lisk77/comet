@@ -3,14 +3,14 @@ use std::any::{Any, TypeId};
 
 pub struct ErasedComponent {
     pub(crate) type_id: TypeId,
-    pub(crate) push_fn: fn(Box<dyn Any>, &mut Column),
-    pub(crate) set_fn: fn(Box<dyn Any>, &mut Column, usize),
-    pub(crate) value: Box<dyn Any>,
+    pub(crate) push_fn: fn(Box<dyn Any + Send>, &mut Column),
+    pub(crate) set_fn: fn(Box<dyn Any + Send>, &mut Column, usize),
+    pub(crate) value: Box<dyn Any + Send>,
 }
 
 impl ErasedComponent {
     pub fn new<C: crate::Component + 'static>(value: C) -> Self {
-        fn push<C: crate::Component + 'static>(value: Box<dyn Any>, column: &mut Column) {
+        fn push<C: crate::Component + 'static>(value: Box<dyn Any + Send>, column: &mut Column) {
             let value = *value
                 .downcast::<C>()
                 .expect("ErasedComponent type mismatch");
@@ -18,7 +18,7 @@ impl ErasedComponent {
         }
 
         fn set<C: crate::Component + 'static>(
-            value: Box<dyn Any>,
+            value: Box<dyn Any + Send>,
             column: &mut Column,
             row: usize,
         ) {
