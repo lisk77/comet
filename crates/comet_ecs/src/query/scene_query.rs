@@ -6,7 +6,11 @@ impl Scene {
         for (arch_id, col_idx) in self.cached_single_plan(P::type_id(), &[], &[], &[], &[]) {
             let arch = self.archetypes().get(arch_id);
             let col = &arch.columns()[col_idx] as *const _;
+            let entities = arch.entities().as_ptr();
+            let scene = self as *const Scene;
             accesses.push(QueryAccess {
+                entities,
+                scene,
                 col,
                 len: arch.len(),
                 row: 0,
@@ -15,6 +19,8 @@ impl Scene {
         QueryIter {
             accesses,
             idx: 0,
+            added_tick_filter: None,
+            changed_tick_filter: None,
             _marker: PhantomData,
         }
     }
@@ -25,11 +31,21 @@ impl Scene {
             let arch = self.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
             let col = &mut arch.columns_mut()[col_idx] as *mut _;
-            accesses.push(QueryMutAccess { col, len, row: 0 });
+            let entities = arch.entities().as_ptr();
+            let scene = self as *mut Scene;
+            accesses.push(QueryMutAccess {
+                entities,
+                col,
+                scene,
+                len,
+                row: 0,
+            });
         }
         QueryIterMut {
             accesses,
             idx: 0,
+            added_tick_filter: None,
+            changed_tick_filter: None,
             _marker: PhantomData,
         }
     }

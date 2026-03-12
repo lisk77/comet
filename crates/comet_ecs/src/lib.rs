@@ -9,6 +9,8 @@ pub use query::{Query, QuerySpec, QuerySpecMut};
 pub use scene::*;
 pub use sparse_set::SparseSet;
 
+pub type Tick = u32;
+
 mod archetypes;
 mod bundles;
 mod component;

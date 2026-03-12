@@ -1,6 +1,6 @@
 use super::tuple_types::*;
 use super::*;
-use crate::ComponentTuple;
+use crate::{ComponentTuple, Tick};
 
 macro_rules! impl_base_tuple_query_arities {
     (
@@ -41,6 +41,8 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
             without_components: Vec::new(),
             with_any_components: Vec::new(),
             without_any_components: Vec::new(),
+            added_tick_filter: None,
+            changed_tick_filter: None,
             _marker: PhantomData,
         }
     }
@@ -75,6 +77,26 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
         self
     }
 
+    pub fn added(mut self) -> Self {
+        self.added_tick_filter = Some(self.scene.query_default_tick());
+        self
+    }
+
+    pub fn changed(mut self) -> Self {
+        self.changed_tick_filter = Some(self.scene.query_default_tick());
+        self
+    }
+
+    pub fn added_since(mut self, tick: Tick) -> Self {
+        self.added_tick_filter = Some(tick);
+        self
+    }
+
+    pub fn changed_since(mut self, tick: Tick) -> Self {
+        self.changed_tick_filter = Some(tick);
+        self
+    }
+
     pub fn filter<F>(self, f: F) -> QueryBuilderFiltered<'a, P, F>
     where
         F: Fn(&P::Component) -> bool + 'a,
@@ -85,6 +107,8 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
             without_components: self.without_components,
             with_any_components: self.with_any_components,
             without_any_components: self.without_any_components,
+            added_tick_filter: self.added_tick_filter,
+            changed_tick_filter: self.changed_tick_filter,
             filter: f,
             _marker: PhantomData,
         }
@@ -98,7 +122,11 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
         {
             let arch = self.scene.archetypes().get(arch_id);
             let col = &arch.columns()[col_idx] as *const _;
+            let entities = arch.entities().as_ptr();
+            let scene = self.scene as *const Scene;
             accesses.push(QueryAccess {
+                entities,
+                scene,
                 col,
                 len: arch.len(),
                 row: 0,
@@ -107,6 +135,8 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
         QueryIter {
             accesses,
             idx: 0,
+            added_tick_filter: self.added_tick_filter,
+            changed_tick_filter: self.changed_tick_filter,
             _marker: PhantomData,
         }
     }
@@ -131,6 +161,8 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
             without_components: Vec::new(),
             with_any_components: Vec::new(),
             without_any_components: Vec::new(),
+            added_tick_filter: None,
+            changed_tick_filter: None,
             _marker: PhantomData,
         }
     }
@@ -165,6 +197,26 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
         self
     }
 
+    pub fn added(mut self) -> Self {
+        self.added_tick_filter = Some(self.scene.query_default_tick());
+        self
+    }
+
+    pub fn changed(mut self) -> Self {
+        self.changed_tick_filter = Some(self.scene.query_default_tick());
+        self
+    }
+
+    pub fn added_since(mut self, tick: Tick) -> Self {
+        self.added_tick_filter = Some(tick);
+        self
+    }
+
+    pub fn changed_since(mut self, tick: Tick) -> Self {
+        self.changed_tick_filter = Some(tick);
+        self
+    }
+
     pub fn filter<F>(self, f: F) -> QueryMutBuilderFiltered<'a, P, F>
     where
         F: Fn(&P::Component) -> bool + 'a,
@@ -175,6 +227,8 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
             without_components: self.without_components,
             with_any_components: self.with_any_components,
             without_any_components: self.without_any_components,
+            added_tick_filter: self.added_tick_filter,
+            changed_tick_filter: self.changed_tick_filter,
             filter: f,
             _marker: PhantomData,
         }
@@ -189,11 +243,21 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
             let col = &mut arch.columns_mut()[col_idx] as *mut _;
-            accesses.push(QueryMutAccess { col, len, row: 0 });
+            let entities = arch.entities().as_ptr();
+            let scene = self.scene as *mut Scene;
+            accesses.push(QueryMutAccess {
+                entities,
+                col,
+                scene,
+                len,
+                row: 0,
+            });
         }
         QueryIterMut {
             accesses,
             idx: 0,
+            added_tick_filter: self.added_tick_filter,
+            changed_tick_filter: self.changed_tick_filter,
             _marker: PhantomData,
         }
     }
@@ -252,7 +316,11 @@ where
         {
             let arch = self.scene.archetypes().get(arch_id);
             let col = &arch.columns()[col_idx] as *const _;
+            let entities = arch.entities().as_ptr();
+            let scene = self.scene as *const Scene;
             accesses.push(QueryAccess {
+                entities,
+                scene,
                 col,
                 len: arch.len(),
                 row: 0,
@@ -262,6 +330,8 @@ where
             inner: QueryIter {
                 accesses,
                 idx: 0,
+                added_tick_filter: self.added_tick_filter,
+                changed_tick_filter: self.changed_tick_filter,
                 _marker: PhantomData,
             },
             filter: self.filter,
@@ -311,6 +381,26 @@ where
         self
     }
 
+    pub fn added(mut self) -> Self {
+        self.added_tick_filter = Some(self.scene.query_default_tick());
+        self
+    }
+
+    pub fn changed(mut self) -> Self {
+        self.changed_tick_filter = Some(self.scene.query_default_tick());
+        self
+    }
+
+    pub fn added_since(mut self, tick: Tick) -> Self {
+        self.added_tick_filter = Some(tick);
+        self
+    }
+
+    pub fn changed_since(mut self, tick: Tick) -> Self {
+        self.changed_tick_filter = Some(tick);
+        self
+    }
+
     pub fn iter(self) -> QueryIterMutFiltered<'a, P, F> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
@@ -320,12 +410,22 @@ where
             let arch = self.scene.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
             let col = &mut arch.columns_mut()[col_idx] as *mut _;
-            accesses.push(QueryMutAccess { col, len, row: 0 });
+            let entities = arch.entities().as_ptr();
+            let scene = self.scene as *mut Scene;
+            accesses.push(QueryMutAccess {
+                entities,
+                col,
+                scene,
+                len,
+                row: 0,
+            });
         }
         QueryIterMutFiltered {
             inner: QueryIterMut {
                 accesses,
                 idx: 0,
+                added_tick_filter: self.added_tick_filter,
+                changed_tick_filter: self.changed_tick_filter,
                 _marker: PhantomData,
             },
             filter: self.filter,
@@ -509,9 +609,13 @@ macro_rules! impl_tuple_builders_arity {
                     let cols = arch.columns_mut();
                     let $first_col = &mut cols[first_idx] as *mut _;
                     $(let $col = &mut cols[$idx] as *mut _;)+
+                    let entities = arch.entities().as_ptr();
+                    let scene = self.scene as *mut Scene;
                     accesses.push($access_mut {
+                        entities,
                         $first_col,
                         $($col,)+
+                        scene,
                         len,
                         row: 0,
                     });
@@ -709,10 +813,12 @@ macro_rules! impl_entity_tuple_builders_arity {
                     let $first_col = &mut cols[first_idx] as *mut _;
                     $(let $col = &mut cols[$idx] as *mut _;)*
                     let entities = arch.entities().as_ptr();
+                    let scene = self.scene as *mut Scene;
                     accesses.push($access_mut {
                         entities,
                         $first_col,
                         $($col,)*
+                        scene,
                         len,
                         row: 0,
                     });

@@ -1,4 +1,4 @@
-use crate::{Component, Entity, Scene};
+use crate::{Component, Entity, Scene, Tick};
 use std::any::TypeId;
 use std::marker::PhantomData;
 
@@ -342,13 +342,17 @@ macro_rules! for_each_entity_tuple_arity {
 }
 
 struct QueryAccess {
+    entities: *const Entity,
+    scene: *const Scene,
     col: *const comet_structs::Column,
     len: usize,
     row: usize,
 }
 
 struct QueryMutAccess {
+    entities: *const Entity,
     col: *mut comet_structs::Column,
+    scene: *mut Scene,
     len: usize,
     row: usize,
 }
@@ -408,6 +412,8 @@ pub trait WriteFetch<'a> {
     unsafe fn get(col: *mut comet_structs::Column, row: usize) -> Option<Self::Item>;
 
     fn as_ref(item: &Self::Item) -> &Self::Component;
+
+    fn writes() -> bool;
 }
 
 impl<'a, C: Component> WriteFetch<'a> for &'a mut C {
@@ -420,6 +426,10 @@ impl<'a, C: Component> WriteFetch<'a> for &'a mut C {
 
     fn as_ref(item: &Self::Item) -> &Self::Component {
         item
+    }
+
+    fn writes() -> bool {
+        true
     }
 }
 
@@ -434,17 +444,25 @@ impl<'a, C: Component> WriteFetch<'a> for &'a C {
     fn as_ref(item: &Self::Item) -> &Self::Component {
         item
     }
+
+    fn writes() -> bool {
+        false
+    }
 }
 
 pub struct QueryIter<'a, P: ReadFetch<'a>> {
     accesses: Vec<QueryAccess>,
     idx: usize,
+    added_tick_filter: Option<Tick>,
+    changed_tick_filter: Option<Tick>,
     _marker: PhantomData<&'a P>,
 }
 
 pub struct QueryIterMut<'a, P: WriteFetch<'a>> {
     accesses: Vec<QueryMutAccess>,
     idx: usize,
+    added_tick_filter: Option<Tick>,
+    changed_tick_filter: Option<Tick>,
     _marker: PhantomData<&'a P>,
 }
 
@@ -454,6 +472,8 @@ pub struct QueryBuilder<'a, P: ReadFetch<'a>> {
     without_components: Vec<TypeId>,
     with_any_components: Vec<TypeId>,
     without_any_components: Vec<TypeId>,
+    added_tick_filter: Option<Tick>,
+    changed_tick_filter: Option<Tick>,
     _marker: PhantomData<P>,
 }
 
@@ -463,6 +483,8 @@ pub struct Query<'a, P: WriteFetch<'a>> {
     without_components: Vec<TypeId>,
     with_any_components: Vec<TypeId>,
     without_any_components: Vec<TypeId>,
+    added_tick_filter: Option<Tick>,
+    changed_tick_filter: Option<Tick>,
     _marker: PhantomData<P>,
 }
 
@@ -475,6 +497,8 @@ where
     without_components: Vec<TypeId>,
     with_any_components: Vec<TypeId>,
     without_any_components: Vec<TypeId>,
+    added_tick_filter: Option<Tick>,
+    changed_tick_filter: Option<Tick>,
     filter: F,
     _marker: PhantomData<P>,
 }
@@ -488,6 +512,8 @@ where
     without_components: Vec<TypeId>,
     with_any_components: Vec<TypeId>,
     without_any_components: Vec<TypeId>,
+    added_tick_filter: Option<Tick>,
+    changed_tick_filter: Option<Tick>,
     filter: F,
     _marker: PhantomData<P>,
 }

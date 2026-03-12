@@ -2,7 +2,7 @@ use crate::archetypes::{Archetypes, ComponentInfo};
 use crate::bundles::Bundle;
 use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
-use crate::{Component, Entity, EntityLocation, IdQueue};
+use crate::{Component, Entity, EntityLocation, IdQueue, Tick};
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
@@ -50,7 +50,15 @@ struct BundleSpawnPlan {
     column_indices: Arc<[usize]>,
 }
 
+#[derive(Clone, Copy)]
+struct ComponentChangeState {
+    added_tick: Tick,
+    changed_tick: Tick,
+}
+
 pub struct Scene {
+    change_tick: Tick,
+    query_default_tick: Tick,
     id_queue: IdQueue,
     next_id: u32,
     generations: Vec<u32>,
@@ -64,12 +72,16 @@ pub struct Scene {
     archetype_version: usize,
     query_plan_cache: RefCell<QueryPlanCache>,
     bundle_spawn_cache: HashMap<TypeId, BundleSpawnPlan>,
+    component_change_state: HashMap<(u32, TypeId), ComponentChangeState>,
+    removed_component_events: HashMap<TypeId, Vec<(Entity, Tick)>>,
     prefabs: PrefabManager,
 }
 
 impl Scene {
     pub fn new() -> Self {
         let mut scene = Self {
+            change_tick: 0,
+            query_default_tick: 0,
             id_queue: IdQueue::new(),
             next_id: 0,
             generations: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
@@ -83,6 +95,8 @@ impl Scene {
             archetype_version: 0,
             query_plan_cache: RefCell::new(QueryPlanCache::default()),
             bundle_spawn_cache: HashMap::new(),
+            component_change_state: HashMap::new(),
+            removed_component_events: HashMap::new(),
             prefabs: PrefabManager::new(),
         };
         let empty_set = ComponentSet::new();
@@ -97,6 +111,124 @@ impl Scene {
     /// Returns the number of how many entities exist in the current Scene.
     pub fn active_entities(&self) -> u32 {
         self.active_entities
+    }
+
+    pub fn change_tick(&self) -> Tick {
+        self.change_tick
+    }
+
+    pub fn set_change_tick(&mut self, tick: Tick) {
+        self.change_tick = tick;
+    }
+
+    pub fn query_default_tick(&self) -> Tick {
+        self.query_default_tick
+    }
+
+    pub fn set_query_default_tick(&mut self, tick: Tick) {
+        self.query_default_tick = tick;
+    }
+
+    pub fn advance_change_tick(&mut self) -> Tick {
+        self.change_tick = self.change_tick.wrapping_add(1);
+        self.change_tick
+    }
+
+    #[inline(always)]
+    fn mark_component_added_and_changed(&mut self, entity: Entity, type_id: TypeId) {
+        self.component_change_state.insert(
+            (entity.index, type_id),
+            ComponentChangeState {
+                added_tick: self.change_tick,
+                changed_tick: self.change_tick,
+            },
+        );
+    }
+
+    #[inline(always)]
+    fn mark_component_changed(&mut self, entity: Entity, type_id: TypeId) {
+        let key = (entity.index, type_id);
+        if let Some(state) = self.component_change_state.get_mut(&key) {
+            state.changed_tick = self.change_tick;
+            return;
+        }
+        self.component_change_state.insert(
+            key,
+            ComponentChangeState {
+                added_tick: self.change_tick,
+                changed_tick: self.change_tick,
+            },
+        );
+    }
+
+    pub(crate) fn mark_component_changed_for_query(&mut self, entity: Entity, type_id: TypeId) {
+        self.mark_component_changed(entity, type_id);
+    }
+
+    #[inline(always)]
+    fn mark_component_removed(&mut self, entity: Entity, type_id: TypeId) {
+        self.component_change_state.remove(&(entity.index, type_id));
+        self.removed_component_events
+            .entry(type_id)
+            .or_default()
+            .push((entity, self.change_tick));
+    }
+
+    #[inline(always)]
+    fn tick_is_newer_than(tick: Tick, last_seen_tick: Tick) -> bool {
+        tick != last_seen_tick && tick.wrapping_sub(last_seen_tick) <= (u32::MAX / 2)
+    }
+
+    pub fn component_added_since<C: Component + 'static>(
+        &self,
+        entity: Entity,
+        last_seen_tick: Tick,
+    ) -> bool {
+        self.component_added_since_type(entity, C::type_id(), last_seen_tick)
+    }
+
+    pub(crate) fn component_added_since_type(
+        &self,
+        entity: Entity,
+        type_id: TypeId,
+        last_seen_tick: Tick,
+    ) -> bool {
+        self.component_change_state
+            .get(&(entity.index, type_id))
+            .is_some_and(|state| Self::tick_is_newer_than(state.added_tick, last_seen_tick))
+    }
+
+    pub fn component_changed_since<C: Component + 'static>(
+        &self,
+        entity: Entity,
+        last_seen_tick: Tick,
+    ) -> bool {
+        self.component_changed_since_type(entity, C::type_id(), last_seen_tick)
+    }
+
+    pub(crate) fn component_changed_since_type(
+        &self,
+        entity: Entity,
+        type_id: TypeId,
+        last_seen_tick: Tick,
+    ) -> bool {
+        self.component_change_state
+            .get(&(entity.index, type_id))
+            .is_some_and(|state| Self::tick_is_newer_than(state.changed_tick, last_seen_tick))
+    }
+
+    pub fn removed_since<C: Component + 'static>(&self, last_seen_tick: Tick) -> Vec<Entity> {
+        self.removed_component_events
+            .get(&C::type_id())
+            .map(|events| {
+                events
+                    .iter()
+                    .filter_map(|(entity, tick)| {
+                        Self::tick_is_newer_than(*tick, last_seen_tick).then_some(*entity)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     #[inline(always)]
@@ -182,6 +314,7 @@ impl Scene {
 
         let idx = entity_id.index as usize;
         if let Some(loc) = self.entity_locations.get(idx).and_then(|l| *l) {
+            let removed_types = self.archetypes.get(loc.archetype).types().to_vec();
             let last_row = self.archetypes.get(loc.archetype).len().saturating_sub(1);
             if loc.row != last_row {
                 let swapped_entity = {
@@ -204,6 +337,10 @@ impl Scene {
                 let _ = col.drop_last();
             }
             arch.pop_entity();
+
+            for type_id in removed_types {
+                self.mark_component_removed(entity_id, type_id);
+            }
         }
 
         self.entities[idx] = None;
@@ -451,6 +588,9 @@ impl Scene {
             }
         }
         self.bundle_spawn_cache.clear();
+        self.component_change_state
+            .retain(|(_, tracked_type_id), _| *tracked_type_id != type_id);
+        self.removed_component_events.remove(&type_id);
 
         if self.component_info.remove(&type_id).is_some() {
             info!("Deregistered component: {}", C::type_name());
@@ -523,6 +663,7 @@ impl Scene {
             if let Some(col_idx) = arch.column_index(type_id) {
                 let _ = arch.columns_mut()[col_idx].set::<C>(loc.row, component);
             }
+            self.mark_component_changed(entity_id, type_id);
             return;
         }
 
@@ -577,6 +718,7 @@ impl Scene {
 
         old_arch.pop_entity();
         self.set_location(entity_id, new_arch_id, new_row);
+        self.mark_component_added_and_changed(entity_id, type_id);
 
         info!(
             "Added component {} to entity {}!",
@@ -647,6 +789,7 @@ impl Scene {
 
         old_arch.pop_entity();
         self.set_location(entity_id, new_arch_id, new_row);
+        self.mark_component_removed(entity_id, type_id);
 
         info!(
             "Removed component {} from entity {}!",
@@ -673,6 +816,7 @@ impl Scene {
         if !self.is_alive(entity_id) {
             return None;
         }
+        self.mark_component_changed(entity_id, C::type_id());
         let loc = self.get_location(entity_id)?;
         let arch = self.archetypes.get_mut(loc.archetype);
         let col_idx = arch.column_index(C::type_id())?;
@@ -777,6 +921,7 @@ impl Scene {
         if !self.validate_components_registered(&components) {
             return;
         }
+        let submitted_types: Vec<TypeId> = components.iter().map(|component| component.type_id).collect();
 
         let loc = match self.get_location(entity_id) {
             Some(loc) => loc,
@@ -806,7 +951,17 @@ impl Scene {
                     (component.set_fn)(component.value, &mut arch.columns_mut()[col_idx], loc.row);
                 }
             }
+            for type_id in submitted_types {
+                self.mark_component_changed(entity_id, type_id);
+            }
         } else {
+            let mut existed_before_add = HashMap::with_capacity(submitted_types.len());
+            for &type_id in &submitted_types {
+                existed_before_add
+                    .entry(type_id)
+                    .or_insert_with(|| self.archetypes.get(old_arch_id).column_index(type_id).is_some());
+            }
+
             if loc.row != old_len - 1 {
                 let swapped = {
                     let arch = self.archetypes.get_mut(old_arch_id);
@@ -848,6 +1003,14 @@ impl Scene {
 
             old_arch.pop_entity();
             self.set_location(entity_id, new_arch_id, new_row);
+
+            for type_id in submitted_types {
+                if existed_before_add.get(&type_id).copied().unwrap_or(false) {
+                    self.mark_component_changed(entity_id, type_id);
+                } else {
+                    self.mark_component_added_and_changed(entity_id, type_id);
+                }
+            }
         }
     }
 
@@ -872,6 +1035,7 @@ impl Scene {
         let entity_id = self.allocate_entity_slot();
         let row = self.place_entity_in_archetype(entity_id, archetype);
         let mut components = components;
+        let mut inserted_types = Vec::new();
         let arch = self.archetypes.get_mut(archetype);
         for type_id in arch.types().to_vec() {
             let component = Self::take_last_component_of_type(&mut components, type_id)
@@ -880,12 +1044,17 @@ impl Scene {
                 .column_index(type_id)
                 .unwrap_or_else(|| panic!("Archetype missing column for {:?}", type_id));
             (component.push_fn)(component.value, &mut arch.columns_mut()[col_idx]);
+            inserted_types.push(type_id);
         }
 
         debug_assert!(
             arch.columns().iter().all(|col| col.len() == row + 1),
             "column length mismatch after spawn_with_components"
         );
+
+        for type_id in inserted_types {
+            self.mark_component_added_and_changed(entity_id, type_id);
+        }
 
         entity_id
     }
@@ -961,6 +1130,9 @@ impl Scene {
             arch.columns().iter().all(|col| col.len() == row + 1),
             "column length mismatch after __spawn_bundle_typed"
         );
+        for type_id in component_types {
+            self.mark_component_added_and_changed(entity_id, *type_id);
+        }
 
         entity_id
     }
@@ -1108,6 +1280,12 @@ impl Scene {
 
         if self.id_queue.is_empty() {
             self.next_id = self.entities.len() as u32;
+        }
+
+        for &entity in &entities {
+            for type_id in component_types {
+                self.mark_component_added_and_changed(entity, *type_id);
+            }
         }
 
         entities
@@ -1376,5 +1554,100 @@ mod tests {
             .iter();
 
         assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn component_change_tracking_uses_scene_tick() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+
+        scene.set_change_tick(10);
+        let entity = scene.new_entity();
+        scene.add_component(entity, Value(1));
+        assert!(scene.component_added_since::<Value>(entity, 9));
+        assert!(scene.component_changed_since::<Value>(entity, 9));
+        assert!(!scene.component_changed_since::<Value>(entity, 10));
+
+        scene.set_change_tick(15);
+        if let Some(value) = scene.get_component_mut::<Value>(entity) {
+            value.0 = 2;
+        }
+        assert!(scene.component_changed_since::<Value>(entity, 10));
+    }
+
+    #[test]
+    fn removed_since_tracks_component_removals() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+
+        let entity = scene.new_entity();
+        scene.set_change_tick(3);
+        scene.add_component(entity, Value(1));
+        scene.set_change_tick(7);
+        scene.remove_component::<Value>(entity);
+
+        let removed = scene.removed_since::<Value>(5);
+        assert_eq!(removed, vec![entity]);
+    }
+
+    #[test]
+    fn query_mut_marks_component_changed() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+
+        let entity = scene.new_entity();
+        scene.set_change_tick(10);
+        scene.add_component(entity, Value(1));
+
+        scene.set_change_tick(20);
+        {
+            let mut iter = scene.query_mut::<&mut Value>().iter();
+            let _ = iter.next();
+        }
+
+        assert!(scene.component_changed_since::<Value>(entity, 10));
+    }
+
+    #[test]
+    fn query_mut_marks_only_mutable_fetches() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<A>();
+
+        let entity = scene.new_entity();
+        scene.set_change_tick(10);
+        scene.add_component(entity, Value(1));
+        scene.add_component(entity, A);
+
+        scene.set_change_tick(30);
+        {
+            let mut iter = scene.query_mut::<(&Value, &mut A)>().iter();
+            let _ = iter.next();
+        }
+
+        assert!(!scene.component_changed_since::<Value>(entity, 10));
+        assert!(scene.component_changed_since::<A>(entity, 10));
+    }
+
+    #[test]
+    fn query_added_and_changed_filters_work_for_single_component_builders() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+
+        let entity = scene.new_entity();
+        scene.set_change_tick(5);
+        scene.add_component(entity, Value(1));
+
+        scene.set_query_default_tick(4);
+        let added_count = scene.query::<&Value>().added().iter().count();
+        assert_eq!(added_count, 1);
+
+        scene.set_change_tick(9);
+        if let Some(value) = scene.get_component_mut::<Value>(entity) {
+            value.0 = 2;
+        }
+
+        let changed_count = scene.query::<&Value>().changed_since(6).iter().count();
+        assert_eq!(changed_count, 1);
     }
 }

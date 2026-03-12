@@ -20,8 +20,10 @@ macro_rules! define_tuple_types_arity {
         }
 
         pub(super) struct $access_mut {
+            pub(super) entities: *const Entity,
             pub(super) $first_col: *mut comet_structs::Column,
             $(pub(super) $col: *mut comet_structs::Column,)+
+            pub(super) scene: *mut Scene,
             pub(super) len: usize,
             pub(super) row: usize,
         }
@@ -86,6 +88,7 @@ macro_rules! define_entity_tuple_types_arity {
             pub(super) entities: *const Entity,
             pub(super) $first_col: *mut comet_structs::Column,
             $(pub(super) $col: *mut comet_structs::Column,)*
+            pub(super) scene: *mut Scene,
             pub(super) len: usize,
             pub(super) row: usize,
         }
