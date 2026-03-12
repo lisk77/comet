@@ -2,6 +2,7 @@ use crate::archetypes::{Archetypes, ComponentInfo};
 use crate::bundles::Bundle;
 use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
+use crate::scene_internals::{BundleSpawnPlan, ComponentChangeState};
 use crate::{Component, Entity, EntityLocation, IdQueue, Tick};
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
@@ -14,47 +15,6 @@ use std::slice;
 use std::sync::Arc;
 
 const DEFAULT_ENTITY_STORAGE_CAPACITY: usize = 256;
-
-pub trait ComponentTuple {
-    fn type_ids() -> Vec<TypeId>;
-}
-
-impl ComponentTuple for () {
-    fn type_ids() -> Vec<TypeId> {
-        Vec::new()
-    }
-}
-
-macro_rules! impl_component_tuple {
-    ($($name:ident),+ $(,)?) => {
-        impl<$($name: Component),+> ComponentTuple for ($($name,)+) {
-            fn type_ids() -> Vec<TypeId> {
-                vec![$($name::type_id()),+]
-            }
-        }
-    };
-}
-
-impl_component_tuple!(A);
-impl_component_tuple!(A, B);
-impl_component_tuple!(A, B, C);
-impl_component_tuple!(A, B, C, D);
-impl_component_tuple!(A, B, C, D, E);
-impl_component_tuple!(A, B, C, D, E, F);
-impl_component_tuple!(A, B, C, D, E, F, G);
-impl_component_tuple!(A, B, C, D, E, F, G, H);
-
-#[derive(Clone)]
-struct BundleSpawnPlan {
-    archetype: usize,
-    column_indices: Arc<[usize]>,
-}
-
-#[derive(Clone, Copy)]
-struct ComponentChangeState {
-    added_tick: Tick,
-    changed_tick: Tick,
-}
 
 pub struct Scene {
     change_tick: Tick,
@@ -1297,25 +1257,24 @@ mod tests {
     use super::Scene;
     use crate::{Component, ErasedComponent};
 
+    #[derive(Component)]
     struct A;
-    impl Component for A {}
-
+    
+    #[derive(Component)]
     struct B;
-    impl Component for B {}
-
-    #[derive(Debug, PartialEq, Eq)]
+    
+    #[derive(Component, Eq)]
     struct Value(i32);
-    impl Component for Value {}
-
+    
+    #[derive(Component)]
     struct Unregistered;
-    impl Component for Unregistered {}
 
+    #[derive(Component)]
     struct IncludeTag;
-    impl Component for IncludeTag {}
-
+    
+    #[derive(Component)]
     struct ExcludeTag;
-    impl Component for ExcludeTag {}
-
+    
     #[test]
     fn deregister_component_is_blocked_while_live_instances_exist() {
         let mut scene = Scene::new();
