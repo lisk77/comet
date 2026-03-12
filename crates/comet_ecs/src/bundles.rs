@@ -81,7 +81,7 @@ macro_rules! bundle {
                                 let col_idx = column_indices[__bundle_col_i];
                                 __bundle_col_i += 1;
                                 unsafe {
-                                    columns[col_idx].push_unchecked::<$ty>(bundle.$field);
+                                    columns[col_idx].push_unchecked_reserved::<$ty>(bundle.$field);
                                 }
                             }
                         )*

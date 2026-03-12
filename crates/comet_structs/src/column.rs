@@ -236,6 +236,28 @@ impl Column {
         }
     }
 
+    /// # Safety
+    /// Caller must guarantee that `T` matches this column's component type and
+    /// that capacity has already been reserved for one additional element.
+    #[inline(always)]
+    pub unsafe fn push_unchecked_reserved<T: 'static>(&mut self, item: T) {
+        if self.item_layout.size() == 0 {
+            self.len += 1;
+            mem::forget(item);
+            return;
+        }
+
+        debug_assert!(self.len < self.capacity);
+
+        let index = self.len;
+        self.len += 1;
+
+        unsafe {
+            let ptr = self.elem_ptr(index) as *mut T;
+            ptr::write(ptr, item);
+        }
+    }
+
     pub fn get<T: 'static>(&self, index: usize) -> Option<&T> {
         self.assert_type::<T>();
         if index >= self.len {

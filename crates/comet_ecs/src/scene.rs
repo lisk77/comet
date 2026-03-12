@@ -1040,44 +1040,68 @@ impl Scene {
         let reusable_available = self.id_queue.size() as usize + usize::from(current_next_is_reusable);
         let reuse_count = reusable_available.min(count);
 
-        let mut alloc_indices = Vec::with_capacity(count);
-        for _ in 0..reuse_count {
-            alloc_indices.push(self.next_id);
-            self.get_next_id();
-        }
-
         let fresh_count = count - reuse_count;
         let fresh_start = self.entities.len() as u32;
-        for i in 0..fresh_count {
-            alloc_indices.push(fresh_start + i as u32);
-        }
 
         self.active_entities = self
             .active_entities
             .checked_add(count as u32)
             .expect("active_entities overflow");
 
+        let fresh_end = fresh_start as usize + fresh_count;
+        if fresh_end > self.generations.len() {
+            self.generations.resize(fresh_end, 0);
+        }
+        if fresh_end > self.entity_locations.len() {
+            self.entity_locations.resize(fresh_end, None);
+        }
+
         let mut entities = Vec::with_capacity(count);
-        for (bundle, index) in bundles.into_iter().zip(alloc_indices.into_iter()) {
-            let gen = if (index as usize) >= self.generations.len() {
-                self.generations.push(0);
-                0
-            } else {
-                self.generations[index as usize]
-            };
+        let mut bundles = bundles.into_iter();
+        // SAFETY: bundle_spawn_cache is not mutated between pointer capture and use.
+        let column_indices = unsafe { slice::from_raw_parts(column_indices_ptr, column_indices_len) };
+        let arch = self.archetypes.get_mut(archetype);
+
+        for _ in 0..reuse_count {
+            let bundle = bundles
+                .next()
+                .unwrap_or_else(|| panic!("bundle iteration unexpectedly short"));
+            let index = self.next_id;
+            let slot = index as usize;
+            let gen = self.generations[slot];
             let entity_id = Entity { index, gen };
 
-            if (index as usize) >= self.entities.len() {
-                self.entities.push(Some(entity_id));
-            } else {
-                self.entities[index as usize] = Some(entity_id);
-            }
+            self.entities[slot] = Some(entity_id);
+            let row = arch.push_entity(entity_id);
+            self.entity_locations[slot] = Some(EntityLocation {
+                archetype,
+                row,
+                gen,
+            });
+            writer(arch.columns_mut(), column_indices, row, bundle);
+            entities.push(entity_id);
+            self.next_id = self
+                .id_queue
+                .dequeue()
+                .unwrap_or_else(|| self.entities.len() as u32);
+        }
 
-            let row = self.place_entity_in_archetype(entity_id, archetype);
-            let arch = self.archetypes.get_mut(archetype);
-            // SAFETY: bundle_spawn_cache is not mutated between pointer capture and use.
-            let column_indices =
-                unsafe { slice::from_raw_parts(column_indices_ptr, column_indices_len) };
+        for i in 0..fresh_count {
+            let bundle = bundles
+                .next()
+                .unwrap_or_else(|| panic!("bundle iteration unexpectedly short"));
+            let index = fresh_start + i as u32;
+            let slot = index as usize;
+            let gen = self.generations[slot];
+            let entity_id = Entity { index, gen };
+
+            self.entities.push(Some(entity_id));
+            let row = arch.push_entity(entity_id);
+            self.entity_locations[slot] = Some(EntityLocation {
+                archetype,
+                row,
+                gen,
+            });
             writer(arch.columns_mut(), column_indices, row, bundle);
             entities.push(entity_id);
         }
