@@ -6,7 +6,9 @@ pub use component_derive::*;
 pub use entity::*;
 pub use id::*;
 pub use prefabs::{ErasedComponent, PrefabFactory};
-pub use query::{Query, QuerySpec, QuerySpecMut};
+pub use query::{
+    Added, Changed, Query, QueryParam, QuerySpec, QuerySpecMut, With, WithAny, Without, WithoutAny,
+};
 pub use scene::*;
 pub use scene_commands::{SceneCommand, SceneCommands};
 pub use sparse_set::SparseSet;

@@ -1,7 +1,7 @@
 // This is the simple_move_2d example but using bundles
 use comet::prelude::*;
 
-// Zero sized components are also called tags
+// Zero sized components are also called tags in the documentation
 #[derive(Component)]
 struct Player;
 
@@ -53,8 +53,7 @@ fn handle_input(app: &mut App, dt: f32) {
     }
 
     if direction != v2::ZERO {
-        app.query::<&mut Transform2D>()
-            .with::<Player>()
+        app.query::<&mut Transform2D, With<Player>>()
             .for_each(|t| {
                 let normalized_dir = direction.normalize();
                 let displacement = normalized_dir * 777.7 * dt;

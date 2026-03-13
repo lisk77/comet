@@ -13,18 +13,18 @@ impl<'a, P: ReadFetch<'a>> Iterator for QueryIter<'a, P> {
             }
             let row = access.row;
             access.row += 1;
-            if self.added_tick_filter.is_some() || self.changed_tick_filter.is_some() {
+            if self.added_filter.is_some() || self.changed_filter.is_some() {
                 let Some(entity) = (unsafe { <Entity as EntityFetch>::get(access.entities, access.len, row) }) else {
                     continue;
                 };
                 let scene = unsafe { &*access.scene };
-                if let Some(tick) = self.added_tick_filter {
-                    if !scene.component_added_since_type(entity, P::type_id(), tick) {
+                if let Some((type_id, tick)) = self.added_filter {
+                    if !scene.component_added_since_type(entity, type_id, tick) {
                         continue;
                     }
                 }
-                if let Some(tick) = self.changed_tick_filter {
-                    if !scene.component_changed_since_type(entity, P::type_id(), tick) {
+                if let Some((type_id, tick)) = self.changed_filter {
+                    if !scene.component_changed_since_type(entity, type_id, tick) {
                         continue;
                     }
                 }
@@ -48,13 +48,13 @@ impl<'a, P: WriteFetch<'a>> Iterator for QueryIterMut<'a, P> {
             access.row += 1;
             unsafe {
                 let entity = <Entity as EntityFetch>::get(access.entities, access.len, row)?;
-                if let Some(tick) = self.added_tick_filter {
-                    if !(&*access.scene).component_added_since_type(entity, P::type_id(), tick) {
+                if let Some((type_id, tick)) = self.added_filter {
+                    if !(&*access.scene).component_added_since_type(entity, type_id, tick) {
                         continue;
                     }
                 }
-                if let Some(tick) = self.changed_tick_filter {
-                    if !(&*access.scene).component_changed_since_type(entity, P::type_id(), tick) {
+                if let Some((type_id, tick)) = self.changed_filter {
+                    if !(&*access.scene).component_changed_since_type(entity, type_id, tick) {
                         continue;
                     }
                 }
@@ -125,6 +125,18 @@ macro_rules! impl_tuple_iterators_arity {
                     let row = access.row;
                     access.row += 1;
                     unsafe {
+                        if let Some((type_id, tick)) = self.added_filter {
+                            let entity = <Entity as EntityFetch>::get(access.entities, access.len, row)?;
+                            if !(&*access.scene).component_added_since_type(entity, type_id, tick) {
+                                continue;
+                            }
+                        }
+                        if let Some((type_id, tick)) = self.changed_filter {
+                            let entity = <Entity as EntityFetch>::get(access.entities, access.len, row)?;
+                            if !(&*access.scene).component_changed_since_type(entity, type_id, tick) {
+                                continue;
+                            }
+                        }
                         return Some((
                             $first_ty::get(access.$first_col, row)?,
                             $($ty::get(access.$col, row)?,)+
@@ -147,10 +159,20 @@ macro_rules! impl_tuple_iterators_arity {
                     let row = access.row;
                     access.row += 1;
                     unsafe {
+                        let entity = <Entity as EntityFetch>::get(access.entities, access.len, row)?;
+                        if let Some((type_id, tick)) = self.added_filter {
+                            if !(&*access.scene).component_added_since_type(entity, type_id, tick) {
+                                continue;
+                            }
+                        }
+                        if let Some((type_id, tick)) = self.changed_filter {
+                            if !(&*access.scene).component_changed_since_type(entity, type_id, tick) {
+                                continue;
+                            }
+                        }
                         let first_item = $first_ty::get(access.$first_col, row)?;
                         $(let $col = $ty::get(access.$col, row)?;)+
                         if $first_ty::writes() || $($ty::writes())||+ {
-                            let entity = <Entity as EntityFetch>::get(access.entities, access.len, row)?;
                             if $first_ty::writes() {
                                 (&mut *access.scene).mark_component_changed_for_query(entity, $first_ty::type_id());
                             }
@@ -197,8 +219,19 @@ macro_rules! impl_entity_tuple_iterators_arity {
                     let row = access.row;
                     access.row += 1;
                     unsafe {
+                        let entity = <Entity as EntityFetch>::get(access.entities, access.len, row)?;
+                        if let Some((type_id, tick)) = self.added_filter {
+                            if !(&*access.scene).component_added_since_type(entity, type_id, tick) {
+                                continue;
+                            }
+                        }
+                        if let Some((type_id, tick)) = self.changed_filter {
+                            if !(&*access.scene).component_changed_since_type(entity, type_id, tick) {
+                                continue;
+                            }
+                        }
                         return Some((
-                            <Entity as EntityFetch>::get(access.entities, access.len, row)?,
+                            entity,
                             $first_ty::get(access.$first_col, row)?,
                             $($ty::get(access.$col, row)?,)*
                         ));
@@ -221,6 +254,16 @@ macro_rules! impl_entity_tuple_iterators_arity {
                     access.row += 1;
                     unsafe {
                         let entity = <Entity as EntityFetch>::get(access.entities, access.len, row)?;
+                        if let Some((type_id, tick)) = self.added_filter {
+                            if !(&*access.scene).component_added_since_type(entity, type_id, tick) {
+                                continue;
+                            }
+                        }
+                        if let Some((type_id, tick)) = self.changed_filter {
+                            if !(&*access.scene).component_changed_since_type(entity, type_id, tick) {
+                                continue;
+                            }
+                        }
                         let first_item = $first_ty::get(access.$first_col, row)?;
                         $(let $col = $ty::get(access.$col, row)?;)*
                         if $first_ty::writes() {

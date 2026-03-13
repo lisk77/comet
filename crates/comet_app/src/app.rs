@@ -261,11 +261,13 @@ impl App {
         self.scene.queued_command_count()
     }
 
-    pub fn query<'a, Q>(&'a mut self) -> <Q as comet_ecs::QuerySpecMut<'a>>::Builder
+    pub fn query<'a, Data, Filters>(
+        &'a mut self,
+    ) -> <comet_ecs::QueryParam<Data, Filters> as comet_ecs::QuerySpecMut<'a>>::Builder
     where
-        Q: comet_ecs::QuerySpecMut<'a>,
+        comet_ecs::QueryParam<Data, Filters>: comet_ecs::QuerySpecMut<'a>,
     {
-        self.scene.query_mut::<Q>()
+        self.scene.query_mut::<Data, Filters>()
     }
 
     /// Retrieves a reference to the `InputManager`.

@@ -1472,7 +1472,7 @@ mod tests {
         let entity = scene.new_entity();
         scene.add_component(entity, A);
 
-        let _ = scene.query_mut::<(&mut A, &mut A)>().iter();
+        let _ = scene.query_mut::<(&mut A, &mut A), ()>().iter();
     }
 
     #[test]
@@ -1483,7 +1483,7 @@ mod tests {
         let e = scene.new_entity();
         scene.add_component(e, Value(42));
 
-        let mut iter = scene.query::<(crate::Entity, &Value)>().iter();
+        let mut iter = scene.query::<(crate::Entity, &Value), ()>().iter();
         let (entity, value) = iter.next().expect("expected one result");
         assert_eq!(entity, e);
         assert_eq!(value.0, 42);
@@ -1498,7 +1498,7 @@ mod tests {
         let e = scene.new_entity();
         scene.add_component(e, Value(7));
 
-        let mut iter = scene.query_mut::<(crate::Entity, &mut Value)>().iter();
+        let mut iter = scene.query_mut::<(crate::Entity, &mut Value), ()>().iter();
         let (entity, value) = iter.next().expect("expected one result");
         assert_eq!(entity, e);
         value.0 = 11;
@@ -1560,9 +1560,7 @@ mod tests {
         scene.add_component(filtered_out, ExcludeTag);
 
         let values: Vec<i32> = scene
-            .query::<&Value>()
-            .with::<IncludeTag>()
-            .without::<ExcludeTag>()
+            .query::<&Value, (crate::With<IncludeTag>, crate::Without<ExcludeTag>)>()
             .iter()
             .map(|v| v.0)
             .collect();
@@ -1589,9 +1587,10 @@ mod tests {
         scene.add_component(filtered_out, B);
 
         let values: Vec<i32> = scene
-            .query::<&Value>()
-            .with_all::<(IncludeTag,)>()
-            .without_all::<(ExcludeTag, B)>()
+            .query::<
+                &Value,
+                (crate::With<IncludeTag>, crate::WithoutAny<(ExcludeTag, B)>),
+            >()
             .iter()
             .map(|v| v.0)
             .collect();
@@ -1618,8 +1617,7 @@ mod tests {
         scene.add_component(neither, Value(30));
 
         let values: Vec<i32> = scene
-            .query::<&Value>()
-            .with_any::<(IncludeTag, B)>()
+            .query::<&Value, crate::WithAny<(IncludeTag, B)>>()
             .iter()
             .map(|v| v.0)
             .collect();
@@ -1646,8 +1644,7 @@ mod tests {
         scene.add_component(exclude_b, B);
 
         let values: Vec<i32> = scene
-            .query::<&Value>()
-            .without_any::<(ExcludeTag, B)>()
+            .query::<&Value, crate::WithoutAny<(ExcludeTag, B)>>()
             .iter()
             .map(|v| v.0)
             .collect();
@@ -1666,9 +1663,7 @@ mod tests {
         scene.add_component(entity, IncludeTag);
 
         let mut iter = scene
-            .query::<&Value>()
-            .with::<IncludeTag>()
-            .without::<IncludeTag>()
+            .query::<&Value, (crate::With<IncludeTag>, crate::Without<IncludeTag>)>()
             .iter();
 
         assert!(iter.next().is_none());
@@ -1719,7 +1714,7 @@ mod tests {
 
         scene.set_change_tick(20);
         {
-            let mut iter = scene.query_mut::<&mut Value>().iter();
+            let mut iter = scene.query_mut::<&mut Value, ()>().iter();
             let _ = iter.next();
         }
 
@@ -1739,7 +1734,7 @@ mod tests {
 
         scene.set_change_tick(30);
         {
-            let mut iter = scene.query_mut::<(&Value, &mut A)>().iter();
+            let mut iter = scene.query_mut::<(&Value, &mut A), ()>().iter();
             let _ = iter.next();
         }
 
@@ -1757,7 +1752,7 @@ mod tests {
         scene.add_component(entity, Value(1));
 
         scene.set_query_default_tick(4);
-        let added_count = scene.query::<&Value>().added().iter().count();
+        let added_count = scene.query::<&Value, crate::Added<Value>>().iter().count();
         assert_eq!(added_count, 1);
 
         scene.set_change_tick(9);
@@ -1765,7 +1760,10 @@ mod tests {
             value.0 = 2;
         }
 
-        let changed_count = scene.query::<&Value>().changed_since(6).iter().count();
+        let changed_count = scene
+            .query::<&Value, crate::Changed<Value>>()
+            .iter()
+            .count();
         assert_eq!(changed_count, 1);
     }
 }

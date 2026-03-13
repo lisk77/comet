@@ -19,8 +19,8 @@ impl Scene {
         QueryIter {
             accesses,
             idx: 0,
-            added_tick_filter: None,
-            changed_tick_filter: None,
+            added_filter: None,
+            changed_filter: None,
             _marker: PhantomData,
         }
     }
@@ -44,23 +44,27 @@ impl Scene {
         QueryIterMut {
             accesses,
             idx: 0,
-            added_tick_filter: None,
-            changed_tick_filter: None,
+            added_filter: None,
+            changed_filter: None,
             _marker: PhantomData,
         }
     }
 
-    pub fn query<'a, Q>(&'a self) -> <Q as QuerySpec<'a>>::Builder
+    pub fn query<'a, Data, Filters>(
+        &'a self,
+    ) -> <crate::query::QueryParam<Data, Filters> as QuerySpec<'a>>::Builder
     where
-        Q: QuerySpec<'a>,
+        crate::query::QueryParam<Data, Filters>: QuerySpec<'a>,
     {
-        Q::build(self)
+        <crate::query::QueryParam<Data, Filters> as QuerySpec<'a>>::build(self)
     }
 
-    pub fn query_mut<'a, Q>(&'a mut self) -> <Q as QuerySpecMut<'a>>::Builder
+    pub fn query_mut<'a, Data, Filters>(
+        &'a mut self,
+    ) -> <crate::query::QueryParam<Data, Filters> as QuerySpecMut<'a>>::Builder
     where
-        Q: QuerySpecMut<'a>,
+        crate::query::QueryParam<Data, Filters>: QuerySpecMut<'a>,
     {
-        Q::build(self)
+        <crate::query::QueryParam<Data, Filters> as QuerySpecMut<'a>>::build(self)
     }
 }

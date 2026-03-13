@@ -33,7 +33,7 @@ macro_rules! impl_base_tuple_query_arities {
     };
 }
 
-impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
+impl<'a, P: ReadFetch<'a> + 'a, Filters> QueryBuilder<'a, P, Filters> {
     fn new(scene: &'a Scene) -> Self {
         Self {
             scene,
@@ -41,8 +41,8 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
             without_components: Vec::new(),
             with_any_components: Vec::new(),
             without_any_components: Vec::new(),
-            added_tick_filter: None,
-            changed_tick_filter: None,
+            added_filter: None,
+            changed_filter: None,
             _marker: PhantomData,
         }
     }
@@ -78,26 +78,26 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
     }
 
     pub fn added(mut self) -> Self {
-        self.added_tick_filter = Some(self.scene.query_default_tick());
+        self.added_filter = Some((P::type_id(), self.scene.query_default_tick()));
         self
     }
 
     pub fn changed(mut self) -> Self {
-        self.changed_tick_filter = Some(self.scene.query_default_tick());
+        self.changed_filter = Some((P::type_id(), self.scene.query_default_tick()));
         self
     }
 
     pub fn added_since(mut self, tick: Tick) -> Self {
-        self.added_tick_filter = Some(tick);
+        self.added_filter = Some((P::type_id(), tick));
         self
     }
 
     pub fn changed_since(mut self, tick: Tick) -> Self {
-        self.changed_tick_filter = Some(tick);
+        self.changed_filter = Some((P::type_id(), tick));
         self
     }
 
-    pub fn filter<F>(self, f: F) -> QueryBuilderFiltered<'a, P, F>
+    pub fn filter<F>(self, f: F) -> QueryBuilderFiltered<'a, P, Filters, F>
     where
         F: Fn(&P::Component) -> bool + 'a,
     {
@@ -107,8 +107,8 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
             without_components: self.without_components,
             with_any_components: self.with_any_components,
             without_any_components: self.without_any_components,
-            added_tick_filter: self.added_tick_filter,
-            changed_tick_filter: self.changed_tick_filter,
+            added_filter: self.added_filter,
+            changed_filter: self.changed_filter,
             filter: f,
             _marker: PhantomData,
         }
@@ -135,8 +135,8 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
         QueryIter {
             accesses,
             idx: 0,
-            added_tick_filter: self.added_tick_filter,
-            changed_tick_filter: self.changed_tick_filter,
+            added_filter: self.added_filter,
+            changed_filter: self.changed_filter,
             _marker: PhantomData,
         }
     }
@@ -153,7 +153,7 @@ impl<'a, P: ReadFetch<'a> + 'a> QueryBuilder<'a, P> {
     }
 }
 
-impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
+impl<'a, P: WriteFetch<'a> + 'a, Filters> Query<'a, P, Filters> {
     fn new(scene: &'a mut Scene) -> Self {
         Self {
             scene,
@@ -161,8 +161,8 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
             without_components: Vec::new(),
             with_any_components: Vec::new(),
             without_any_components: Vec::new(),
-            added_tick_filter: None,
-            changed_tick_filter: None,
+            added_filter: None,
+            changed_filter: None,
             _marker: PhantomData,
         }
     }
@@ -198,37 +198,37 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
     }
 
     pub fn added(mut self) -> Self {
-        self.added_tick_filter = Some(self.scene.query_default_tick());
+        self.added_filter = Some((P::type_id(), unsafe { &*self.scene }.query_default_tick()));
         self
     }
 
     pub fn changed(mut self) -> Self {
-        self.changed_tick_filter = Some(self.scene.query_default_tick());
+        self.changed_filter = Some((P::type_id(), unsafe { &*self.scene }.query_default_tick()));
         self
     }
 
     pub fn added_since(mut self, tick: Tick) -> Self {
-        self.added_tick_filter = Some(tick);
+        self.added_filter = Some((P::type_id(), tick));
         self
     }
 
     pub fn changed_since(mut self, tick: Tick) -> Self {
-        self.changed_tick_filter = Some(tick);
+        self.changed_filter = Some((P::type_id(), tick));
         self
     }
 
-    pub fn filter<F>(self, f: F) -> QueryMutBuilderFiltered<'a, P, F>
+    pub fn filter<F>(self, f: F) -> QueryFiltered<'a, P, Filters, F>
     where
         F: Fn(&P::Component) -> bool + 'a,
     {
-        QueryMutBuilderFiltered {
+        QueryFiltered {
             scene: self.scene,
             with_components: self.with_components,
             without_components: self.without_components,
             with_any_components: self.with_any_components,
             without_any_components: self.without_any_components,
-            added_tick_filter: self.added_tick_filter,
-            changed_tick_filter: self.changed_tick_filter,
+            added_filter: self.added_filter,
+            changed_filter: self.changed_filter,
             filter: f,
             _marker: PhantomData,
         }
@@ -237,10 +237,10 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
     pub fn iter(self) -> QueryIterMut<'a, P> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
-            self.scene
+            unsafe { &*self.scene }
                 .cached_single_plan(P::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
         {
-            let arch = self.scene.archetypes_mut().get_mut(arch_id);
+            let arch = unsafe { &mut *self.scene }.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
             let col = &mut arch.columns_mut()[col_idx] as *mut _;
             let entities = arch.entities().as_ptr();
@@ -256,8 +256,8 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
         QueryIterMut {
             accesses,
             idx: 0,
-            added_tick_filter: self.added_tick_filter,
-            changed_tick_filter: self.changed_tick_filter,
+            added_filter: self.added_filter,
+            changed_filter: self.changed_filter,
             _marker: PhantomData,
         }
     }
@@ -274,7 +274,7 @@ impl<'a, P: WriteFetch<'a> + 'a> Query<'a, P> {
     }
 }
 
-impl<'a, P: ReadFetch<'a> + 'a, F> QueryBuilderFiltered<'a, P, F>
+impl<'a, P: ReadFetch<'a> + 'a, Filters, F> QueryBuilderFiltered<'a, P, Filters, F>
 where
     F: Fn(&P::Component) -> bool + 'a,
 {
@@ -330,8 +330,8 @@ where
             inner: QueryIter {
                 accesses,
                 idx: 0,
-                added_tick_filter: self.added_tick_filter,
-                changed_tick_filter: self.changed_tick_filter,
+                added_filter: self.added_filter,
+                changed_filter: self.changed_filter,
                 _marker: PhantomData,
             },
             filter: self.filter,
@@ -347,7 +347,7 @@ where
     }
 }
 
-impl<'a, P: WriteFetch<'a> + 'a, F> QueryMutBuilderFiltered<'a, P, F>
+impl<'a, P: WriteFetch<'a> + 'a, Filters, F> QueryFiltered<'a, P, Filters, F>
 where
     F: Fn(&P::Component) -> bool + 'a,
 {
@@ -382,32 +382,32 @@ where
     }
 
     pub fn added(mut self) -> Self {
-        self.added_tick_filter = Some(self.scene.query_default_tick());
+        self.added_filter = Some((P::type_id(), unsafe { &*self.scene }.query_default_tick()));
         self
     }
 
     pub fn changed(mut self) -> Self {
-        self.changed_tick_filter = Some(self.scene.query_default_tick());
+        self.changed_filter = Some((P::type_id(), unsafe { &*self.scene }.query_default_tick()));
         self
     }
 
     pub fn added_since(mut self, tick: Tick) -> Self {
-        self.added_tick_filter = Some(tick);
+        self.added_filter = Some((P::type_id(), tick));
         self
     }
 
     pub fn changed_since(mut self, tick: Tick) -> Self {
-        self.changed_tick_filter = Some(tick);
+        self.changed_filter = Some((P::type_id(), tick));
         self
     }
 
     pub fn iter(self) -> QueryIterMutFiltered<'a, P, F> {
         let mut accesses = Vec::new();
         for (arch_id, col_idx) in
-            self.scene
+            unsafe { &*self.scene }
                 .cached_single_plan(P::type_id(), &self.with_components, &self.without_components, &self.with_any_components, &self.without_any_components)
         {
-            let arch = self.scene.archetypes_mut().get_mut(arch_id);
+            let arch = unsafe { &mut *self.scene }.archetypes_mut().get_mut(arch_id);
             let len = arch.len();
             let col = &mut arch.columns_mut()[col_idx] as *mut _;
             let entities = arch.entities().as_ptr();
@@ -424,8 +424,8 @@ where
             inner: QueryIterMut {
                 accesses,
                 idx: 0,
-                added_tick_filter: self.added_tick_filter,
-                changed_tick_filter: self.changed_tick_filter,
+                added_filter: self.added_filter,
+                changed_filter: self.changed_filter,
                 _marker: PhantomData,
             },
             filter: self.filter,
@@ -453,8 +453,26 @@ macro_rules! impl_tuple_builders_arity {
         $first_col:ident,
         $($ty:ident, $idx:ident, $col:ident),+
     ) => {
+        impl<'a, $first_ty: ReadFetch<'a> + 'a, $($ty: ReadFetch<'a> + 'a),+, Filters: QueryFilterSet> QuerySpec<'a> for crate::query::QueryParam<($first_ty, $($ty,)+), Filters> {
+            type Builder = $builder<'a, $first_ty, $($ty),+, Filters>;
+
+            fn build(scene: &'a Scene) -> Self::Builder {
+                let filter_state = typed_filters::<Filters>(scene);
+                $builder {
+                    scene,
+                    with_components: filter_state.with_components,
+                    without_components: filter_state.without_components,
+                    with_any_components: filter_state.with_any_components,
+                    without_any_components: filter_state.without_any_components,
+                    added_filter: filter_state.added_filter,
+                    changed_filter: filter_state.changed_filter,
+                    _marker: PhantomData,
+                }
+            }
+        }
+
         impl<'a, $first_ty: ReadFetch<'a> + 'a, $($ty: ReadFetch<'a> + 'a),+> QuerySpec<'a> for ($first_ty, $($ty,)+) {
-            type Builder = $builder<'a, $first_ty, $($ty),+>;
+            type Builder = $builder<'a, $first_ty, $($ty),+, ()>;
 
             fn build(scene: &'a Scene) -> Self::Builder {
                 $builder {
@@ -463,13 +481,33 @@ macro_rules! impl_tuple_builders_arity {
                     without_components: Vec::new(),
                     with_any_components: Vec::new(),
                     without_any_components: Vec::new(),
+                    added_filter: None,
+                    changed_filter: None,
+                    _marker: PhantomData,
+                }
+            }
+        }
+
+        impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+, Filters: QueryFilterSet> QuerySpecMut<'a> for crate::query::QueryParam<($first_ty, $($ty,)+), Filters> {
+            type Builder = $builder_mut<'a, $first_ty, $($ty),+, Filters>;
+
+            fn build(scene: &'a mut Scene) -> Self::Builder {
+                let filter_state = typed_filters::<Filters>(unsafe { &*scene });
+                $builder_mut {
+                    scene,
+                    with_components: filter_state.with_components,
+                    without_components: filter_state.without_components,
+                    with_any_components: filter_state.with_any_components,
+                    without_any_components: filter_state.without_any_components,
+                    added_filter: filter_state.added_filter,
+                    changed_filter: filter_state.changed_filter,
                     _marker: PhantomData,
                 }
             }
         }
 
         impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+> QuerySpecMut<'a> for ($first_ty, $($ty,)+) {
-            type Builder = $builder_mut<'a, $first_ty, $($ty),+>;
+            type Builder = $builder_mut<'a, $first_ty, $($ty),+, ()>;
 
             fn build(scene: &'a mut Scene) -> Self::Builder {
                 $builder_mut {
@@ -478,12 +516,14 @@ macro_rules! impl_tuple_builders_arity {
                     without_components: Vec::new(),
                     with_any_components: Vec::new(),
                     without_any_components: Vec::new(),
+                    added_filter: None,
+                    changed_filter: None,
                     _marker: PhantomData,
                 }
             }
         }
 
-        impl<'a, $first_ty: ReadFetch<'a> + 'a, $($ty: ReadFetch<'a> + 'a),+> $builder<'a, $first_ty, $($ty),+> {
+        impl<'a, $first_ty: ReadFetch<'a> + 'a, $($ty: ReadFetch<'a> + 'a),+, Filters> $builder<'a, $first_ty, $($ty),+, Filters> {
             pub fn with<Co: Component>(mut self) -> Self {
                 self.with_components.push(Co::type_id());
                 self
@@ -534,7 +574,11 @@ macro_rules! impl_tuple_builders_arity {
                     let cols = arch.columns();
                     let $first_col = &cols[first_idx] as *const _;
                     $(let $col = &cols[$idx] as *const _;)+
+                    let entities = arch.entities().as_ptr();
+                    let scene = self.scene as *const Scene;
                     accesses.push($access {
+                        entities,
+                        scene,
                         $first_col,
                         $($col,)+
                         len: arch.len(),
@@ -545,6 +589,8 @@ macro_rules! impl_tuple_builders_arity {
                 $iter {
                     accesses,
                     idx: 0,
+                    added_filter: self.added_filter,
+                    changed_filter: self.changed_filter,
                     _marker: PhantomData,
                 }
             }
@@ -557,7 +603,7 @@ macro_rules! impl_tuple_builders_arity {
             }
         }
 
-        impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+> $builder_mut<'a, $first_ty, $($ty),+> {
+        impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+, Filters> $builder_mut<'a, $first_ty, $($ty),+, Filters> {
             pub fn with<Co: Component>(mut self) -> Self {
                 self.with_components.push(Co::type_id());
                 self
@@ -624,6 +670,8 @@ macro_rules! impl_tuple_builders_arity {
                 $iter_mut {
                     accesses,
                     idx: 0,
+                    added_filter: self.added_filter,
+                    changed_filter: self.changed_filter,
                     _marker: PhantomData,
                 }
             }
@@ -654,8 +702,26 @@ macro_rules! impl_entity_tuple_builders_arity {
             $col:ident
         )*
     ) => {
+        impl<'a, $first_ty: ReadFetch<'a> + 'a $(, $ty: ReadFetch<'a> + 'a)*, Filters: QueryFilterSet> QuerySpec<'a> for crate::query::QueryParam<(Entity, $first_ty $(, $ty)*), Filters> {
+            type Builder = $builder<'a, $first_ty $(, $ty)*, Filters>;
+
+            fn build(scene: &'a Scene) -> Self::Builder {
+                let filter_state = typed_filters::<Filters>(scene);
+                $builder {
+                    scene,
+                    with_components: filter_state.with_components,
+                    without_components: filter_state.without_components,
+                    with_any_components: filter_state.with_any_components,
+                    without_any_components: filter_state.without_any_components,
+                    added_filter: filter_state.added_filter,
+                    changed_filter: filter_state.changed_filter,
+                    _marker: PhantomData,
+                }
+            }
+        }
+
         impl<'a, $first_ty: ReadFetch<'a> + 'a $(, $ty: ReadFetch<'a> + 'a)*> QuerySpec<'a> for (Entity, $first_ty $(, $ty)*) {
-            type Builder = $builder<'a, $first_ty $(, $ty)*>;
+            type Builder = $builder<'a, $first_ty $(, $ty)*, ()>;
 
             fn build(scene: &'a Scene) -> Self::Builder {
                 $builder {
@@ -664,13 +730,33 @@ macro_rules! impl_entity_tuple_builders_arity {
                     without_components: Vec::new(),
                     with_any_components: Vec::new(),
                     without_any_components: Vec::new(),
+                    added_filter: None,
+                    changed_filter: None,
+                    _marker: PhantomData,
+                }
+            }
+        }
+
+        impl<'a, $first_ty: WriteFetch<'a> + 'a $(, $ty: WriteFetch<'a> + 'a)*, Filters: QueryFilterSet> QuerySpecMut<'a> for crate::query::QueryParam<(Entity, $first_ty $(, $ty)*), Filters> {
+            type Builder = $builder_mut<'a, $first_ty $(, $ty)*, Filters>;
+
+            fn build(scene: &'a mut Scene) -> Self::Builder {
+                let filter_state = typed_filters::<Filters>(unsafe { &*scene });
+                $builder_mut {
+                    scene,
+                    with_components: filter_state.with_components,
+                    without_components: filter_state.without_components,
+                    with_any_components: filter_state.with_any_components,
+                    without_any_components: filter_state.without_any_components,
+                    added_filter: filter_state.added_filter,
+                    changed_filter: filter_state.changed_filter,
                     _marker: PhantomData,
                 }
             }
         }
 
         impl<'a, $first_ty: WriteFetch<'a> + 'a $(, $ty: WriteFetch<'a> + 'a)*> QuerySpecMut<'a> for (Entity, $first_ty $(, $ty)*) {
-            type Builder = $builder_mut<'a, $first_ty $(, $ty)*>;
+            type Builder = $builder_mut<'a, $first_ty $(, $ty)*, ()>;
 
             fn build(scene: &'a mut Scene) -> Self::Builder {
                 $builder_mut {
@@ -679,12 +765,14 @@ macro_rules! impl_entity_tuple_builders_arity {
                     without_components: Vec::new(),
                     with_any_components: Vec::new(),
                     without_any_components: Vec::new(),
+                    added_filter: None,
+                    changed_filter: None,
                     _marker: PhantomData,
                 }
             }
         }
 
-        impl<'a, $first_ty: ReadFetch<'a> + 'a $(, $ty: ReadFetch<'a> + 'a)*> $builder<'a, $first_ty $(, $ty)*> {
+        impl<'a, $first_ty: ReadFetch<'a> + 'a $(, $ty: ReadFetch<'a> + 'a)*, Filters> $builder<'a, $first_ty $(, $ty)*, Filters> {
             pub fn with<Co: Component>(mut self) -> Self {
                 self.with_components.push(Co::type_id());
                 self
@@ -736,8 +824,10 @@ macro_rules! impl_entity_tuple_builders_arity {
                     let $first_col = &cols[first_idx] as *const _;
                     $(let $col = &cols[$idx] as *const _;)*
                     let entities = arch.entities().as_ptr();
+                    let scene = self.scene as *const Scene;
                     accesses.push($access {
                         entities,
+                        scene,
                         $first_col,
                         $($col,)*
                         len: arch.len(),
@@ -748,6 +838,8 @@ macro_rules! impl_entity_tuple_builders_arity {
                 $iter {
                     accesses,
                     idx: 0,
+                    added_filter: self.added_filter,
+                    changed_filter: self.changed_filter,
                     _marker: PhantomData,
                 }
             }
@@ -760,7 +852,7 @@ macro_rules! impl_entity_tuple_builders_arity {
             }
         }
 
-        impl<'a, $first_ty: WriteFetch<'a> + 'a $(, $ty: WriteFetch<'a> + 'a)*> $builder_mut<'a, $first_ty $(, $ty)*> {
+        impl<'a, $first_ty: WriteFetch<'a> + 'a $(, $ty: WriteFetch<'a> + 'a)*, Filters> $builder_mut<'a, $first_ty $(, $ty)*, Filters> {
             pub fn with<Co: Component>(mut self) -> Self {
                 self.with_components.push(Co::type_id());
                 self
@@ -827,6 +919,8 @@ macro_rules! impl_entity_tuple_builders_arity {
                 $iter_mut {
                     accesses,
                     idx: 0,
+                    added_filter: self.added_filter,
+                    changed_filter: self.changed_filter,
                     _marker: PhantomData,
                 }
             }
@@ -843,24 +937,60 @@ macro_rules! impl_entity_tuple_builders_arity {
 
 
 impl<'a, P: ReadFetch<'a> + 'a> QuerySpec<'a> for P {
-    type Builder = QueryBuilder<'a, P>;
+    type Builder = QueryBuilder<'a, P, ()>;
 
     fn build(scene: &'a Scene) -> Self::Builder {
         QueryBuilder::new(scene)
     }
 }
 
+impl<'a, P: ReadFetch<'a> + 'a, Filters: QueryFilterSet> QuerySpec<'a>
+    for crate::query::QueryParam<P, Filters>
+{
+    type Builder = QueryBuilder<'a, P, Filters>;
+
+    fn build(scene: &'a Scene) -> Self::Builder {
+        let filter_state = typed_filters::<Filters>(scene);
+        QueryBuilder {
+            scene,
+            with_components: filter_state.with_components,
+            without_components: filter_state.without_components,
+            with_any_components: filter_state.with_any_components,
+            without_any_components: filter_state.without_any_components,
+            added_filter: filter_state.added_filter,
+            changed_filter: filter_state.changed_filter,
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<'a, P: WriteFetch<'a> + 'a> QuerySpecMut<'a> for P {
-    type Builder = Query<'a, P>;
+    type Builder = Query<'a, P, ()>;
 
     fn build(scene: &'a mut Scene) -> Self::Builder {
         Query::new(scene)
     }
 }
 
-impl_base_tuple_query_arities!(
-    (A; (A,), QueryBuilder<'a, A>, Query<'a, A>),
-);
+impl<'a, P: WriteFetch<'a> + 'a, Filters: QueryFilterSet> QuerySpecMut<'a>
+    for crate::query::QueryParam<P, Filters>
+{
+    type Builder = Query<'a, P, Filters>;
+
+    fn build(scene: &'a mut Scene) -> Self::Builder {
+        let filter_state = typed_filters::<Filters>(unsafe { &*scene });
+        Query {
+            scene,
+            with_components: filter_state.with_components,
+            without_components: filter_state.without_components,
+            with_any_components: filter_state.with_any_components,
+            without_any_components: filter_state.without_any_components,
+            added_filter: filter_state.added_filter,
+            changed_filter: filter_state.changed_filter,
+            _marker: PhantomData,
+        }
+    }
+}
 
 for_each_tuple_arity!(impl_tuple_builders_arity);
 for_each_entity_tuple_arity!(impl_entity_tuple_builders_arity);

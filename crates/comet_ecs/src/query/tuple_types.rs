@@ -13,6 +13,8 @@ macro_rules! define_tuple_types_arity {
         $($ty:ident, $idx:ident, $col:ident),+
     ) => {
         pub(super) struct $access {
+            pub(super) entities: *const Entity,
+            pub(super) scene: *const Scene,
             pub(super) $first_col: *const comet_structs::Column,
             $(pub(super) $col: *const comet_structs::Column,)+
             pub(super) len: usize,
@@ -31,31 +33,39 @@ macro_rules! define_tuple_types_arity {
         pub struct $iter<'a, $first_ty, $($ty),+> {
             pub(super) accesses: Vec<$access>,
             pub(super) idx: usize,
+            pub(super) added_filter: Option<(TypeId, Tick)>,
+            pub(super) changed_filter: Option<(TypeId, Tick)>,
             pub(super) _marker: PhantomData<(&'a (), $first_ty, $($ty),+)>,
         }
 
         pub struct $iter_mut<'a, $first_ty, $($ty),+> {
             pub(super) accesses: Vec<$access_mut>,
             pub(super) idx: usize,
+            pub(super) added_filter: Option<(TypeId, Tick)>,
+            pub(super) changed_filter: Option<(TypeId, Tick)>,
             pub(super) _marker: PhantomData<(&'a (), $first_ty, $($ty),+)>,
         }
 
-        pub struct $builder<'a, $first_ty, $($ty),+> {
+        pub struct $builder<'a, $first_ty, $($ty),+, Filters = ()> {
             pub(super) scene: &'a Scene,
             pub(super) with_components: Vec<TypeId>,
             pub(super) without_components: Vec<TypeId>,
             pub(super) with_any_components: Vec<TypeId>,
             pub(super) without_any_components: Vec<TypeId>,
-            pub(super) _marker: PhantomData<($first_ty, $($ty),+)>,
+            pub(super) added_filter: Option<(TypeId, Tick)>,
+            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) _marker: PhantomData<($first_ty, $($ty),+, Filters)>,
         }
 
-        pub struct $builder_mut<'a, $first_ty, $($ty),+> {
+        pub struct $builder_mut<'a, $first_ty, $($ty),+, Filters = ()> {
             pub(super) scene: &'a mut Scene,
             pub(super) with_components: Vec<TypeId>,
             pub(super) without_components: Vec<TypeId>,
             pub(super) with_any_components: Vec<TypeId>,
             pub(super) without_any_components: Vec<TypeId>,
-            pub(super) _marker: PhantomData<($first_ty, $($ty),+)>,
+            pub(super) added_filter: Option<(TypeId, Tick)>,
+            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) _marker: PhantomData<($first_ty, $($ty),+, Filters)>,
         }
     };
 }
@@ -78,6 +88,7 @@ macro_rules! define_entity_tuple_types_arity {
     ) => {
         pub(super) struct $access {
             pub(super) entities: *const Entity,
+            pub(super) scene: *const Scene,
             pub(super) $first_col: *const comet_structs::Column,
             $(pub(super) $col: *const comet_structs::Column,)*
             pub(super) len: usize,
@@ -96,31 +107,39 @@ macro_rules! define_entity_tuple_types_arity {
         pub struct $iter<'a, $first_ty $(, $ty)*> {
             pub(super) accesses: Vec<$access>,
             pub(super) idx: usize,
+            pub(super) added_filter: Option<(TypeId, Tick)>,
+            pub(super) changed_filter: Option<(TypeId, Tick)>,
             pub(super) _marker: PhantomData<(&'a (), $first_ty $(, $ty)*)>,
         }
 
         pub struct $iter_mut<'a, $first_ty $(, $ty)*> {
             pub(super) accesses: Vec<$access_mut>,
             pub(super) idx: usize,
+            pub(super) added_filter: Option<(TypeId, Tick)>,
+            pub(super) changed_filter: Option<(TypeId, Tick)>,
             pub(super) _marker: PhantomData<(&'a (), $first_ty $(, $ty)*)>,
         }
 
-        pub struct $builder<'a, $first_ty $(, $ty)*> {
+        pub struct $builder<'a, $first_ty $(, $ty)*, Filters = ()> {
             pub(super) scene: &'a Scene,
             pub(super) with_components: Vec<TypeId>,
             pub(super) without_components: Vec<TypeId>,
             pub(super) with_any_components: Vec<TypeId>,
             pub(super) without_any_components: Vec<TypeId>,
-            pub(super) _marker: PhantomData<($first_ty $(, $ty)*)>,
+            pub(super) added_filter: Option<(TypeId, Tick)>,
+            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) _marker: PhantomData<($first_ty $(, $ty)*, Filters)>,
         }
 
-        pub struct $builder_mut<'a, $first_ty $(, $ty)*> {
+        pub struct $builder_mut<'a, $first_ty $(, $ty)*, Filters = ()> {
             pub(super) scene: &'a mut Scene,
             pub(super) with_components: Vec<TypeId>,
             pub(super) without_components: Vec<TypeId>,
             pub(super) with_any_components: Vec<TypeId>,
             pub(super) without_any_components: Vec<TypeId>,
-            pub(super) _marker: PhantomData<($first_ty $(, $ty)*)>,
+            pub(super) added_filter: Option<(TypeId, Tick)>,
+            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) _marker: PhantomData<($first_ty $(, $ty)*, Filters)>,
         }
     };
 }

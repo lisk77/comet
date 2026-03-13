@@ -1,4 +1,4 @@
-use crate::{Component, Entity, Scene, Tick};
+use crate::{Component, ComponentTuple, Entity, Scene, Tick};
 use std::any::TypeId;
 use std::marker::PhantomData;
 
@@ -453,42 +453,42 @@ impl<'a, C: Component> WriteFetch<'a> for &'a C {
 pub struct QueryIter<'a, P: ReadFetch<'a>> {
     accesses: Vec<QueryAccess>,
     idx: usize,
-    added_tick_filter: Option<Tick>,
-    changed_tick_filter: Option<Tick>,
+    added_filter: Option<(TypeId, Tick)>,
+    changed_filter: Option<(TypeId, Tick)>,
     _marker: PhantomData<&'a P>,
 }
 
 pub struct QueryIterMut<'a, P: WriteFetch<'a>> {
     accesses: Vec<QueryMutAccess>,
     idx: usize,
-    added_tick_filter: Option<Tick>,
-    changed_tick_filter: Option<Tick>,
+    added_filter: Option<(TypeId, Tick)>,
+    changed_filter: Option<(TypeId, Tick)>,
     _marker: PhantomData<&'a P>,
 }
 
-pub struct QueryBuilder<'a, P: ReadFetch<'a>> {
+pub struct QueryBuilder<'a, P: ReadFetch<'a>, Filters = ()> {
     scene: &'a Scene,
     with_components: Vec<TypeId>,
     without_components: Vec<TypeId>,
     with_any_components: Vec<TypeId>,
     without_any_components: Vec<TypeId>,
-    added_tick_filter: Option<Tick>,
-    changed_tick_filter: Option<Tick>,
-    _marker: PhantomData<P>,
+    added_filter: Option<(TypeId, Tick)>,
+    changed_filter: Option<(TypeId, Tick)>,
+    _marker: PhantomData<(P, Filters)>,
 }
 
-pub struct Query<'a, P: WriteFetch<'a>> {
-    scene: &'a mut Scene,
+pub struct Query<'a, P, Filters = ()> {
+    scene: *mut Scene,
     with_components: Vec<TypeId>,
     without_components: Vec<TypeId>,
     with_any_components: Vec<TypeId>,
     without_any_components: Vec<TypeId>,
-    added_tick_filter: Option<Tick>,
-    changed_tick_filter: Option<Tick>,
-    _marker: PhantomData<P>,
+    added_filter: Option<(TypeId, Tick)>,
+    changed_filter: Option<(TypeId, Tick)>,
+    _marker: PhantomData<(&'a (), P, Filters)>,
 }
 
-pub struct QueryBuilderFiltered<'a, P: ReadFetch<'a>, F>
+pub struct QueryBuilderFiltered<'a, P: ReadFetch<'a>, Filters, F>
 where
     F: Fn(&P::Component) -> bool + 'a,
 {
@@ -497,25 +497,25 @@ where
     without_components: Vec<TypeId>,
     with_any_components: Vec<TypeId>,
     without_any_components: Vec<TypeId>,
-    added_tick_filter: Option<Tick>,
-    changed_tick_filter: Option<Tick>,
+    added_filter: Option<(TypeId, Tick)>,
+    changed_filter: Option<(TypeId, Tick)>,
     filter: F,
-    _marker: PhantomData<P>,
+    _marker: PhantomData<(P, Filters)>,
 }
 
-pub struct QueryMutBuilderFiltered<'a, P: WriteFetch<'a>, F>
+pub struct QueryFiltered<'a, P: WriteFetch<'a>, Filters, F>
 where
     F: Fn(&P::Component) -> bool + 'a,
 {
-    scene: &'a mut Scene,
+    scene: *mut Scene,
     with_components: Vec<TypeId>,
     without_components: Vec<TypeId>,
     with_any_components: Vec<TypeId>,
     without_any_components: Vec<TypeId>,
-    added_tick_filter: Option<Tick>,
-    changed_tick_filter: Option<Tick>,
+    added_filter: Option<(TypeId, Tick)>,
+    changed_filter: Option<(TypeId, Tick)>,
     filter: F,
-    _marker: PhantomData<P>,
+    _marker: PhantomData<(&'a (), P, Filters)>,
 }
 
 pub struct QueryIterFiltered<'a, P: ReadFetch<'a>, F>
@@ -534,6 +534,103 @@ where
     inner: QueryIterMut<'a, P>,
     filter: F,
     _marker: PhantomData<&'a P>,
+}
+
+pub struct QueryParam<Data, Filters = ()>(PhantomData<(Data, Filters)>);
+
+pub struct With<C: Component>(PhantomData<C>);
+pub struct Without<C: Component>(PhantomData<C>);
+pub struct WithAny<Cs: ComponentTuple>(PhantomData<Cs>);
+pub struct WithoutAny<Cs: ComponentTuple>(PhantomData<Cs>);
+pub struct Added<C: Component>(PhantomData<C>);
+pub struct Changed<C: Component>(PhantomData<C>);
+
+pub(crate) struct QueryFilterState {
+    with_components: Vec<TypeId>,
+    without_components: Vec<TypeId>,
+    with_any_components: Vec<TypeId>,
+    without_any_components: Vec<TypeId>,
+    added_filter: Option<(TypeId, Tick)>,
+    changed_filter: Option<(TypeId, Tick)>,
+}
+
+pub(crate) trait QueryFilterSet {
+    fn apply(scene: &Scene, state: &mut QueryFilterState);
+}
+
+impl QueryFilterSet for () {
+    fn apply(_scene: &Scene, _state: &mut QueryFilterState) {
+    }
+}
+
+impl<C: Component> QueryFilterSet for With<C> {
+    fn apply(_scene: &Scene, state: &mut QueryFilterState) {
+        state.with_components.push(C::type_id());
+    }
+}
+
+impl<C: Component> QueryFilterSet for Without<C> {
+    fn apply(_scene: &Scene, state: &mut QueryFilterState) {
+        state.without_components.push(C::type_id());
+    }
+}
+
+impl<Cs: ComponentTuple> QueryFilterSet for WithAny<Cs> {
+    fn apply(_scene: &Scene, state: &mut QueryFilterState) {
+        state.with_any_components.extend(Cs::type_ids());
+    }
+}
+
+impl<Cs: ComponentTuple> QueryFilterSet for WithoutAny<Cs> {
+    fn apply(_scene: &Scene, state: &mut QueryFilterState) {
+        state.without_any_components.extend(Cs::type_ids());
+    }
+}
+
+impl<C: Component> QueryFilterSet for Added<C> {
+    fn apply(scene: &Scene, state: &mut QueryFilterState) {
+        state.added_filter = Some((C::type_id(), scene.query_default_tick()));
+    }
+}
+
+impl<C: Component> QueryFilterSet for Changed<C> {
+    fn apply(scene: &Scene, state: &mut QueryFilterState) {
+        state.changed_filter = Some((C::type_id(), scene.query_default_tick()));
+    }
+}
+
+macro_rules! impl_query_filter_set_tuple {
+    ($($name:ident),+) => {
+        impl<$($name: QueryFilterSet),+> QueryFilterSet for ($($name,)+) {
+            fn apply(scene: &Scene, state: &mut QueryFilterState) {
+                $(
+                    $name::apply(scene, state);
+                )+
+            }
+        }
+    };
+}
+
+impl_query_filter_set_tuple!(A);
+impl_query_filter_set_tuple!(A, B);
+impl_query_filter_set_tuple!(A, B, C);
+impl_query_filter_set_tuple!(A, B, C, D);
+impl_query_filter_set_tuple!(A, B, C, D, E);
+impl_query_filter_set_tuple!(A, B, C, D, E, F);
+impl_query_filter_set_tuple!(A, B, C, D, E, F, G);
+impl_query_filter_set_tuple!(A, B, C, D, E, F, G, H);
+
+fn typed_filters<Filters: QueryFilterSet>(scene: &Scene) -> QueryFilterState {
+    let mut state = QueryFilterState {
+        with_components: Vec::new(),
+        without_components: Vec::new(),
+        with_any_components: Vec::new(),
+        without_any_components: Vec::new(),
+        added_filter: None,
+        changed_filter: None,
+    };
+    Filters::apply(scene, &mut state);
+    state
 }
 
 pub trait QuerySpec<'a> {
