@@ -40,6 +40,7 @@ pub struct Scene {
 }
 
 impl Scene {
+    /// Creates a new empty scene.
     pub fn new() -> Self {
         let mut scene = Self {
             change_tick: 0,
@@ -76,55 +77,70 @@ impl Scene {
         self.active_entities
     }
 
+    /// Returns the current logical change tick.
     pub fn change_tick(&self) -> Tick {
         self.change_tick
     }
 
+    /// Sets the current logical change tick used for future change stamps.
     pub fn set_change_tick(&mut self, tick: Tick) {
         self.change_tick = tick;
     }
 
+    /// Returns the default baseline tick for query change filters.
     pub fn query_default_tick(&self) -> Tick {
         self.query_default_tick
     }
 
+    /// Sets the default baseline tick for query change filters.
+    /// Filters like `added()` and `changed()` compare against this value.
     pub fn set_query_default_tick(&mut self, tick: Tick) {
         self.query_default_tick = tick;
     }
 
+    /// Advances the logical change tick by one and returns it.
     pub fn advance_change_tick(&mut self) -> Tick {
         self.change_tick = self.change_tick.wrapping_add(1);
         self.change_tick
     }
 
+    /// Queues spawning an empty entity.
+    /// The command executes on [`Scene::apply_commands`] or at app tick-end.
     pub fn deferred_spawn_empty(&mut self) {
         self.commands.spawn_empty();
     }
 
+    /// Queues deleting an entity.
     pub fn deferred_delete_entity(&mut self, entity: Entity) {
         self.commands.delete_entity(entity);
     }
 
+    /// Queues component registration.
     pub fn deferred_register_component<C: Component + 'static>(&mut self) {
         self.commands.register_component::<C>();
     }
 
+    /// Queues component deregistration.
     pub fn deferred_deregister_component<C: Component + 'static>(&mut self) {
         self.commands.deregister_component::<C>();
     }
 
+    /// Queues adding or setting a component on an entity.
     pub fn deferred_add_component<C: Component + 'static>(&mut self, entity: Entity, component: C) {
         self.commands.add_component(entity, component);
     }
 
+    /// Queues removing a component from an entity.
     pub fn deferred_remove_component<C: Component + 'static>(&mut self, entity: Entity) {
         self.commands.remove_component::<C>(entity);
     }
 
+    /// Queues deleting all entities that contain the given component set.
     pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {
         self.commands.push(SceneCommand::DeleteEntitiesWith(components));
     }
 
+    /// Queues prefab registration.
     pub fn deferred_register_prefab(
         &mut self,
         name: impl Into<String>,
@@ -133,32 +149,39 @@ impl Scene {
         self.commands.register_prefab(name, factory);
     }
 
+    /// Queues prefab spawning by name.
     pub fn deferred_spawn_prefab(&mut self, name: impl Into<String>) {
         self.commands.spawn_prefab(name);
     }
 
+    /// Queues spawning a bundle as a new entity.
     pub fn deferred_spawn_bundle<B: Bundle>(&mut self, bundle: B) {
         self.commands.spawn_bundle(bundle);
     }
 
+    /// Queues batch spawning of bundles.
     pub fn deferred_spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) {
         self.commands.spawn_bundle_batch(bundles);
     }
 
+    /// Queues adding a bundle to an existing entity.
     pub fn deferred_add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
         self.commands.add_bundle(entity, bundle);
     }
 
+    /// Returns the amount of currently queued deferred commands.
     pub fn queued_command_count(&self) -> usize {
         self.commands.len()
     }
 
+    /// Applies all queued deferred commands in FIFO order.
     pub fn apply_commands(&mut self) {
         let mut commands = std::mem::take(&mut self.commands);
         commands.apply(self);
         self.commands = commands;
     }
 
+    /// Applies a single command immediately.
     pub fn apply_command(&mut self, command: SceneCommand) {
         SceneCommands::apply_command(self, command);
     }
@@ -208,6 +231,7 @@ impl Scene {
         tick != last_seen_tick && tick.wrapping_sub(last_seen_tick) <= (u32::MAX / 2)
     }
 
+    /// Returns whether a specific component has been added to the entity since the given tick
     pub fn component_added_since<C: Component + 'static>(
         &self,
         entity: Entity,
@@ -227,6 +251,7 @@ impl Scene {
             .is_some_and(|state| Self::tick_is_newer_than(state.added_tick, last_seen_tick))
     }
 
+    /// Returns whether a specific component of an entity has been changed since the given tick
     pub fn component_changed_since<C: Component + 'static>(
         &self,
         entity: Entity,
@@ -246,6 +271,7 @@ impl Scene {
             .is_some_and(|state| Self::tick_is_newer_than(state.changed_tick, last_seen_tick))
     }
 
+    /// Returns entities where `C` was removed since the given tick.
     pub fn removed_since<C: Component + 'static>(&self, last_seen_tick: Tick) -> Vec<Entity> {
         self.removed_component_events
             .get(&C::type_id())
@@ -278,7 +304,7 @@ impl Scene {
                 .is_some_and(|e| e.is_some())
     }
 
-    /// Retuns the `Vec` of `Option<Entity>` which contains all the entities in the current Scene.
+    /// Returns sparse entity storage indexed by entity index.
     pub fn entities(&self) -> &Vec<Option<Entity>> {
         &self.entities
     }
@@ -880,6 +906,7 @@ impl Scene {
         arch.columns_mut().get_mut(col_idx)?.get_mut::<C>(loc.row)
     }
 
+    /// Returns whether the entity currently has component `C`.
     pub fn has<C: Component + 'static>(&self, entity_id: Entity) -> bool {
         self.is_alive(entity_id) && self.get_component::<C>(entity_id).is_some()
     }
@@ -979,10 +1006,12 @@ impl Scene {
         bundle.spawn(self)
     }
 
+    /// Spawns a batch of bundles immediately.
     pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
         B::spawn_batch(self, bundles)
     }
 
+    /// Adds a bundle to an existing entity immediately.
     pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
         self.add_with_components_immediate(entity, bundle.into_components());
     }
@@ -1095,6 +1124,7 @@ impl Scene {
         }
     }
 
+    /// Spawns an entity from erased components immediately.
     pub fn spawn_with_components(&mut self, components: Vec<ErasedComponent>) -> Entity {
         self.spawn_with_components_immediate(components)
     }

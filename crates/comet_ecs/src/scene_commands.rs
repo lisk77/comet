@@ -1,6 +1,7 @@
 use crate::{Bundle, Component, ComponentTuple, Entity, ErasedComponent, PrefabFactory, Scene};
 use std::any::TypeId;
 
+/// A deferred operation that can be applied to a [`Scene`].
 pub enum SceneCommand {
     SpawnEntity,
     DeleteEntity(Entity),
@@ -40,39 +41,48 @@ pub enum SceneCommand {
 }
 
 #[derive(Default)]
+/// Queue of deferred [`SceneCommand`] values.
 pub struct SceneCommands {
     queue: Vec<SceneCommand>,
 }
 
 impl SceneCommands {
+    /// Creates an empty command queue.
     pub fn new() -> Self {
         Self { queue: Vec::new() }
     }
 
+    /// Returns the amount of queued commands.
     pub fn len(&self) -> usize {
         self.queue.len()
     }
 
+    /// Returns `true` if there are no queued commands.
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
 
+    /// Clears all queued commands without applying them.
     pub fn clear(&mut self) {
         self.queue.clear();
     }
 
+    /// Queues a raw [`SceneCommand`].
     pub fn push(&mut self, command: SceneCommand) {
         self.queue.push(command);
     }
 
+    /// Queues spawning of an empty entity.
     pub fn spawn_empty(&mut self) {
         self.push(SceneCommand::SpawnEntity);
     }
 
+    /// Queues deleting an entity.
     pub fn delete_entity(&mut self, entity: Entity) {
         self.push(SceneCommand::DeleteEntity(entity));
     }
 
+    /// Queues component type registration.
     pub fn register_component<C: Component>(&mut self) {
         self.push(SceneCommand::RegisterComponent {
             type_id: C::type_id(),
@@ -80,6 +90,7 @@ impl SceneCommands {
         });
     }
 
+    /// Queues component type deregistration.
     pub fn deregister_component<C: Component>(&mut self) {
         self.push(SceneCommand::DeregisterComponent {
             type_id: C::type_id(),
@@ -87,6 +98,7 @@ impl SceneCommands {
         });
     }
 
+    /// Queues adding or setting a component on an entity.
     pub fn add_component<C: Component>(&mut self, entity: Entity, component: C) {
         self.push(SceneCommand::AddComponent {
             entity,
@@ -94,6 +106,7 @@ impl SceneCommands {
         });
     }
 
+    /// Queues removing a component from an entity.
     pub fn remove_component<C: Component>(&mut self, entity: Entity) {
         self.push(SceneCommand::RemoveComponent {
             entity,
@@ -102,10 +115,12 @@ impl SceneCommands {
         });
     }
 
+    /// Queues deletion of all entities matching a component tuple.
     pub fn delete_entities_with<Cs: ComponentTuple>(&mut self) {
         self.push(SceneCommand::DeleteEntitiesWith(Cs::type_ids()));
     }
 
+    /// Queues prefab registration.
     pub fn register_prefab(&mut self, name: impl Into<String>, factory: PrefabFactory) {
         self.push(SceneCommand::RegisterPrefab {
             name: name.into(),
@@ -113,16 +128,19 @@ impl SceneCommands {
         });
     }
 
+    /// Queues prefab spawning by name.
     pub fn spawn_prefab(&mut self, name: impl Into<String>) {
         self.push(SceneCommand::SpawnPrefab(name.into()));
     }
 
+    /// Queues spawning a single bundle.
     pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) {
         self.push(SceneCommand::SpawnBundle {
             components: bundle.into_components(),
         });
     }
 
+    /// Queues batch spawning of bundles.
     pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) {
         let bundles = bundles
             .into_iter()
@@ -131,6 +149,7 @@ impl SceneCommands {
         self.push(SceneCommand::SpawnBundleBatch { bundles });
     }
 
+    /// Queues adding a bundle to an entity.
     pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
         self.push(SceneCommand::AddBundle {
             entity,
@@ -138,6 +157,7 @@ impl SceneCommands {
         });
     }
 
+    /// Applies all queued commands in FIFO order.
     pub fn apply(&mut self, scene: &mut Scene) {
         let queued = std::mem::take(&mut self.queue);
         for command in queued {
@@ -145,6 +165,7 @@ impl SceneCommands {
         }
     }
 
+    /// Applies a single command immediately.
     pub fn apply_command(scene: &mut Scene, command: SceneCommand) {
         match command {
             SceneCommand::SpawnEntity => {
