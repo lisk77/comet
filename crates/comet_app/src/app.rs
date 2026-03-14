@@ -234,8 +234,16 @@ impl App {
         self.scene.deferred_add_component::<C>(entity, component);
     }
 
+    pub fn deferred_add_components<V: ComponentValueTuple>(&mut self, entity: Entity, components: V) {
+        self.scene.deferred_add_components(entity, components);
+    }
+
     pub fn deferred_remove_component<C: Component>(&mut self, entity: Entity) {
         self.scene.deferred_remove_component::<C>(entity);
+    }
+
+    pub fn deferred_remove_components<T: comet_ecs::ComponentTuple>(&mut self, entity: Entity) {
+        self.scene.deferred_remove_components::<T>(entity);
     }
 
     pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {

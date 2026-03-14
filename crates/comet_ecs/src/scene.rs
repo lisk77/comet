@@ -4,7 +4,7 @@ use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleSpawnPlan, ComponentChangeState};
-use crate::{Component, ComponentValueTuple, Entity, EntityLocation, IdQueue, Tick};
+use crate::{Component, ComponentTuple, ComponentValueTuple, Entity, EntityLocation, IdQueue, Tick};
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
@@ -110,6 +110,22 @@ impl Scene {
         self.commands.spawn_empty();
     }
 
+    /// Queues spawning an entity with the given components.
+    /// The command executes on [`Scene::apply_commands`] or at app tick-end.
+    pub fn deferred_spawn<V: ComponentValueTuple>(&mut self, components: V) {
+        self.commands.spawn(components.into_components());
+    }
+
+    /// Queues spawning a batch of entities with the given components.
+    /// The command executes on [`Scene::apply_commands`] or at app tick-end.
+    pub fn deferred_spawn_batch<V: ComponentValueTuple>(&mut self, batch: Vec<V>) {
+        let entities = batch
+            .into_iter()
+            .map(|components| components.into_components())
+            .collect();
+        self.commands.spawn_batch(entities);
+    }
+
     /// Queues deleting an entity.
     pub fn deferred_delete_entity(&mut self, entity: Entity) {
         self.commands.delete_entity(entity);
@@ -130,9 +146,19 @@ impl Scene {
         self.commands.add_component(entity, component);
     }
 
+    /// Queues adding or setting multiple components on an entity.
+    pub fn deferred_add_components<V: ComponentValueTuple>(&mut self, entity: Entity, components: V) {
+        self.commands.add_components(entity, components.into_components());
+    }
+
     /// Queues removing a component from an entity.
     pub fn deferred_remove_component<C: Component + 'static>(&mut self, entity: Entity) {
         self.commands.remove_component::<C>(entity);
+    }
+
+    /// Queues removing multiple components from an entity.
+    pub fn deferred_remove_components<T: ComponentTuple>(&mut self, entity: Entity) {
+        self.commands.remove_components(entity, T::type_ids());
     }
 
     /// Queues deleting all entities that contain the given component set.
@@ -702,6 +728,10 @@ impl Scene {
         self.add_component_immediate(entity_id, component);
     }
 
+    pub fn add_components<V: ComponentValueTuple>(&mut self, entity_id: Entity, components: V) {
+        self.add_with_components_immediate(entity_id, components.into_components());
+    }
+
     pub(crate) fn add_component_immediate<C: Component + 'static>(
         &mut self,
         entity_id: Entity,
@@ -808,6 +838,92 @@ impl Scene {
 
     pub fn remove_component<C: Component + 'static>(&mut self, entity_id: Entity) {
         self.remove_component_immediate::<C>(entity_id);
+    }
+
+    pub fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity) {
+        self.remove_with_components_immediate(entity_id, T::type_ids());
+    }
+
+    pub(crate) fn remove_with_components_immediate(
+        &mut self,
+        entity_id: Entity,
+        component_types: Vec<TypeId>,
+    ) {
+        if !self.is_alive(entity_id) || component_types.is_empty() {
+            return;
+        }
+
+        let loc = match self.get_location(entity_id) {
+            Some(loc) => loc,
+            None => return,
+        };
+        let old_arch_id = loc.archetype;
+        let old_arch = self.archetypes.get(old_arch_id);
+
+        let mut removed_types = Vec::new();
+        let mut removed_indices = Vec::new();
+        for type_id in component_types {
+            if removed_types.contains(&type_id) {
+                continue;
+            }
+            let Some(index) = self.component_index.get(&type_id).copied() else {
+                continue;
+            };
+            if old_arch.column_index(type_id).is_none() {
+                continue;
+            }
+            removed_types.push(type_id);
+            removed_indices.push(index);
+        }
+
+        if removed_types.is_empty() {
+            return;
+        }
+
+        let mut component_set = old_arch.set().clone();
+        for index in removed_indices {
+            component_set.remove(index);
+        }
+
+        let new_arch_id = self.ensure_archetype(component_set);
+        let old_len = self.archetypes.get(old_arch_id).len();
+        if old_len == 0 {
+            return;
+        }
+
+        if loc.row != old_len - 1 {
+            let swapped = {
+                let arch = self.archetypes.get_mut(old_arch_id);
+                arch.swap_rows(loc.row, old_len - 1);
+                arch.entities()[loc.row]
+            };
+            self.set_location(swapped, old_arch_id, loc.row);
+        }
+
+        let (old_arch, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
+        let new_row = new_arch.push_entity(entity_id);
+
+        for new_idx in 0..new_arch.types().len() {
+            let type_id = new_arch.types()[new_idx];
+            if let Some(old_idx) = old_arch.column_index(type_id) {
+                let _ = old_arch.columns_mut()[old_idx]
+                    .move_last_to(&mut new_arch.columns_mut()[new_idx]);
+            }
+        }
+
+        for old_idx in 0..old_arch.types().len() {
+            let type_id = old_arch.types()[old_idx];
+            if new_arch.column_index(type_id).is_none() {
+                let _ = old_arch.columns_mut()[old_idx].drop_last();
+            }
+        }
+
+        old_arch.pop_entity();
+        self.set_location(entity_id, new_arch_id, new_row);
+
+        for type_id in removed_types {
+            self.mark_component_removed(entity_id, type_id);
+        }
     }
 
     pub(crate) fn remove_component_immediate<C: Component + 'static>(&mut self, entity_id: Entity) {
@@ -1550,6 +1666,25 @@ mod tests {
         assert!(scene.get_component::<B>(e1).is_some());
         assert_eq!(scene.get_component::<Value>(e2).map(|v| v.0), Some(20));
         assert!(scene.get_component::<B>(e2).is_none());
+    }
+
+    #[test]
+    fn remove_components_moves_entity_between_archetypes_and_preserves_remaining_components() {
+        let mut scene = Scene::new();
+        scene.register_component::<A>();
+        scene.register_component::<B>();
+        scene.register_component::<Value>();
+
+        let entity = scene.new_entity();
+        scene.add_component(entity, A);
+        scene.add_component(entity, B);
+        scene.add_component(entity, Value(10));
+
+        scene.remove_components::<(A, B)>(entity);
+
+        assert!(scene.get_component::<A>(entity).is_none());
+        assert!(scene.get_component::<B>(entity).is_none());
+        assert_eq!(scene.get_component::<Value>(entity).map(|value| value.0), Some(10));
     }
 
     #[test]

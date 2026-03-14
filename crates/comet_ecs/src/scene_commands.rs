@@ -17,10 +17,18 @@ pub enum SceneCommand {
         entity: Entity,
         component: ErasedComponent,
     },
+    AddComponents {
+        entity: Entity,
+        components: Vec<ErasedComponent>,
+    },
     RemoveComponent {
         entity: Entity,
         type_id: TypeId,
         remove_fn: fn(&mut Scene, Entity),
+    },
+    RemoveComponents {
+        entity: Entity,
+        type_ids: Vec<TypeId>,
     },
     DeleteEntitiesWith(Vec<TypeId>),
     RegisterPrefab {
@@ -38,6 +46,12 @@ pub enum SceneCommand {
         entity: Entity,
         components: Vec<ErasedComponent>,
     },
+    Spawn {
+        components: Vec<ErasedComponent>,
+    },
+    SpawnBatch {
+        entities: Vec<Vec<ErasedComponent>>,
+    }
 }
 
 #[derive(Default)]
@@ -77,6 +91,14 @@ impl SceneCommands {
         self.push(SceneCommand::SpawnEntity);
     }
 
+    pub fn spawn(&mut self, components: Vec<ErasedComponent>) {
+        self.push(SceneCommand::Spawn { components });
+    }
+
+    pub fn spawn_batch(&mut self, entities: Vec<Vec<ErasedComponent>>) {
+        self.push(SceneCommand::SpawnBatch { entities });
+    }
+
     /// Queues deleting an entity.
     pub fn delete_entity(&mut self, entity: Entity) {
         self.push(SceneCommand::DeleteEntity(entity));
@@ -106,6 +128,11 @@ impl SceneCommands {
         });
     }
 
+    /// Queues adding or setting multiple components on an entity.
+    pub fn add_components(&mut self, entity: Entity, components: Vec<ErasedComponent>) {
+        self.push(SceneCommand::AddComponents { entity, components });
+    }
+
     /// Queues removing a component from an entity.
     pub fn remove_component<C: Component>(&mut self, entity: Entity) {
         self.push(SceneCommand::RemoveComponent {
@@ -113,6 +140,11 @@ impl SceneCommands {
             type_id: C::type_id(),
             remove_fn: remove_component_impl::<C>,
         });
+    }
+
+    /// Queues removing multiple components from an entity.
+    pub fn remove_components(&mut self, entity: Entity, type_ids: Vec<TypeId>) {
+        self.push(SceneCommand::RemoveComponents { entity, type_ids });
     }
 
     /// Queues deletion of all entities matching a component tuple.
@@ -183,11 +215,17 @@ impl SceneCommands {
             SceneCommand::AddComponent { entity, component } => {
                 scene.add_with_components_immediate(entity, vec![component]);
             }
+            SceneCommand::AddComponents { entity, components } => {
+                scene.add_with_components_immediate(entity, components);
+            }
             SceneCommand::RemoveComponent {
                 entity,
                 type_id: _type_id,
                 remove_fn,
             } => remove_fn(scene, entity),
+            SceneCommand::RemoveComponents { entity, type_ids } => {
+                scene.remove_with_components_immediate(entity, type_ids);
+            }
             SceneCommand::DeleteEntitiesWith(type_ids) => scene.delete_entities_with_immediate(type_ids),
             SceneCommand::RegisterPrefab { name, factory } => {
                 scene.register_prefab_immediate(&name, factory)
@@ -205,6 +243,14 @@ impl SceneCommands {
             }
             SceneCommand::AddBundle { entity, components } => {
                 scene.add_with_components_immediate(entity, components);
+            }
+            SceneCommand::Spawn { components } => {
+                let _ = scene.spawn_with_components_immediate(components);
+            }
+            SceneCommand::SpawnBatch { entities } => {
+                for components in entities {
+                    let _ = scene.spawn_with_components_immediate(components);
+                }
             }
         }
     }
