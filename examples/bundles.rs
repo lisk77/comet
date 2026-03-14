@@ -18,6 +18,8 @@ bundle!(Comet {
 fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     renderer.init_atlas();
 
+    app.register_component::<Player>();
+
     app.spawn_bundle(Camera {
         transform: Transform2D::new(),
         camera: Camera2D::new(v2::new(2.0, 2.0), 1.0, 1),

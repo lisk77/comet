@@ -1,4 +1,5 @@
 use super::*;
+use super::iterators::RowAccess;
 
 macro_rules! define_tuple_types_arity {
     (
@@ -21,6 +22,16 @@ macro_rules! define_tuple_types_arity {
             pub(super) row: usize,
         }
 
+        impl RowAccess for $access {
+            fn len(&self) -> usize {
+                self.len
+            }
+
+            fn row_mut(&mut self) -> &mut usize {
+                &mut self.row
+            }
+        }
+
         pub(super) struct $access_mut {
             pub(super) entities: *const Entity,
             pub(super) $first_col: *mut comet_structs::Column,
@@ -28,6 +39,16 @@ macro_rules! define_tuple_types_arity {
             pub(super) scene: *mut Scene,
             pub(super) len: usize,
             pub(super) row: usize,
+        }
+
+        impl RowAccess for $access_mut {
+            fn len(&self) -> usize {
+                self.len
+            }
+
+            fn row_mut(&mut self) -> &mut usize {
+                &mut self.row
+            }
         }
 
         pub struct $iter<'a, $first_ty, $($ty),+> {
@@ -48,24 +69,34 @@ macro_rules! define_tuple_types_arity {
 
         pub struct $builder<'a, $first_ty, $($ty),+, Filters = ()> {
             pub(super) scene: &'a Scene,
-            pub(super) with_components: Vec<TypeId>,
-            pub(super) without_components: Vec<TypeId>,
-            pub(super) with_any_components: Vec<TypeId>,
-            pub(super) without_any_components: Vec<TypeId>,
-            pub(super) added_filter: Option<(TypeId, Tick)>,
-            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) state: QueryFilterState,
             pub(super) _marker: PhantomData<($first_ty, $($ty),+, Filters)>,
         }
 
         pub struct $builder_mut<'a, $first_ty, $($ty),+, Filters = ()> {
             pub(super) scene: &'a mut Scene,
-            pub(super) with_components: Vec<TypeId>,
-            pub(super) without_components: Vec<TypeId>,
-            pub(super) with_any_components: Vec<TypeId>,
-            pub(super) without_any_components: Vec<TypeId>,
-            pub(super) added_filter: Option<(TypeId, Tick)>,
-            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) state: QueryFilterState,
             pub(super) _marker: PhantomData<($first_ty, $($ty),+, Filters)>,
+        }
+
+        impl<'a, $first_ty, $($ty),+, Filters> $builder<'a, $first_ty, $($ty),+, Filters> {
+            pub(super) fn from_state(scene: &'a Scene, state: QueryFilterState) -> Self {
+                Self {
+                    scene,
+                    state,
+                    _marker: PhantomData,
+                }
+            }
+        }
+
+        impl<'a, $first_ty, $($ty),+, Filters> $builder_mut<'a, $first_ty, $($ty),+, Filters> {
+            pub(super) fn from_state(scene: &'a mut Scene, state: QueryFilterState) -> Self {
+                Self {
+                    scene,
+                    state,
+                    _marker: PhantomData,
+                }
+            }
         }
     };
 }
@@ -95,6 +126,16 @@ macro_rules! define_entity_tuple_types_arity {
             pub(super) row: usize,
         }
 
+        impl RowAccess for $access {
+            fn len(&self) -> usize {
+                self.len
+            }
+
+            fn row_mut(&mut self) -> &mut usize {
+                &mut self.row
+            }
+        }
+
         pub(super) struct $access_mut {
             pub(super) entities: *const Entity,
             pub(super) $first_col: *mut comet_structs::Column,
@@ -102,6 +143,16 @@ macro_rules! define_entity_tuple_types_arity {
             pub(super) scene: *mut Scene,
             pub(super) len: usize,
             pub(super) row: usize,
+        }
+
+        impl RowAccess for $access_mut {
+            fn len(&self) -> usize {
+                self.len
+            }
+
+            fn row_mut(&mut self) -> &mut usize {
+                &mut self.row
+            }
         }
 
         pub struct $iter<'a, $first_ty $(, $ty)*> {
@@ -122,24 +173,34 @@ macro_rules! define_entity_tuple_types_arity {
 
         pub struct $builder<'a, $first_ty $(, $ty)*, Filters = ()> {
             pub(super) scene: &'a Scene,
-            pub(super) with_components: Vec<TypeId>,
-            pub(super) without_components: Vec<TypeId>,
-            pub(super) with_any_components: Vec<TypeId>,
-            pub(super) without_any_components: Vec<TypeId>,
-            pub(super) added_filter: Option<(TypeId, Tick)>,
-            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) state: QueryFilterState,
             pub(super) _marker: PhantomData<($first_ty $(, $ty)*, Filters)>,
         }
 
         pub struct $builder_mut<'a, $first_ty $(, $ty)*, Filters = ()> {
             pub(super) scene: &'a mut Scene,
-            pub(super) with_components: Vec<TypeId>,
-            pub(super) without_components: Vec<TypeId>,
-            pub(super) with_any_components: Vec<TypeId>,
-            pub(super) without_any_components: Vec<TypeId>,
-            pub(super) added_filter: Option<(TypeId, Tick)>,
-            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) state: QueryFilterState,
             pub(super) _marker: PhantomData<($first_ty $(, $ty)*, Filters)>,
+        }
+
+        impl<'a, $first_ty $(, $ty)*, Filters> $builder<'a, $first_ty $(, $ty)*, Filters> {
+            pub(super) fn from_state(scene: &'a Scene, state: QueryFilterState) -> Self {
+                Self {
+                    scene,
+                    state,
+                    _marker: PhantomData,
+                }
+            }
+        }
+
+        impl<'a, $first_ty $(, $ty)*, Filters> $builder_mut<'a, $first_ty $(, $ty)*, Filters> {
+            pub(super) fn from_state(scene: &'a mut Scene, state: QueryFilterState) -> Self {
+                Self {
+                    scene,
+                    state,
+                    _marker: PhantomData,
+                }
+            }
         }
     };
 }
