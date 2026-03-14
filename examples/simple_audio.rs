@@ -10,8 +10,7 @@ fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     app.set_volume("startup", 1.0);
 }
 
-#[allow(unused_variables)]
-fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
+fn update(app: &mut App, _renderer: &mut RenderHandle2D, dt: f32) {
     // in this example, update_audio doesnt do anything because the kira audio system
     // doesnt need any update
     app.update_audio(dt);

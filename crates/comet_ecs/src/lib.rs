@@ -1,6 +1,6 @@
 pub use bundles::Bundle;
 pub use comet_math as math;
-pub use component_tuple::ComponentTuple;
+pub use component_tuple::{ComponentTuple, ComponentValueTuple};
 pub use component::*;
 pub use component_derive::*;
 pub use entity::*;

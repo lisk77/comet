@@ -3,16 +3,10 @@ use comet::prelude::*;
 #[derive(Component)]
 struct Count(u8);
 
-bundle!(Counter {
-    c: Count
-});
-
 fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     app.register_component::<Count>();
 
-    app.spawn_bundle(Counter {
-        c: Count::default()
-    });
+    app.spawn(Count::new());
 }
 
 fn update(app: &mut App, _renderer: &mut RenderHandle2D, _dt: f32) {

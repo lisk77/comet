@@ -40,8 +40,7 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     }
 }
 
-#[allow(unused_variables)]
-fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {}
+fn update(_app: &mut App, _renderer: &mut RenderHandle2D, _dt: f32) {}
 
 fn main() {
     App::new()

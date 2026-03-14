@@ -4,7 +4,7 @@ use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleSpawnPlan, ComponentChangeState};
-use crate::{Component, Entity, EntityLocation, IdQueue, Tick};
+use crate::{Component, ComponentValueTuple, Entity, EntityLocation, IdQueue, Tick};
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
@@ -1000,6 +1000,32 @@ impl Scene {
 
     pub(crate) fn archetypes_mut(&mut self) -> &mut crate::archetypes::Archetypes {
         &mut self.archetypes
+    }
+
+    pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
+        let component_types = components.type_ids();
+        self.__spawn_bundle_typed(TypeId::of::<V>(), &component_types, |columns, column_indices, row| {
+            components.write_components(columns, column_indices, row);
+        })
+    }
+
+    pub fn spawn_batch<V: ComponentValueTuple + 'static>(
+        &mut self,
+        components_batch: Vec<V>,
+    ) -> Vec<Entity> {
+        if components_batch.is_empty() {
+            return Vec::new();
+        }
+
+        let component_types = components_batch[0].type_ids();
+        self.__spawn_bundle_typed_batch(
+            TypeId::of::<V>(),
+            &component_types,
+            components_batch,
+            |columns, column_indices, row, components| {
+                components.write_components_reserved(columns, column_indices, row);
+            },
+        )
     }
 
     pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> Entity {

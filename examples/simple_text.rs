@@ -6,16 +6,14 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     renderer.load_font("./res/fonts/PublicPixel.ttf", 77.0);
 
     // Setting up camera
-    let camera = app.new_entity();
-
-    app.add_component(camera, Transform2D::new());
-    app.add_component(camera, Camera2D::new(v2::new(2.0, 2.0), 1.0, 1));
+    app.spawn((
+        Transform2D::new(), 
+        Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)
+    ));
 
     // Creating the text entity
-    let text = app.new_entity();
-    app.add_component(text, Transform2D::new());
-    app.add_component(
-        text,
+    app.spawn((
+        Transform2D::new(),
         Text::new(
             "comet",                                // The content of the text
             "./res/fonts/PublicPixel.ttf", // The used font (right now exact to the font path)
@@ -23,11 +21,10 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
             true,                                   // Should the text be visible
             sRgba::<f32>::from_hex("#abb2bfff"),    // Color of the text
         ),
-    );
+    ));
 }
 
-#[allow(unused_variables)]
-fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
+fn update(app: &mut App, renderer: &mut RenderHandle2D, _dt: f32) {
     // Getting the window size (cached request)
     let size = renderer.size();
 

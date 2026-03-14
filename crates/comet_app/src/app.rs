@@ -1,6 +1,6 @@
 use comet_colors::{Color as ColorTrait, LinearRgba};
 use comet_ecs::{
-    Camera2D, Component, Entity, Render2D, Scene, Text, Transform2D, Transform3D,
+    Camera2D, Component, ComponentValueTuple, Entity, Render2D, Scene, Text, Transform2D, Transform3D
 };
 use comet_input::keyboard::Key;
 use comet_log::*;
@@ -194,6 +194,19 @@ impl App {
     /// Retrieves a mutable reference to the current `Scene` in the `App`
     pub fn scene_mut(&mut self) -> &mut Scene {
         &mut self.scene
+    }
+
+    /// Spawns a new entity from an inline tuple of component values.
+    pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
+        self.scene.spawn(components)
+    }
+
+    /// Spawns a batch of entities from tuples of component values.
+    pub fn spawn_batch<V: ComponentValueTuple + 'static>(
+        &mut self,
+        components_batch: Vec<V>,
+    ) -> Vec<Entity> {
+        self.scene.spawn_batch(components_batch)
     }
 
     /// Spawns a new entity using a bundle of components.

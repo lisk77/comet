@@ -1,7 +1,6 @@
 // This is the simple_move_2d example but using bundles
 use comet::prelude::*;
 
-// Zero sized components are also called tags in the documentation
 #[derive(Component)]
 struct Player;
 
