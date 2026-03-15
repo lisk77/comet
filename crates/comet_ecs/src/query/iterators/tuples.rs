@@ -24,8 +24,8 @@ macro_rules! impl_tuple_iterators_arity {
                         if !matches_change_filters(
                             access.scene,
                             entity,
-                            self.added_filter,
-                            self.changed_filter,
+                            &self.added_since_filters,
+                            &self.changed_since_filters,
                         ) {
                             continue;
                         }
@@ -49,8 +49,8 @@ macro_rules! impl_tuple_iterators_arity {
                         if !matches_change_filters(
                             access.scene,
                             entity,
-                            self.added_filter,
-                            self.changed_filter,
+                            &self.added_since_filters,
+                            &self.changed_since_filters,
                         ) {
                             continue;
                         }
@@ -101,8 +101,8 @@ macro_rules! impl_entity_tuple_iterators_arity {
                         if !matches_change_filters(
                             access.scene,
                             entity,
-                            self.added_filter,
-                            self.changed_filter,
+                            &self.added_since_filters,
+                            &self.changed_since_filters,
                         ) {
                             continue;
                         }
@@ -127,8 +127,8 @@ macro_rules! impl_entity_tuple_iterators_arity {
                         if !matches_change_filters(
                             access.scene,
                             entity,
-                            self.added_filter,
-                            self.changed_filter,
+                            &self.added_since_filters,
+                            &self.changed_since_filters,
                         ) {
                             continue;
                         }

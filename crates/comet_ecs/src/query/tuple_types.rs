@@ -54,16 +54,16 @@ macro_rules! define_tuple_types_arity {
         pub struct $iter<'a, $first_ty, $($ty),+> {
             pub(super) accesses: Vec<$access>,
             pub(super) idx: usize,
-            pub(super) added_filter: Option<(TypeId, Tick)>,
-            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) added_since_filters: Vec<(TypeId, Tick)>,
+            pub(super) changed_since_filters: Vec<(TypeId, Tick)>,
             pub(super) _marker: PhantomData<(&'a (), $first_ty, $($ty),+)>,
         }
 
         pub struct $iter_mut<'a, $first_ty, $($ty),+> {
             pub(super) accesses: Vec<$access_mut>,
             pub(super) idx: usize,
-            pub(super) added_filter: Option<(TypeId, Tick)>,
-            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) added_since_filters: Vec<(TypeId, Tick)>,
+            pub(super) changed_since_filters: Vec<(TypeId, Tick)>,
             pub(super) _marker: PhantomData<(&'a (), $first_ty, $($ty),+)>,
         }
 
@@ -158,16 +158,16 @@ macro_rules! define_entity_tuple_types_arity {
         pub struct $iter<'a, $first_ty $(, $ty)*> {
             pub(super) accesses: Vec<$access>,
             pub(super) idx: usize,
-            pub(super) added_filter: Option<(TypeId, Tick)>,
-            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) added_since_filters: Vec<(TypeId, Tick)>,
+            pub(super) changed_since_filters: Vec<(TypeId, Tick)>,
             pub(super) _marker: PhantomData<(&'a (), $first_ty $(, $ty)*)>,
         }
 
         pub struct $iter_mut<'a, $first_ty $(, $ty)*> {
             pub(super) accesses: Vec<$access_mut>,
             pub(super) idx: usize,
-            pub(super) added_filter: Option<(TypeId, Tick)>,
-            pub(super) changed_filter: Option<(TypeId, Tick)>,
+            pub(super) added_since_filters: Vec<(TypeId, Tick)>,
+            pub(super) changed_since_filters: Vec<(TypeId, Tick)>,
             pub(super) _marker: PhantomData<(&'a (), $first_ty $(, $ty)*)>,
         }
 

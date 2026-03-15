@@ -46,7 +46,7 @@ macro_rules! impl_tuple_builders_arity {
         }
 
         impl<'a, $first_ty: ReadFetch<'a> + 'a, $($ty: ReadFetch<'a> + 'a),+, Filters> $builder<'a, $first_ty, $($ty),+, Filters> {
-            impl_query_state_methods_scene_ref!($first_ty);
+            impl_query_state_methods_scene_ref!();
 
             pub fn iter(self) -> $iter<'a, $first_ty $(, $ty)*> {
                 let mut accesses = Vec::new();
@@ -74,8 +74,8 @@ macro_rules! impl_tuple_builders_arity {
                 $iter {
                     accesses,
                     idx: 0,
-                    added_filter: self.state.added_filter,
-                    changed_filter: self.state.changed_filter,
+                    added_since_filters: self.state.added_since_filters,
+                    changed_since_filters: self.state.changed_since_filters,
                     _marker: PhantomData,
                 }
             }
@@ -89,7 +89,7 @@ macro_rules! impl_tuple_builders_arity {
         }
 
         impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+, Filters> $builder_mut<'a, $first_ty, $($ty),+, Filters> {
-            impl_query_state_methods_scene_ref!($first_ty);
+            impl_query_state_methods_scene_mut!();
 
             pub fn iter(self) -> $iter_mut<'a, $first_ty, $($ty),+> {
                 let mut accesses = Vec::new();
@@ -118,8 +118,8 @@ macro_rules! impl_tuple_builders_arity {
                 $iter_mut {
                     accesses,
                     idx: 0,
-                    added_filter: self.state.added_filter,
-                    changed_filter: self.state.changed_filter,
+                    added_since_filters: self.state.added_since_filters,
+                    changed_since_filters: self.state.changed_since_filters,
                     _marker: PhantomData,
                 }
             }
@@ -183,7 +183,7 @@ macro_rules! impl_entity_tuple_builders_arity {
         }
 
         impl<'a, $first_ty: ReadFetch<'a> + 'a $(, $ty: ReadFetch<'a> + 'a)*, Filters> $builder<'a, $first_ty $(, $ty)*, Filters> {
-            impl_query_state_methods_scene_ref!($first_ty);
+            impl_query_state_methods_scene_ref!();
 
             pub fn iter(self) -> $iter<'a, $first_ty $(, $ty)*> {
                 let mut accesses = Vec::new();
@@ -211,8 +211,8 @@ macro_rules! impl_entity_tuple_builders_arity {
                 $iter {
                     accesses,
                     idx: 0,
-                    added_filter: self.state.added_filter,
-                    changed_filter: self.state.changed_filter,
+                    added_since_filters: self.state.added_since_filters,
+                    changed_since_filters: self.state.changed_since_filters,
                     _marker: PhantomData,
                 }
             }
@@ -226,7 +226,7 @@ macro_rules! impl_entity_tuple_builders_arity {
         }
 
         impl<'a, $first_ty: WriteFetch<'a> + 'a $(, $ty: WriteFetch<'a> + 'a)*, Filters> $builder_mut<'a, $first_ty $(, $ty)*, Filters> {
-            impl_query_state_methods_scene_ref!($first_ty);
+            impl_query_state_methods_scene_mut!();
 
             pub fn iter(self) -> $iter_mut<'a, $first_ty $(, $ty)*> {
                 let mut accesses = Vec::new();
@@ -255,8 +255,8 @@ macro_rules! impl_entity_tuple_builders_arity {
                 $iter_mut {
                     accesses,
                     idx: 0,
-                    added_filter: self.state.added_filter,
-                    changed_filter: self.state.changed_filter,
+                    added_since_filters: self.state.added_since_filters,
+                    changed_since_filters: self.state.changed_since_filters,
                     _marker: PhantomData,
                 }
             }

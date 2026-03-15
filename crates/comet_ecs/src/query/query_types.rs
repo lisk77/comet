@@ -3,16 +3,16 @@ use super::*;
 pub struct QueryIter<'a, P: ReadFetch<'a>> {
     pub(crate) accesses: Vec<QueryAccess>,
     pub(crate) idx: usize,
-    pub(crate) added_filter: Option<(TypeId, Tick)>,
-    pub(crate) changed_filter: Option<(TypeId, Tick)>,
+    pub(crate) added_since_filters: Vec<(TypeId, Tick)>,
+    pub(crate) changed_since_filters: Vec<(TypeId, Tick)>,
     pub(crate) _marker: PhantomData<&'a P>,
 }
 
 pub struct QueryIterMut<'a, P: WriteFetch<'a>> {
     pub(crate) accesses: Vec<QueryMutAccess>,
     pub(crate) idx: usize,
-    pub(crate) added_filter: Option<(TypeId, Tick)>,
-    pub(crate) changed_filter: Option<(TypeId, Tick)>,
+    pub(crate) added_since_filters: Vec<(TypeId, Tick)>,
+    pub(crate) changed_since_filters: Vec<(TypeId, Tick)>,
     pub(crate) _marker: PhantomData<&'a P>,
 }
 

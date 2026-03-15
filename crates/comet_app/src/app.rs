@@ -1,6 +1,6 @@
 use comet_colors::{Color as ColorTrait, LinearRgba};
 use comet_ecs::{
-    Camera2D, Component, ComponentValueTuple, Entity, Render2D, Scene, Text, Transform2D, Transform3D
+    Camera2D, Component, ComponentTuple, ComponentValueTuple, Entity, Render2D, Scene, Text, Transform2D, Transform3D
 };
 use comet_input::keyboard::Key;
 use comet_log::*;
@@ -348,9 +348,17 @@ impl App {
         self.scene.add_component(entity_id, component)
     }
 
+    pub fn add_components<V: ComponentValueTuple>(&mut self, entity_id: Entity, components: V) {
+        self.scene.add_components(entity_id, components);
+    }
+
     /// Removes a component from an entity by its ID.
     pub fn remove_component<C: Component>(&mut self, entity_id: Entity) {
         self.scene.remove_component::<C>(entity_id)
+    }
+
+    pub fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity) {
+        self.scene.remove_components::<T>(entity_id);
     }
 
     /// Returns a reference to a component of an entity by its ID.
@@ -447,13 +455,14 @@ impl App {
     }
 
     fn begin_logic_tick(&mut self) {
-        let baseline_tick = self.scene.change_tick().wrapping_sub(1);
-        self.scene.set_query_default_tick(baseline_tick);
+        let default_query_since_tick = self.scene.component_event_tick().wrapping_sub(1);
+        self.scene
+            .set_default_query_since_tick(default_query_since_tick);
     }
 
     fn end_logic_tick(&mut self) {
         self.scene.apply_commands();
-        let _ = self.scene.advance_change_tick();
+        let _ = self.scene.advance_component_event_tick();
     }
 
     fn create_window(

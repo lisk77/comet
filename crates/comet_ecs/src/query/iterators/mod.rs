@@ -59,27 +59,27 @@ pub(super) unsafe fn fetch_entity(
 
 #[inline(always)]
 pub(super) fn has_change_filters(
-    added_filter: Option<(TypeId, Tick)>,
-    changed_filter: Option<(TypeId, Tick)>,
+    added_since_filters: &[(TypeId, Tick)],
+    changed_since_filters: &[(TypeId, Tick)],
 ) -> bool {
-    added_filter.is_some() || changed_filter.is_some()
+    !added_since_filters.is_empty() || !changed_since_filters.is_empty()
 }
 
 #[inline(always)]
 pub(super) unsafe fn matches_change_filters(
     scene: *const Scene,
     entity: Entity,
-    added_filter: Option<(TypeId, Tick)>,
-    changed_filter: Option<(TypeId, Tick)>,
+    added_since_filters: &[(TypeId, Tick)],
+    changed_since_filters: &[(TypeId, Tick)],
 ) -> bool {
     let scene = unsafe { &*scene };
-    if let Some((type_id, tick)) = added_filter {
-        if !scene.component_added_since_type(entity, type_id, tick) {
+    for (type_id, tick) in added_since_filters {
+        if !scene.component_added_since_type(entity, *type_id, *tick) {
             return false;
         }
     }
-    if let Some((type_id, tick)) = changed_filter {
-        if !scene.component_changed_since_type(entity, type_id, tick) {
+    for (type_id, tick) in changed_since_filters {
+        if !scene.component_changed_since_type(entity, *type_id, *tick) {
             return false;
         }
     }

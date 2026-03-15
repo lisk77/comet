@@ -18,8 +18,8 @@ use std::sync::Arc;
 const DEFAULT_ENTITY_STORAGE_CAPACITY: usize = 256;
 
 pub struct Scene {
-    change_tick: Tick,
-    query_default_tick: Tick,
+    component_event_tick: Tick,
+    default_query_since_tick: Tick,
     id_queue: IdQueue,
     next_id: u32,
     generations: Vec<u32>,
@@ -43,8 +43,8 @@ impl Scene {
     /// Creates a new empty scene.
     pub fn new() -> Self {
         let mut scene = Self {
-            change_tick: 0,
-            query_default_tick: 0,
+            component_event_tick: 0,
+            default_query_since_tick: 0,
             id_queue: IdQueue::new(),
             next_id: 0,
             generations: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
@@ -78,30 +78,29 @@ impl Scene {
     }
 
     /// Returns the current logical change tick.
-    pub fn change_tick(&self) -> Tick {
-        self.change_tick
+    pub fn component_event_tick(&self) -> Tick {
+        self.component_event_tick
     }
 
-    /// Sets the current logical change tick used for future change stamps.
-    pub fn set_change_tick(&mut self, tick: Tick) {
-        self.change_tick = tick;
+    /// Sets the current logical tick used to stamp component add/change/remove events.
+    pub fn set_component_event_tick(&mut self, tick: Tick) {
+        self.component_event_tick = tick;
     }
 
-    /// Returns the default baseline tick for query change filters.
-    pub fn query_default_tick(&self) -> Tick {
-        self.query_default_tick
+    /// Returns the default baseline used by temporal query filters like `Added<T>` and `Changed<T>`.
+    pub fn default_query_since_tick(&self) -> Tick {
+        self.default_query_since_tick
     }
 
-    /// Sets the default baseline tick for query change filters.
-    /// Filters like `added()` and `changed()` compare against this value.
-    pub fn set_query_default_tick(&mut self, tick: Tick) {
-        self.query_default_tick = tick;
+    /// Sets the default baseline used by temporal query filters like `Added<T>` and `Changed<T>`.
+    pub fn set_default_query_since_tick(&mut self, tick: Tick) {
+        self.default_query_since_tick = tick;
     }
 
-    /// Advances the logical change tick by one and returns it.
-    pub fn advance_change_tick(&mut self) -> Tick {
-        self.change_tick = self.change_tick.wrapping_add(1);
-        self.change_tick
+    /// Advances the component-event tick by one and returns it.
+    pub fn advance_component_event_tick(&mut self) -> Tick {
+        self.component_event_tick = self.component_event_tick.wrapping_add(1);
+        self.component_event_tick
     }
 
     /// Queues spawning an empty entity.
@@ -222,8 +221,8 @@ impl Scene {
         self.component_change_state.insert(
             (entity.index, type_id),
             ComponentChangeState {
-                added_tick: self.change_tick,
-                changed_tick: self.change_tick,
+                added_tick: self.component_event_tick,
+                changed_tick: self.component_event_tick,
             },
         );
     }
@@ -232,14 +231,14 @@ impl Scene {
     fn mark_component_changed(&mut self, entity: Entity, type_id: TypeId) {
         let key = (entity.index, type_id);
         if let Some(state) = self.component_change_state.get_mut(&key) {
-            state.changed_tick = self.change_tick;
+            state.changed_tick = self.component_event_tick;
             return;
         }
         self.component_change_state.insert(
             key,
             ComponentChangeState {
-                added_tick: self.change_tick,
-                changed_tick: self.change_tick,
+                added_tick: self.component_event_tick,
+                changed_tick: self.component_event_tick,
             },
         );
     }
@@ -254,7 +253,7 @@ impl Scene {
         self.removed_component_events
             .entry(type_id)
             .or_default()
-            .push((entity, self.change_tick));
+            .push((entity, self.component_event_tick));
     }
 
     #[inline(always)]
@@ -1841,18 +1840,18 @@ mod tests {
     }
 
     #[test]
-    fn component_change_tracking_uses_scene_tick() {
+    fn component_change_tracking_uses_component_event_tick() {
         let mut scene = Scene::new();
         scene.register_component::<Value>();
 
-        scene.set_change_tick(10);
+        scene.set_component_event_tick(10);
         let entity = scene.new_entity();
         scene.add_component(entity, Value(1));
         assert!(scene.component_added_since::<Value>(entity, 9));
         assert!(scene.component_changed_since::<Value>(entity, 9));
         assert!(!scene.component_changed_since::<Value>(entity, 10));
 
-        scene.set_change_tick(15);
+        scene.set_component_event_tick(15);
         if let Some(value) = scene.get_component_mut::<Value>(entity) {
             value.0 = 2;
         }
@@ -1865,9 +1864,9 @@ mod tests {
         scene.register_component::<Value>();
 
         let entity = scene.new_entity();
-        scene.set_change_tick(3);
+        scene.set_component_event_tick(3);
         scene.add_component(entity, Value(1));
-        scene.set_change_tick(7);
+        scene.set_component_event_tick(7);
         scene.remove_component::<Value>(entity);
 
         let removed = scene.removed_since::<Value>(5);
@@ -1880,10 +1879,10 @@ mod tests {
         scene.register_component::<Value>();
 
         let entity = scene.new_entity();
-        scene.set_change_tick(10);
+        scene.set_component_event_tick(10);
         scene.add_component(entity, Value(1));
 
-        scene.set_change_tick(20);
+        scene.set_component_event_tick(20);
         {
             let mut iter = scene.query_mut::<&mut Value, ()>().iter();
             let _ = iter.next();
@@ -1899,11 +1898,11 @@ mod tests {
         scene.register_component::<A>();
 
         let entity = scene.new_entity();
-        scene.set_change_tick(10);
+        scene.set_component_event_tick(10);
         scene.add_component(entity, Value(1));
         scene.add_component(entity, A);
 
-        scene.set_change_tick(30);
+        scene.set_component_event_tick(30);
         {
             let mut iter = scene.query_mut::<(&Value, &mut A), ()>().iter();
             let _ = iter.next();
@@ -1914,19 +1913,19 @@ mod tests {
     }
 
     #[test]
-    fn query_added_and_changed_filters_work_for_single_component_builders() {
+    fn temporal_query_filters_use_default_query_since_tick() {
         let mut scene = Scene::new();
         scene.register_component::<Value>();
 
         let entity = scene.new_entity();
-        scene.set_change_tick(5);
+        scene.set_component_event_tick(5);
         scene.add_component(entity, Value(1));
 
-        scene.set_query_default_tick(4);
+        scene.set_default_query_since_tick(4);
         let added_count = scene.query::<&Value, crate::Added<Value>>().iter().count();
         assert_eq!(added_count, 1);
 
-        scene.set_change_tick(9);
+        scene.set_component_event_tick(9);
         if let Some(value) = scene.get_component_mut::<Value>(entity) {
             value.0 = 2;
         }
@@ -1936,5 +1935,38 @@ mod tests {
             .iter()
             .count();
         assert_eq!(changed_count, 1);
+    }
+
+    #[test]
+    fn temporal_query_constraints_can_use_different_since_ticks_per_filter() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<A>();
+
+        scene.set_component_event_tick(5);
+        let entity = scene.new_entity();
+        scene.add_component(entity, Value(1));
+        scene.add_component(entity, A);
+
+        scene.set_component_event_tick(10);
+        if let Some(value) = scene.get_component_mut::<A>(entity) {
+            *value = A;
+        }
+
+        let matching = scene
+            .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
+            .added_since::<Value>(4)
+            .changed_since::<A>(9)
+            .iter()
+            .count();
+        assert_eq!(matching, 1);
+
+        let non_matching = scene
+            .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
+            .added_since::<Value>(6)
+            .changed_since::<A>(10)
+            .iter()
+            .count();
+        assert_eq!(non_matching, 0);
     }
 }

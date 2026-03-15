@@ -3,7 +3,7 @@ use crate::{ComponentTuple, Tick};
 use std::any::TypeId;
 
 macro_rules! impl_query_state_methods_scene_ref {
-    ($target:ident) => {
+    () => {
         pub fn with<Co: Component>(mut self) -> Self {
             self.state.with_components.push(Co::type_id());
             self
@@ -34,30 +34,34 @@ macro_rules! impl_query_state_methods_scene_ref {
             self
         }
 
-        pub fn added(mut self) -> Self {
-            self.state.added_filter = Some((<$target>::type_id(), self.scene.query_default_tick()));
+        pub fn added<Co: Component>(mut self) -> Self {
+            self.state
+                .set_added_since_filter(Co::type_id(), self.scene.default_query_since_tick());
             self
         }
 
-        pub fn changed(mut self) -> Self {
-            self.state.changed_filter = Some((<$target>::type_id(), self.scene.query_default_tick()));
+        pub fn changed<Co: Component>(mut self) -> Self {
+            self.state.set_changed_since_filter(
+                Co::type_id(),
+                self.scene.default_query_since_tick(),
+            );
             self
         }
 
-        pub fn added_since(mut self, tick: Tick) -> Self {
-            self.state.added_filter = Some((<$target>::type_id(), tick));
+        pub fn added_since<Co: Component>(mut self, tick: Tick) -> Self {
+            self.state.set_added_since_filter(Co::type_id(), tick);
             self
         }
 
-        pub fn changed_since(mut self, tick: Tick) -> Self {
-            self.state.changed_filter = Some((<$target>::type_id(), tick));
+        pub fn changed_since<Co: Component>(mut self, tick: Tick) -> Self {
+            self.state.set_changed_since_filter(Co::type_id(), tick);
             self
         }
     };
 }
 
 macro_rules! impl_query_state_methods_write_ptr {
-    ($target:ident) => {
+    () => {
         pub fn with<Co: Component>(mut self) -> Self {
             self.state.with_components.push(Co::type_id());
             self
@@ -88,25 +92,87 @@ macro_rules! impl_query_state_methods_write_ptr {
             self
         }
 
-        pub fn added(mut self) -> Self {
-            self.state.added_filter =
-                Some((<$target>::type_id(), unsafe { (&*self.scene).query_default_tick() }));
+        pub fn added<Co: Component>(mut self) -> Self {
+            self.state.set_added_since_filter(
+                Co::type_id(),
+                unsafe { (&*self.scene).default_query_since_tick() },
+            );
             self
         }
 
-        pub fn changed(mut self) -> Self {
-            self.state.changed_filter =
-                Some((<$target>::type_id(), unsafe { (&*self.scene).query_default_tick() }));
+        pub fn changed<Co: Component>(mut self) -> Self {
+            self.state.set_changed_since_filter(
+                Co::type_id(),
+                unsafe { (&*self.scene).default_query_since_tick() },
+            );
             self
         }
 
-        pub fn added_since(mut self, tick: Tick) -> Self {
-            self.state.added_filter = Some((<$target>::type_id(), tick));
+        pub fn added_since<Co: Component>(mut self, tick: Tick) -> Self {
+            self.state.set_added_since_filter(Co::type_id(), tick);
             self
         }
 
-        pub fn changed_since(mut self, tick: Tick) -> Self {
-            self.state.changed_filter = Some((<$target>::type_id(), tick));
+        pub fn changed_since<Co: Component>(mut self, tick: Tick) -> Self {
+            self.state.set_changed_since_filter(Co::type_id(), tick);
+            self
+        }
+    };
+}
+
+macro_rules! impl_query_state_methods_scene_mut {
+    () => {
+        pub fn with<Co: Component>(mut self) -> Self {
+            self.state.with_components.push(Co::type_id());
+            self
+        }
+
+        pub fn without<Co: Component>(mut self) -> Self {
+            self.state.without_components.push(Co::type_id());
+            self
+        }
+
+        pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
+            self.state.with_any_components.extend(Cs::type_ids());
+            self
+        }
+
+        pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
+            self.state.without_any_components.extend(Cs::type_ids());
+            self
+        }
+
+        pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
+            self.state.with_components.extend(Cs::type_ids());
+            self
+        }
+
+        pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
+            self.state.without_components.extend(Cs::type_ids());
+            self
+        }
+
+        pub fn added<Co: Component>(mut self) -> Self {
+            self.state
+                .set_added_since_filter(Co::type_id(), self.scene.default_query_since_tick());
+            self
+        }
+
+        pub fn changed<Co: Component>(mut self) -> Self {
+            self.state.set_changed_since_filter(
+                Co::type_id(),
+                self.scene.default_query_since_tick(),
+            );
+            self
+        }
+
+        pub fn added_since<Co: Component>(mut self, tick: Tick) -> Self {
+            self.state.set_added_since_filter(Co::type_id(), tick);
+            self
+        }
+
+        pub fn changed_since<Co: Component>(mut self, tick: Tick) -> Self {
+            self.state.set_changed_since_filter(Co::type_id(), tick);
             self
         }
     };

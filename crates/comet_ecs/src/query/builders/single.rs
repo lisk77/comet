@@ -13,7 +13,7 @@ impl<'a, P: ReadFetch<'a> + 'a, Filters> QueryBuilder<'a, P, Filters> {
         }
     }
 
-    impl_query_state_methods_scene_ref!(P);
+    impl_query_state_methods_scene_ref!();
 
     pub fn filter<F>(self, f: F) -> QueryBuilderFiltered<'a, P, Filters, F>
     where
@@ -31,8 +31,8 @@ impl<'a, P: ReadFetch<'a> + 'a, Filters> QueryBuilder<'a, P, Filters> {
         QueryIter {
             accesses: build_single_read_accesses::<P>(self.scene, &self.state),
             idx: 0,
-            added_filter: self.state.added_filter,
-            changed_filter: self.state.changed_filter,
+            added_since_filters: self.state.added_since_filters,
+            changed_since_filters: self.state.changed_since_filters,
             _marker: PhantomData,
         }
     }
@@ -62,7 +62,7 @@ impl<'a, P: WriteFetch<'a> + 'a, Filters> Query<'a, P, Filters> {
         }
     }
 
-    impl_query_state_methods_write_ptr!(P);
+    impl_query_state_methods_write_ptr!();
 
     pub fn filter<F>(self, f: F) -> QueryFiltered<'a, P, Filters, F>
     where
@@ -80,8 +80,8 @@ impl<'a, P: WriteFetch<'a> + 'a, Filters> Query<'a, P, Filters> {
         QueryIterMut {
             accesses: build_single_write_accesses::<P>(self.scene, &self.state),
             idx: 0,
-            added_filter: self.state.added_filter,
-            changed_filter: self.state.changed_filter,
+            added_since_filters: self.state.added_since_filters,
+            changed_since_filters: self.state.changed_since_filters,
             _marker: PhantomData,
         }
     }
@@ -102,15 +102,15 @@ impl<'a, P: ReadFetch<'a> + 'a, Filters, F> QueryBuilderFiltered<'a, P, Filters,
 where
     F: Fn(&P::Component) -> bool + 'a,
 {
-    impl_query_state_methods_scene_ref!(P);
+    impl_query_state_methods_scene_ref!();
 
     pub fn iter(self) -> QueryIterFiltered<'a, P, F> {
         QueryIterFiltered {
             inner: QueryIter {
                 accesses: build_single_read_accesses::<P>(self.scene, &self.state),
                 idx: 0,
-                added_filter: self.state.added_filter,
-                changed_filter: self.state.changed_filter,
+                added_since_filters: self.state.added_since_filters,
+                changed_since_filters: self.state.changed_since_filters,
                 _marker: PhantomData,
             },
             filter: self.filter,
@@ -130,15 +130,15 @@ impl<'a, P: WriteFetch<'a> + 'a, Filters, F> QueryFiltered<'a, P, Filters, F>
 where
     F: Fn(&P::Component) -> bool + 'a,
 {
-    impl_query_state_methods_write_ptr!(P);
+    impl_query_state_methods_write_ptr!();
 
     pub fn iter(self) -> QueryIterMutFiltered<'a, P, F> {
         QueryIterMutFiltered {
             inner: QueryIterMut {
                 accesses: build_single_write_accesses::<P>(self.scene, &self.state),
                 idx: 0,
-                added_filter: self.state.added_filter,
-                changed_filter: self.state.changed_filter,
+                added_since_filters: self.state.added_since_filters,
+                changed_since_filters: self.state.changed_since_filters,
                 _marker: PhantomData,
             },
             filter: self.filter,

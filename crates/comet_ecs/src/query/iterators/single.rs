@@ -6,12 +6,17 @@ impl<'a, P: ReadFetch<'a>> Iterator for QueryIter<'a, P> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let (access, row) = next_access_row(&mut self.accesses, &mut self.idx)?;
-            if has_change_filters(self.added_filter, self.changed_filter) {
+            if has_change_filters(&self.added_since_filters, &self.changed_since_filters) {
                 let Some(entity) = (unsafe { fetch_entity(access.entities, access.len, row) }) else {
                     continue;
                 };
                 if unsafe {
-                    !matches_change_filters(access.scene, entity, self.added_filter, self.changed_filter)
+                    !matches_change_filters(
+                        access.scene,
+                        entity,
+                        &self.added_since_filters,
+                        &self.changed_since_filters,
+                    )
                 } {
                     continue;
                 }
@@ -32,8 +37,8 @@ impl<'a, P: WriteFetch<'a>> Iterator for QueryIterMut<'a, P> {
                 if !matches_change_filters(
                     access.scene,
                     entity,
-                    self.added_filter,
-                    self.changed_filter,
+                    &self.added_since_filters,
+                    &self.changed_since_filters,
                 ) {
                     continue;
                 }

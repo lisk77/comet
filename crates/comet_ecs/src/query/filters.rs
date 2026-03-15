@@ -15,13 +15,37 @@ pub(crate) struct QueryFilterState {
     pub(crate) without_components: Vec<TypeId>,
     pub(crate) with_any_components: Vec<TypeId>,
     pub(crate) without_any_components: Vec<TypeId>,
-    pub(crate) added_filter: Option<(TypeId, Tick)>,
-    pub(crate) changed_filter: Option<(TypeId, Tick)>,
+    pub(crate) added_since_filters: Vec<(TypeId, Tick)>,
+    pub(crate) changed_since_filters: Vec<(TypeId, Tick)>,
 }
 
 impl QueryFilterState {
     pub(crate) fn empty() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn set_added_since_filter(&mut self, type_id: TypeId, tick: Tick) {
+        if let Some((_, existing_tick)) = self
+            .added_since_filters
+            .iter_mut()
+            .find(|(existing_type_id, _)| *existing_type_id == type_id)
+        {
+            *existing_tick = tick;
+            return;
+        }
+        self.added_since_filters.push((type_id, tick));
+    }
+
+    pub(crate) fn set_changed_since_filter(&mut self, type_id: TypeId, tick: Tick) {
+        if let Some((_, existing_tick)) = self
+            .changed_since_filters
+            .iter_mut()
+            .find(|(existing_type_id, _)| *existing_type_id == type_id)
+        {
+            *existing_tick = tick;
+            return;
+        }
+        self.changed_since_filters.push((type_id, tick));
     }
 }
 
@@ -59,13 +83,13 @@ impl<Cs: ComponentTuple> QueryFilterSet for WithoutAny<Cs> {
 
 impl<C: Component> QueryFilterSet for Added<C> {
     fn apply(scene: &Scene, state: &mut QueryFilterState) {
-        state.added_filter = Some((C::type_id(), scene.query_default_tick()));
+        state.set_added_since_filter(C::type_id(), scene.default_query_since_tick());
     }
 }
 
 impl<C: Component> QueryFilterSet for Changed<C> {
     fn apply(scene: &Scene, state: &mut QueryFilterState) {
-        state.changed_filter = Some((C::type_id(), scene.query_default_tick()));
+        state.set_changed_since_filter(C::type_id(), scene.default_query_since_tick());
     }
 }
 
