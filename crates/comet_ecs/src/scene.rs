@@ -77,7 +77,7 @@ impl Scene {
         self.active_entities
     }
 
-    /// Returns the current logical change tick.
+    /// Returns the tick used to stamp component add/change/remove events.
     pub fn component_event_tick(&self) -> Tick {
         self.component_event_tick
     }

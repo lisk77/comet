@@ -22,11 +22,13 @@ pub(crate) use query_types::{
     QueryIterMutFiltered,
 };
 
+/// Builds a read-only query builder from a [`Scene`].
 pub trait QuerySpec<'a> {
     type Builder;
     fn build(scene: &'a Scene) -> Self::Builder;
 }
 
+/// Builds a mutable query value from a [`Scene`].
 pub trait QuerySpecMut<'a> {
     type Builder;
     fn build(scene: &'a mut Scene) -> Self::Builder;

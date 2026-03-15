@@ -211,46 +211,57 @@ impl App {
         self.scene.spawn_bundle(bundle)
     }
 
+    /// Queues spawning an empty entity.
     pub fn deferred_spawn_empty(&mut self) {
         self.scene.deferred_spawn_empty();
     }
 
+    /// Queues deleting an entity.
     pub fn deferred_delete_entity(&mut self, entity: Entity) {
         self.scene.deferred_delete_entity(entity);
     }
 
+    /// Queues registration of a single component type.
     pub fn deferred_register_component<C: Component>(&mut self) {
         self.scene.deferred_register_component::<C>();
     }
 
+    /// Queues registration of a tuple of component types.
     pub fn deferred_register_components<T: comet_ecs::ComponentTuple>(&mut self) {
         self.scene.deferred_register_components::<T>();
     }
 
+    /// Queues deregistration of a single component type.
     pub fn deferred_deregister_component<C: Component>(&mut self) {
         self.scene.deferred_deregister_component::<C>();
     }
 
+    /// Queues adding or setting a component on an entity.
     pub fn deferred_add_component<C: Component>(&mut self, entity: Entity, component: C) {
         self.scene.deferred_add_component::<C>(entity, component);
     }
 
+    /// Queues adding or setting multiple components on an entity.
     pub fn deferred_add_components<V: ComponentValueTuple>(&mut self, entity: Entity, components: V) {
         self.scene.deferred_add_components(entity, components);
     }
 
+    /// Queues removing a single component from an entity.
     pub fn deferred_remove_component<C: Component>(&mut self, entity: Entity) {
         self.scene.deferred_remove_component::<C>(entity);
     }
 
+    /// Queues removing multiple components from an entity.
     pub fn deferred_remove_components<T: comet_ecs::ComponentTuple>(&mut self, entity: Entity) {
         self.scene.deferred_remove_components::<T>(entity);
     }
 
+    /// Queues deleting all entities matching the given component type IDs.
     pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {
         self.scene.deferred_delete_entities_with(components);
     }
 
+    /// Queues prefab registration.
     pub fn deferred_register_prefab(
         &mut self,
         name: impl Into<String>,
@@ -259,30 +270,37 @@ impl App {
         self.scene.deferred_register_prefab(name, factory);
     }
 
+    /// Queues prefab spawning by name.
     pub fn deferred_spawn_prefab(&mut self, name: impl Into<String>) {
         self.scene.deferred_spawn_prefab(name);
     }
 
+    /// Queues spawning a single bundle.
     pub fn deferred_spawn_bundle<B: comet_ecs::Bundle>(&mut self, bundle: B) {
         self.scene.deferred_spawn_bundle(bundle);
     }
 
+    /// Queues batch spawning of bundles.
     pub fn deferred_spawn_bundle_batch<B: comet_ecs::Bundle>(&mut self, bundles: Vec<B>) {
         self.scene.deferred_spawn_bundle_batch(bundles);
     }
 
+    /// Queues adding a bundle to an existing entity.
     pub fn deferred_add_bundle<B: comet_ecs::Bundle>(&mut self, entity: Entity, bundle: B) {
         self.scene.deferred_add_bundle(entity, bundle);
     }
 
+    /// Applies all queued deferred scene commands immediately.
     pub fn apply_deferred_commands(&mut self) {
         self.scene.apply_commands();
     }
 
+    /// Returns the number of queued deferred scene commands.
     pub fn queued_deferred_command_count(&self) -> usize {
         self.scene.queued_command_count()
     }
 
+    /// Creates a query against the current scene.
     pub fn query<'a, Data, Filters>(
         &'a mut self,
     ) -> <comet_ecs::QueryParam<Data, Filters> as comet_ecs::QuerySpecMut<'a>>::Builder
@@ -348,6 +366,7 @@ impl App {
         self.scene.add_component(entity_id, component)
     }
 
+    /// Adds or sets multiple components on an entity.
     pub fn add_components<V: ComponentValueTuple>(&mut self, entity_id: Entity, components: V) {
         self.scene.add_components(entity_id, components);
     }
@@ -357,6 +376,7 @@ impl App {
         self.scene.remove_component::<C>(entity_id)
     }
 
+    /// Removes multiple components from an entity.
     pub fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity) {
         self.scene.remove_components::<T>(entity_id);
     }
