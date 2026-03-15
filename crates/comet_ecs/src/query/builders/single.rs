@@ -28,7 +28,10 @@ impl<'a, P: ReadFetch<'a> + 'a, Filters> QueryBuilder<'a, P, Filters> {
     }
 
     pub fn iter(self) -> QueryIter<'a, P> {
-        assert!(P::required(), "standalone optional query fetches are not supported");
+        assert!(
+            P::required(),
+            "standalone optional query fetches are not supported"
+        );
         QueryIter {
             accesses: build_single_read_accesses::<P>(self.scene, &self.state),
             idx: 0,
@@ -78,7 +81,10 @@ impl<'a, P: WriteFetch<'a> + 'a, Filters> Query<'a, P, Filters> {
     }
 
     pub fn iter(self) -> QueryIterMut<'a, P> {
-        assert!(P::required(), "standalone optional query fetches are not supported");
+        assert!(
+            P::required(),
+            "standalone optional query fetches are not supported"
+        );
         QueryIterMut {
             accesses: build_single_write_accesses::<P>(self.scene, &self.state),
             idx: 0,
@@ -107,7 +113,10 @@ where
     impl_query_state_methods_scene_ref!();
 
     pub fn iter(self) -> QueryIterFiltered<'a, P, F> {
-        assert!(P::required(), "standalone optional query fetches are not supported");
+        assert!(
+            P::required(),
+            "standalone optional query fetches are not supported"
+        );
         QueryIterFiltered {
             inner: QueryIter {
                 accesses: build_single_read_accesses::<P>(self.scene, &self.state),
@@ -136,7 +145,10 @@ where
     impl_query_state_methods_write_ptr!();
 
     pub fn iter(self) -> QueryIterMutFiltered<'a, P, F> {
-        assert!(P::required(), "standalone optional query fetches are not supported");
+        assert!(
+            P::required(),
+            "standalone optional query fetches are not supported"
+        );
         QueryIterMutFiltered {
             inner: QueryIterMut {
                 accesses: build_single_write_accesses::<P>(self.scene, &self.state),

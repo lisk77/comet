@@ -20,7 +20,10 @@ pub trait Bundle {
     where
         Self: Sized,
     {
-        bundles.into_iter().map(|bundle| bundle.spawn(scene)).collect()
+        bundles
+            .into_iter()
+            .map(|bundle| bundle.spawn(scene))
+            .collect()
     }
 }
 

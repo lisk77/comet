@@ -51,7 +51,7 @@ pub enum SceneCommand {
     },
     SpawnBatch {
         entities: Vec<Vec<ErasedComponent>>,
-    }
+    },
 }
 
 #[derive(Default)]
@@ -226,7 +226,9 @@ impl SceneCommands {
             SceneCommand::RemoveComponents { entity, type_ids } => {
                 scene.remove_with_components_immediate(entity, type_ids);
             }
-            SceneCommand::DeleteEntitiesWith(type_ids) => scene.delete_entities_with_immediate(type_ids),
+            SceneCommand::DeleteEntitiesWith(type_ids) => {
+                scene.delete_entities_with_immediate(type_ids)
+            }
             SceneCommand::RegisterPrefab { name, factory } => {
                 scene.register_prefab_immediate(&name, factory)
             }

@@ -8,7 +8,7 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     renderer.init_atlas();
 
     app.register_component::<Player>();
-    
+
     register_prefab!(
         app,
         "camera",
@@ -30,7 +30,7 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
 
 fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
     handle_input(app, dt);
-    
+
     renderer.render_scene_2d(app.scene_mut());
 }
 

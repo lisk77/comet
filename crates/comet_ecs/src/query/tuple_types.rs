@@ -1,5 +1,5 @@
-use super::*;
 use super::iterators::RowAccess;
+use super::*;
 
 macro_rules! define_tuple_types_arity {
     (

@@ -10,15 +10,12 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
 
     app.register_component::<Player>();
 
-    app.spawn((
-        Transform2D::new(), 
-        Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)
-    ));
+    app.spawn((Transform2D::new(), Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)));
 
     app.spawn((
         Player,
-        Transform2D::new(), 
-        Render2D::with_texture("res/textures/comet_icon.png")
+        Transform2D::new(),
+        Render2D::with_texture("res/textures/comet_icon.png"),
     ));
 }
 

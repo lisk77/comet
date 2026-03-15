@@ -1,6 +1,7 @@
 use comet_colors::{Color as ColorTrait, LinearRgba};
 use comet_ecs::{
-    Camera2D, Component, ComponentTuple, ComponentValueTuple, Entity, Render2D, Scene, Text, Transform2D, Transform3D
+    Camera2D, Component, ComponentTuple, ComponentValueTuple, Entity, Render2D, Scene, Text,
+    Transform2D, Transform3D,
 };
 use comet_input::keyboard::Key;
 use comet_log::*;
@@ -242,7 +243,11 @@ impl App {
     }
 
     /// Queues adding or setting multiple components on an entity.
-    pub fn deferred_add_components<V: ComponentValueTuple>(&mut self, entity: Entity, components: V) {
+    pub fn deferred_add_components<V: ComponentValueTuple>(
+        &mut self,
+        entity: Entity,
+        components: V,
+    ) {
         self.scene.deferred_add_components(entity, components);
     }
 

@@ -7,7 +7,8 @@ impl<'a, P: ReadFetch<'a>> Iterator for QueryIter<'a, P> {
         loop {
             let (access, row) = next_access_row(&mut self.accesses, &mut self.idx)?;
             if has_change_filters(&self.added_since_filters, &self.changed_since_filters) {
-                let Some(entity) = (unsafe { fetch_entity(access.entities, access.len, row) }) else {
+                let Some(entity) = (unsafe { fetch_entity(access.entities, access.len, row) })
+                else {
                     continue;
                 };
                 if unsafe {
@@ -21,7 +22,9 @@ impl<'a, P: ReadFetch<'a>> Iterator for QueryIter<'a, P> {
                     continue;
                 }
             }
-            unsafe { return P::get(access.col, row); }
+            unsafe {
+                return P::get(access.col, row);
+            }
         }
     }
 }

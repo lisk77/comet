@@ -4,7 +4,9 @@ use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleSpawnPlan, ComponentChangeState};
-use crate::{Component, ComponentTuple, ComponentValueTuple, Entity, EntityLocation, IdQueue, Tick};
+use crate::{
+    Component, ComponentTuple, ComponentValueTuple, Entity, EntityLocation, IdQueue, Tick,
+};
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
@@ -151,8 +153,13 @@ impl Scene {
     }
 
     /// Queues adding or setting multiple components on an entity.
-    pub fn deferred_add_components<V: ComponentValueTuple>(&mut self, entity: Entity, components: V) {
-        self.commands.add_components(entity, components.into_components());
+    pub fn deferred_add_components<V: ComponentValueTuple>(
+        &mut self,
+        entity: Entity,
+        components: V,
+    ) {
+        self.commands
+            .add_components(entity, components.into_components());
     }
 
     /// Queues removing a component from an entity.
@@ -167,7 +174,8 @@ impl Scene {
 
     /// Queues deleting all entities that contain the given component set.
     pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {
-        self.commands.push(SceneCommand::DeleteEntitiesWith(components));
+        self.commands
+            .push(SceneCommand::DeleteEntitiesWith(components));
     }
 
     /// Queues prefab registration.
@@ -555,13 +563,17 @@ impl Scene {
         with_any_components: &[TypeId],
         without_any_components: &[TypeId],
     ) -> Vec<(usize, usize)> {
-        let Some((with_components, without_components, with_any_components, without_any_components)) =
-            Self::normalized_component_filters(
-                with_components,
-                without_components,
-                with_any_components,
-                without_any_components,
-            )
+        let Some((
+            with_components,
+            without_components,
+            with_any_components,
+            without_any_components,
+        )) = Self::normalized_component_filters(
+            with_components,
+            without_components,
+            with_any_components,
+            without_any_components,
+        )
         else {
             return Vec::new();
         };
@@ -569,15 +581,13 @@ impl Scene {
         {
             let mut cache = self.query_plan_cache.borrow_mut();
             cache.sync_version(self.archetype_version);
-            if let Some(matches) =
-                cache.get_single_cloned(
-                    component,
-                    &with_components,
-                    &without_components,
-                    &with_any_components,
-                    &without_any_components,
-                )
-            {
+            if let Some(matches) = cache.get_single_cloned(
+                component,
+                &with_components,
+                &without_components,
+                &with_any_components,
+                &without_any_components,
+            ) {
                 return matches;
             }
         }
@@ -1129,9 +1139,13 @@ impl Scene {
 
     pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
         let component_types = components.type_ids();
-        self.__spawn_bundle_typed(TypeId::of::<V>(), &component_types, |columns, column_indices, row| {
-            components.write_components(columns, column_indices, row);
-        })
+        self.__spawn_bundle_typed(
+            TypeId::of::<V>(),
+            &component_types,
+            |columns, column_indices, row| {
+                components.write_components(columns, column_indices, row);
+            },
+        )
     }
 
     pub fn spawn_batch<V: ComponentValueTuple + 'static>(
@@ -1167,7 +1181,11 @@ impl Scene {
         self.add_with_components_immediate(entity, bundle.into_components());
     }
 
-    pub(crate) fn add_with_components(&mut self, entity_id: Entity, components: Vec<ErasedComponent>) {
+    pub(crate) fn add_with_components(
+        &mut self,
+        entity_id: Entity,
+        components: Vec<ErasedComponent>,
+    ) {
         self.add_with_components_immediate(entity_id, components);
     }
 
@@ -1182,7 +1200,10 @@ impl Scene {
         if !self.validate_components_registered(&components) {
             return;
         }
-        let submitted_types: Vec<TypeId> = components.iter().map(|component| component.type_id).collect();
+        let submitted_types: Vec<TypeId> = components
+            .iter()
+            .map(|component| component.type_id)
+            .collect();
 
         let loc = match self.get_location(entity_id) {
             Some(loc) => loc,
@@ -1218,9 +1239,12 @@ impl Scene {
         } else {
             let mut existed_before_add = HashMap::with_capacity(submitted_types.len());
             for &type_id in &submitted_types {
-                existed_before_add
-                    .entry(type_id)
-                    .or_insert_with(|| self.archetypes.get(old_arch_id).column_index(type_id).is_some());
+                existed_before_add.entry(type_id).or_insert_with(|| {
+                    self.archetypes
+                        .get(old_arch_id)
+                        .column_index(type_id)
+                        .is_some()
+                });
             }
 
             if loc.row != old_len - 1 {
@@ -1280,7 +1304,10 @@ impl Scene {
         self.spawn_with_components_immediate(components)
     }
 
-    pub(crate) fn spawn_with_components_immediate(&mut self, components: Vec<ErasedComponent>) -> Entity {
+    pub(crate) fn spawn_with_components_immediate(
+        &mut self,
+        components: Vec<ErasedComponent>,
+    ) -> Entity {
         if components.is_empty() {
             return self.new_entity_immediate();
         }
@@ -1389,7 +1416,8 @@ impl Scene {
         let row = self.place_entity_in_archetype(entity_id, archetype);
         let arch = self.archetypes.get_mut(archetype);
         // SAFETY: bundle_spawn_cache is not mutated between pointer capture and use.
-        let column_indices = unsafe { slice::from_raw_parts(column_indices_ptr, column_indices_len) };
+        let column_indices =
+            unsafe { slice::from_raw_parts(column_indices_ptr, column_indices_len) };
         writer(arch.columns_mut(), column_indices, row);
 
         debug_assert!(
@@ -1481,7 +1509,8 @@ impl Scene {
 
         let current_next_is_reusable = (self.next_id as usize) < self.entities.len()
             && self.entities[self.next_id as usize].is_none();
-        let reusable_available = self.id_queue.size() as usize + usize::from(current_next_is_reusable);
+        let reusable_available =
+            self.id_queue.size() as usize + usize::from(current_next_is_reusable);
         let reuse_count = reusable_available.min(count);
 
         let fresh_count = count - reuse_count;
@@ -1503,7 +1532,8 @@ impl Scene {
         let mut entities = Vec::with_capacity(count);
         let mut bundles = bundles.into_iter();
         // SAFETY: bundle_spawn_cache is not mutated between pointer capture and use.
-        let column_indices = unsafe { slice::from_raw_parts(column_indices_ptr, column_indices_len) };
+        let column_indices =
+            unsafe { slice::from_raw_parts(column_indices_ptr, column_indices_len) };
         let arch = self.archetypes.get_mut(archetype);
 
         for _ in 0..reuse_count {
@@ -1571,22 +1601,22 @@ mod tests {
 
     #[derive(Component)]
     struct A;
-    
+
     #[derive(Component)]
     struct B;
-    
+
     #[derive(Component, Eq)]
     struct Value(i32);
-    
+
     #[derive(Component)]
     struct Unregistered;
 
     #[derive(Component)]
     struct IncludeTag;
-    
+
     #[derive(Component)]
     struct ExcludeTag;
-    
+
     #[test]
     fn deregister_component_is_blocked_while_live_instances_exist() {
         let mut scene = Scene::new();
@@ -1693,7 +1723,10 @@ mod tests {
 
         assert!(scene.get_component::<A>(entity).is_none());
         assert!(scene.get_component::<B>(entity).is_none());
-        assert_eq!(scene.get_component::<Value>(entity).map(|value| value.0), Some(10));
+        assert_eq!(
+            scene.get_component::<Value>(entity).map(|value| value.0),
+            Some(10)
+        );
     }
 
     #[test]
@@ -1757,10 +1790,7 @@ mod tests {
         scene.add_component(filtered_out, B);
 
         let values: Vec<i32> = scene
-            .query::<
-                &Value,
-                (crate::With<IncludeTag>, crate::WithoutAny<(ExcludeTag, B)>),
-            >()
+            .query::<&Value, (crate::With<IncludeTag>, crate::WithoutAny<(ExcludeTag, B)>)>()
             .iter()
             .map(|v| v.0)
             .collect();
@@ -2009,7 +2039,8 @@ mod tests {
         scene.add_component(without_a, Value(2));
 
         scene.set_component_event_tick(10);
-        scene.query_mut::<(&Value, Option<&mut A>), ()>()
+        scene
+            .query_mut::<(&Value, Option<&mut A>), ()>()
             .for_each(|(_value, maybe_a)| {
                 if let Some(a) = maybe_a {
                     *a = A;

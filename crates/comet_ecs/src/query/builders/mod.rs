@@ -41,10 +41,8 @@ macro_rules! impl_query_state_methods_scene_ref {
         }
 
         pub fn changed<Co: Component>(mut self) -> Self {
-            self.state.set_changed_since_filter(
-                Co::type_id(),
-                self.scene.default_query_since_tick(),
-            );
+            self.state
+                .set_changed_since_filter(Co::type_id(), self.scene.default_query_since_tick());
             self
         }
 
@@ -93,18 +91,16 @@ macro_rules! impl_query_state_methods_write_ptr {
         }
 
         pub fn added<Co: Component>(mut self) -> Self {
-            self.state.set_added_since_filter(
-                Co::type_id(),
-                unsafe { (&*self.scene).default_query_since_tick() },
-            );
+            self.state.set_added_since_filter(Co::type_id(), unsafe {
+                (&*self.scene).default_query_since_tick()
+            });
             self
         }
 
         pub fn changed<Co: Component>(mut self) -> Self {
-            self.state.set_changed_since_filter(
-                Co::type_id(),
-                unsafe { (&*self.scene).default_query_since_tick() },
-            );
+            self.state.set_changed_since_filter(Co::type_id(), unsafe {
+                (&*self.scene).default_query_since_tick()
+            });
             self
         }
 
@@ -159,10 +155,8 @@ macro_rules! impl_query_state_methods_scene_mut {
         }
 
         pub fn changed<Co: Component>(mut self) -> Self {
-            self.state.set_changed_since_filter(
-                Co::type_id(),
-                self.scene.default_query_since_tick(),
-            );
+            self.state
+                .set_changed_since_filter(Co::type_id(), self.scene.default_query_since_tick());
             self
         }
 
@@ -230,19 +224,25 @@ fn build_single_read_accesses<'a, P: ReadFetch<'a>>(
     state: &QueryFilterState,
 ) -> Vec<QueryAccess> {
     let mut accesses = Vec::new();
-    for_each_matching_archetype(scene, state, P::type_id(), &[P::type_id()], |scene, arch_id, col_idx| {
-        let arch = scene.archetypes().get(arch_id);
-        let col = &arch.columns()[col_idx] as *const _;
-        let entities = arch.entities().as_ptr();
-        let scene = scene as *const Scene;
-        accesses.push(QueryAccess {
-            entities,
-            scene,
-            col,
-            len: arch.len(),
-            row: 0,
-        });
-    });
+    for_each_matching_archetype(
+        scene,
+        state,
+        P::type_id(),
+        &[P::type_id()],
+        |scene, arch_id, col_idx| {
+            let arch = scene.archetypes().get(arch_id);
+            let col = &arch.columns()[col_idx] as *const _;
+            let entities = arch.entities().as_ptr();
+            let scene = scene as *const Scene;
+            accesses.push(QueryAccess {
+                entities,
+                scene,
+                col,
+                len: arch.len(),
+                row: 0,
+            });
+        },
+    );
     accesses
 }
 
@@ -252,19 +252,25 @@ fn build_single_write_accesses<'a, P: WriteFetch<'a>>(
 ) -> Vec<QueryMutAccess> {
     let mut accesses = Vec::new();
     let scene_mut = unsafe { &mut *scene };
-    for_each_matching_archetype_mut(scene_mut, state, P::type_id(), &[P::type_id()], |scene, arch_id, col_idx| {
-        let arch = scene.archetypes_mut().get_mut(arch_id);
-        let len = arch.len();
-        let col = &mut arch.columns_mut()[col_idx] as *mut _;
-        let entities = arch.entities().as_ptr();
-        accesses.push(QueryMutAccess {
-            entities,
-            col,
-            scene: scene as *mut Scene,
-            len,
-            row: 0,
-        });
-    });
+    for_each_matching_archetype_mut(
+        scene_mut,
+        state,
+        P::type_id(),
+        &[P::type_id()],
+        |scene, arch_id, col_idx| {
+            let arch = scene.archetypes_mut().get_mut(arch_id);
+            let len = arch.len();
+            let col = &mut arch.columns_mut()[col_idx] as *mut _;
+            let entities = arch.entities().as_ptr();
+            accesses.push(QueryMutAccess {
+                entities,
+                col,
+                scene: scene as *mut Scene,
+                len,
+                row: 0,
+            });
+        },
+    );
     accesses
 }
 

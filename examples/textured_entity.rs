@@ -5,15 +5,12 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     renderer.init_atlas_by_paths(vec!["res/textures/comet_icon.png".to_string()]);
 
     // Creating a camera entity
-    app.spawn((
-        Transform2D::new(), 
-        Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)
-    ));
+    app.spawn((Transform2D::new(), Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)));
 
     // Creating a textured entity
     app.spawn((
-        Transform2D::new(), 
-        Render2D::with_texture("res/textures/comet_icon.png")
+        Transform2D::new(),
+        Render2D::with_texture("res/textures/comet_icon.png"),
     ));
 }
 

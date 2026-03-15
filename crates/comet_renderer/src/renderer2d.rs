@@ -13,7 +13,10 @@ use comet_math::{m4, v2, v3};
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
-use std::{sync::Arc, time::{Duration, Instant}};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -103,7 +106,7 @@ impl RenderHandle2D {
             self.last_size = Some(size);
             size
         })
-            .unwrap_or_else(|| self.last_size.unwrap_or(PhysicalSize::new(0, 0)))
+        .unwrap_or_else(|| self.last_size.unwrap_or(PhysicalSize::new(0, 0)))
     }
 
     pub fn scale_factor(&mut self) -> f64 {
@@ -115,23 +118,27 @@ impl RenderHandle2D {
             Renderer2DEvent::ScaleFactor(factor) => Some(factor),
             _ => None,
         })
-            .unwrap_or(1.0)
+        .unwrap_or(1.0)
     }
 
     pub fn precompute_text_bounds(&mut self, text: &str, font_path: &str, font_size: f32) -> v2 {
-        let _ = self.command_sender.send(Renderer2DCommand::PrecomputedTextBounds {
-            text: text.to_string(),
-            font_path: font_path.to_string(),
-            font_size,
-        });
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::PrecomputedTextBounds {
+                text: text.to_string(),
+                font_path: font_path.to_string(),
+                font_size,
+            });
         self.recv_matching_event(Duration::from_secs(5), |event| {
             matches!(event, Renderer2DEvent::PrecomputedTextBounds { .. })
         })
         .and_then(|e| match e {
-            Renderer2DEvent::PrecomputedTextBounds { width, height } => Some(v2::new(width, height)),
+            Renderer2DEvent::PrecomputedTextBounds { width, height } => {
+                Some(v2::new(width, height))
+            }
             _ => None,
         })
-            .unwrap_or(v2::ZERO)
+        .unwrap_or(v2::ZERO)
     }
 
     pub fn poll_events(&mut self) {
@@ -142,11 +149,7 @@ impl RenderHandle2D {
         }
     }
 
-    fn recv_matching_event<F>(
-        &mut self,
-        timeout: Duration,
-        predicate: F,
-    ) -> Option<Renderer2DEvent>
+    fn recv_matching_event<F>(&mut self, timeout: Duration, predicate: F) -> Option<Renderer2DEvent>
     where
         F: Fn(&Renderer2DEvent) -> bool,
     {
