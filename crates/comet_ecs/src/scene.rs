@@ -1969,4 +1969,54 @@ mod tests {
             .count();
         assert_eq!(non_matching, 0);
     }
+
+    #[test]
+    fn query_optional_read_fetches_return_none_when_component_is_missing() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<A>();
+
+        let with_a = scene.new_entity();
+        scene.add_component(with_a, Value(1));
+        scene.add_component(with_a, A);
+
+        let without_a = scene.new_entity();
+        scene.add_component(without_a, Value(2));
+
+        let results: Vec<(i32, bool)> = scene
+            .query::<(&Value, Option<&A>), ()>()
+            .iter()
+            .map(|(value, maybe_a)| (value.0, maybe_a.is_some()))
+            .collect();
+
+        assert_eq!(results.len(), 2);
+        assert!(results.contains(&(1, true)));
+        assert!(results.contains(&(2, false)));
+    }
+
+    #[test]
+    fn query_optional_write_fetches_do_not_mark_missing_components_as_changed() {
+        let mut scene = Scene::new();
+        scene.register_component::<Value>();
+        scene.register_component::<A>();
+
+        let with_a = scene.new_entity();
+        scene.set_component_event_tick(1);
+        scene.add_component(with_a, Value(1));
+        scene.add_component(with_a, A);
+
+        let without_a = scene.new_entity();
+        scene.add_component(without_a, Value(2));
+
+        scene.set_component_event_tick(10);
+        scene.query_mut::<(&Value, Option<&mut A>), ()>()
+            .for_each(|(_value, maybe_a)| {
+                if let Some(a) = maybe_a {
+                    *a = A;
+                }
+            });
+
+        assert!(scene.component_changed_since::<A>(with_a, 1));
+        assert!(!scene.component_changed_since::<A>(without_a, 1));
+    }
 }

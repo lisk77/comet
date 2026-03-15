@@ -43,7 +43,7 @@ impl<'a, P: WriteFetch<'a>> Iterator for QueryIterMut<'a, P> {
                     continue;
                 }
                 let item = P::get(access.col, row)?;
-                if P::writes() {
+                if P::writes() && P::is_present(&item) {
                     (&mut *access.scene).mark_component_changed_for_query(entity, P::type_id());
                 }
                 return Some(item);

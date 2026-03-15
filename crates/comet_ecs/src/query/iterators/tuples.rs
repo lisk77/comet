@@ -57,11 +57,11 @@ macro_rules! impl_tuple_iterators_arity {
                         let first_item = $first_ty::get(access.$first_col, row)?;
                         $(let $col = $ty::get(access.$col, row)?;)+
                         if $first_ty::writes() || $($ty::writes())||+ {
-                            if $first_ty::writes() {
+                            if $first_ty::writes() && $first_ty::is_present(&first_item) {
                                 (&mut *access.scene).mark_component_changed_for_query(entity, $first_ty::type_id());
                             }
                             $(
-                                if $ty::writes() {
+                                if $ty::writes() && $ty::is_present(&$col) {
                                     (&mut *access.scene).mark_component_changed_for_query(entity, $ty::type_id());
                                 }
                             )+
@@ -134,11 +134,11 @@ macro_rules! impl_entity_tuple_iterators_arity {
                         }
                         let first_item = $first_ty::get(access.$first_col, row)?;
                         $(let $col = $ty::get(access.$col, row)?;)*
-                        if $first_ty::writes() {
+                        if $first_ty::writes() && $first_ty::is_present(&first_item) {
                             (&mut *access.scene).mark_component_changed_for_query(entity, $first_ty::type_id());
                         }
                         $(
-                            if $ty::writes() {
+                            if $ty::writes() && $ty::is_present(&$col) {
                                 (&mut *access.scene).mark_component_changed_for_query(entity, $ty::type_id());
                             }
                         )*

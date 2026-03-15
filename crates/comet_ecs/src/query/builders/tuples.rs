@@ -1,5 +1,6 @@
 use super::*;
 use crate::query::tuple_types::*;
+use std::ptr;
 
 macro_rules! impl_tuple_builders_arity {
     (
@@ -49,16 +50,29 @@ macro_rules! impl_tuple_builders_arity {
             impl_query_state_methods_scene_ref!();
 
             pub fn iter(self) -> $iter<'a, $first_ty $(, $ty)*> {
+                assert!(
+                    $first_ty::required(),
+                    "the first tuple query fetch cannot be optional"
+                );
                 let mut accesses = Vec::new();
-                let required = [$first_ty::type_id(), $($ty::type_id()),+];
+                #[allow(unused_mut)]
+                let mut required = vec![$first_ty::type_id()];
+                $(
+                    if $ty::required() {
+                        required.push($ty::type_id());
+                    }
+                )+
                 for_each_matching_archetype(self.scene, &self.state, $first_ty::type_id(), &required, |scene_ref, arch_id, first_idx| {
                     let arch = scene_ref.archetypes().get(arch_id);
-                    $(let Some($idx) = arch.column_index($ty::type_id()) else {
-                        return;
-                    };)+
                     let cols = arch.columns();
                     let $first_col = &cols[first_idx] as *const _;
-                    $(let $col = &cols[$idx] as *const _;)+
+                    $(
+                        let $col = match arch.column_index($ty::type_id()) {
+                            Some($idx) => &cols[$idx] as *const _,
+                            None if !$ty::required() => ptr::null(),
+                            None => return,
+                        };
+                    )+
                     let entities = arch.entities().as_ptr();
                     let scene = scene_ref as *const Scene;
                     accesses.push($access {
@@ -92,17 +106,36 @@ macro_rules! impl_tuple_builders_arity {
             impl_query_state_methods_scene_mut!();
 
             pub fn iter(self) -> $iter_mut<'a, $first_ty, $($ty),+> {
+                assert!(
+                    $first_ty::required(),
+                    "the first tuple query fetch cannot be optional"
+                );
                 let mut accesses = Vec::new();
-                let required = [$first_ty::type_id(), $($ty::type_id()),+];
+                #[allow(unused_mut)]
+                let mut required = vec![$first_ty::type_id()];
+                $(
+                    if $ty::required() {
+                        required.push($ty::type_id());
+                    }
+                )+
                 for_each_matching_archetype_mut(self.scene, &self.state, $first_ty::type_id(), &required, |scene_ref, arch_id, first_idx| {
                     let arch = scene_ref.archetypes_mut().get_mut(arch_id);
-                    $(let Some($idx) = arch.column_index($ty::type_id()) else {
-                        return;
-                    };)+
+                    $(
+                        let $idx = match arch.column_index($ty::type_id()) {
+                            Some(idx) => Some(idx),
+                            None if !$ty::required() => None,
+                            None => return,
+                        };
+                    )+
                     let len = arch.len();
                     let cols = arch.columns_mut();
                     let $first_col = &mut cols[first_idx] as *mut _;
-                    $(let $col = &mut cols[$idx] as *mut _;)+
+                    $(
+                        let $col = match $idx {
+                            Some(idx) => &mut cols[idx] as *mut _,
+                            None => ptr::null_mut(),
+                        };
+                    )+
                     let entities = arch.entities().as_ptr();
                     let scene = scene_ref as *mut Scene;
                     accesses.push($access_mut {
@@ -186,16 +219,29 @@ macro_rules! impl_entity_tuple_builders_arity {
             impl_query_state_methods_scene_ref!();
 
             pub fn iter(self) -> $iter<'a, $first_ty $(, $ty)*> {
+                assert!(
+                    $first_ty::required(),
+                    "the first entity-tuple query fetch cannot be optional"
+                );
                 let mut accesses = Vec::new();
-                let required = [$first_ty::type_id() $(, $ty::type_id())*];
+                #[allow(unused_mut)]
+                let mut required = vec![$first_ty::type_id()];
+                $(
+                    if $ty::required() {
+                        required.push($ty::type_id());
+                    }
+                )*
                 for_each_matching_archetype(self.scene, &self.state, $first_ty::type_id(), &required, |scene_ref, arch_id, first_idx| {
                     let arch = scene_ref.archetypes().get(arch_id);
-                    $(let Some($idx) = arch.column_index($ty::type_id()) else {
-                        return;
-                    };)*
                     let cols = arch.columns();
                     let $first_col = &cols[first_idx] as *const _;
-                    $(let $col = &cols[$idx] as *const _;)*
+                    $(
+                        let $col = match arch.column_index($ty::type_id()) {
+                            Some($idx) => &cols[$idx] as *const _,
+                            None if !$ty::required() => ptr::null(),
+                            None => return,
+                        };
+                    )*
                     let entities = arch.entities().as_ptr();
                     let scene = scene_ref as *const Scene;
                     accesses.push($access {
@@ -229,17 +275,36 @@ macro_rules! impl_entity_tuple_builders_arity {
             impl_query_state_methods_scene_mut!();
 
             pub fn iter(self) -> $iter_mut<'a, $first_ty $(, $ty)*> {
+                assert!(
+                    $first_ty::required(),
+                    "the first entity-tuple query fetch cannot be optional"
+                );
                 let mut accesses = Vec::new();
-                let required = [$first_ty::type_id() $(, $ty::type_id())*];
+                #[allow(unused_mut)]
+                let mut required = vec![$first_ty::type_id()];
+                $(
+                    if $ty::required() {
+                        required.push($ty::type_id());
+                    }
+                )*
                 for_each_matching_archetype_mut(self.scene, &self.state, $first_ty::type_id(), &required, |scene_ref, arch_id, first_idx| {
                     let arch = scene_ref.archetypes_mut().get_mut(arch_id);
-                    $(let Some($idx) = arch.column_index($ty::type_id()) else {
-                        return;
-                    };)*
+                    $(
+                        let $idx = match arch.column_index($ty::type_id()) {
+                            Some(idx) => Some(idx),
+                            None if !$ty::required() => None,
+                            None => return,
+                        };
+                    )*
                     let len = arch.len();
                     let cols = arch.columns_mut();
                     let $first_col = &mut cols[first_idx] as *mut _;
-                    $(let $col = &mut cols[$idx] as *mut _;)*
+                    $(
+                        let $col = match $idx {
+                            Some(idx) => &mut cols[idx] as *mut _,
+                            None => ptr::null_mut(),
+                        };
+                    )*
                     let entities = arch.entities().as_ptr();
                     let scene = scene_ref as *mut Scene;
                     accesses.push($access_mut {

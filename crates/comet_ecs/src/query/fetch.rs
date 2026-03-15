@@ -45,6 +45,12 @@ pub trait ReadFetch<'a> {
     unsafe fn get(col: *const comet_structs::Column, row: usize) -> Option<Self::Item>;
 
     fn as_ref(item: &Self::Item) -> &Self::Component;
+
+    fn required() -> bool {
+        true
+    }
+
+    fn is_present(item: &Self::Item) -> bool;
 }
 
 impl<'a, C: Component> ReadFetch<'a> for &'a C {
@@ -57,6 +63,34 @@ impl<'a, C: Component> ReadFetch<'a> for &'a C {
 
     fn as_ref(item: &Self::Item) -> &Self::Component {
         item
+    }
+
+    fn is_present(_item: &Self::Item) -> bool {
+        true
+    }
+}
+
+impl<'a, C: Component> ReadFetch<'a> for Option<&'a C> {
+    type Component = C;
+    type Item = Option<&'a C>;
+
+    unsafe fn get(col: *const comet_structs::Column, row: usize) -> Option<Self::Item> {
+        if col.is_null() {
+            return Some(None);
+        }
+        Some(unsafe { (&*col).get::<C>(row) })
+    }
+
+    fn as_ref(item: &Self::Item) -> &Self::Component {
+        item.expect("optional query filter expected component to be present")
+    }
+
+    fn required() -> bool {
+        false
+    }
+
+    fn is_present(item: &Self::Item) -> bool {
+        item.is_some()
     }
 }
 
@@ -73,6 +107,12 @@ pub trait WriteFetch<'a> {
     fn as_ref(item: &Self::Item) -> &Self::Component;
 
     fn writes() -> bool;
+
+    fn required() -> bool {
+        true
+    }
+
+    fn is_present(item: &Self::Item) -> bool;
 }
 
 impl<'a, C: Component> WriteFetch<'a> for &'a mut C {
@@ -88,6 +128,10 @@ impl<'a, C: Component> WriteFetch<'a> for &'a mut C {
     }
 
     fn writes() -> bool {
+        true
+    }
+
+    fn is_present(_item: &Self::Item) -> bool {
         true
     }
 }
@@ -106,5 +150,66 @@ impl<'a, C: Component> WriteFetch<'a> for &'a C {
 
     fn writes() -> bool {
         false
+    }
+
+    fn is_present(_item: &Self::Item) -> bool {
+        true
+    }
+}
+
+impl<'a, C: Component> WriteFetch<'a> for Option<&'a C> {
+    type Component = C;
+    type Item = Option<&'a C>;
+
+    unsafe fn get(col: *mut comet_structs::Column, row: usize) -> Option<Self::Item> {
+        if col.is_null() {
+            return Some(None);
+        }
+        Some(unsafe { (&*col).get::<C>(row) })
+    }
+
+    fn as_ref(item: &Self::Item) -> &Self::Component {
+        item.expect("optional query filter expected component to be present")
+    }
+
+    fn writes() -> bool {
+        false
+    }
+
+    fn required() -> bool {
+        false
+    }
+
+    fn is_present(item: &Self::Item) -> bool {
+        item.is_some()
+    }
+}
+
+impl<'a, C: Component> WriteFetch<'a> for Option<&'a mut C> {
+    type Component = C;
+    type Item = Option<&'a mut C>;
+
+    unsafe fn get(col: *mut comet_structs::Column, row: usize) -> Option<Self::Item> {
+        if col.is_null() {
+            return Some(None);
+        }
+        Some(unsafe { (&mut *col).get_mut::<C>(row) })
+    }
+
+    fn as_ref(item: &Self::Item) -> &Self::Component {
+        item.as_deref()
+            .expect("optional query filter expected component to be present")
+    }
+
+    fn writes() -> bool {
+        true
+    }
+
+    fn required() -> bool {
+        false
+    }
+
+    fn is_present(item: &Self::Item) -> bool {
+        item.is_some()
     }
 }
