@@ -107,15 +107,12 @@ impl App {
         match preset {
             ApplicationType::App2D => {
                 info!("Creating 2D app!");
-                self.scene.register_component::<Transform2D>();
-                self.scene.register_component::<Render2D>();
-                self.scene.register_component::<Camera2D>();
-                self.scene.register_component::<Text>();
+                self.scene
+                    .register_components::<(Transform2D, Render2D, Camera2D, Text)>();
             }
             ApplicationType::App3D => {
                 info!("Creating 3D app!");
-                self.scene.register_component::<Transform3D>();
-                self.scene.register_component::<Text>();
+                self.scene.register_components::<(Transform3D, Text)>();
             }
         };
         self
@@ -226,6 +223,10 @@ impl App {
         self.scene.deferred_register_component::<C>();
     }
 
+    pub fn deferred_register_components<T: comet_ecs::ComponentTuple>(&mut self) {
+        self.scene.deferred_register_components::<T>();
+    }
+
     pub fn deferred_deregister_component<C: Component>(&mut self) {
         self.scene.deferred_deregister_component::<C>();
     }
@@ -329,6 +330,11 @@ impl App {
     /// Registers a new component in the `Scene`.
     pub fn register_component<C: Component>(&mut self) {
         self.scene.register_component::<C>()
+    }
+
+    /// Registers a tuple of component types in the `Scene`.
+    pub fn register_components<T: comet_ecs::ComponentTuple>(&mut self) {
+        self.scene.register_components::<T>()
     }
 
     /// Deregisters a component from the `Scene`.

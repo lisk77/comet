@@ -1,9 +1,11 @@
-use crate::{Component, ErasedComponent};
+use crate::{Component, ErasedComponent, Scene, SceneCommands};
 use comet_structs::Column;
 use std::any::TypeId;
 
 pub trait ComponentTuple {
     fn type_ids() -> Vec<TypeId>;
+    fn register_all(scene: &mut Scene);
+    fn deferred_register_all(commands: &mut SceneCommands);
 }
 
 pub trait ComponentValueTuple {
@@ -21,6 +23,24 @@ pub trait ComponentValueTuple {
 impl ComponentTuple for () {
     fn type_ids() -> Vec<TypeId> {
         Vec::new()
+    }
+
+    fn register_all(_scene: &mut Scene) {}
+
+    fn deferred_register_all(_commands: &mut SceneCommands) {}
+}
+
+impl<C: Component> ComponentTuple for C {
+    fn type_ids() -> Vec<TypeId> {
+        vec![C::type_id()]
+    }
+
+    fn register_all(scene: &mut Scene) {
+        scene.register_component::<C>();
+    }
+
+    fn deferred_register_all(commands: &mut SceneCommands) {
+        commands.register_component::<C>();
     }
 }
 
@@ -78,6 +98,14 @@ macro_rules! impl_component_tuple {
         impl<$($name: Component),+> ComponentTuple for ($($name,)+) {
             fn type_ids() -> Vec<TypeId> {
                 vec![$($name::type_id()),+]
+            }
+
+            fn register_all(scene: &mut Scene) {
+                $(scene.register_component::<$name>();)+
+            }
+
+            fn deferred_register_all(commands: &mut SceneCommands) {
+                $(commands.register_component::<$name>();)+
             }
         }
 

@@ -136,6 +136,11 @@ impl Scene {
         self.commands.register_component::<C>();
     }
 
+    /// Queues registration of a tuple of component types.
+    pub fn deferred_register_components<T: ComponentTuple>(&mut self) {
+        T::deferred_register_all(&mut self.commands);
+    }
+
     /// Queues component deregistration.
     pub fn deferred_deregister_component<C: Component + 'static>(&mut self) {
         self.commands.deregister_component::<C>();
@@ -622,6 +627,11 @@ impl Scene {
     /// Registers a new component in the scene.
     pub fn register_component<C: Component + 'static>(&mut self) {
         self.register_component_immediate::<C>();
+    }
+
+    /// Registers a tuple of component types in the scene.
+    pub fn register_components<T: ComponentTuple>(&mut self) {
+        T::register_all(self);
     }
 
     pub(crate) fn register_component_immediate<C: Component + 'static>(&mut self) {
