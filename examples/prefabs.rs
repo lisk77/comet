@@ -1,53 +1,64 @@
+// This is the simple_move_2d example but using prefabs
 use comet::prelude::*;
 
+#[derive(Component)]
+struct Player;
+
 fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
-    // Initialize the texture atlas
     renderer.init_atlas();
 
-    // Register needed components
-    app.register_component::<Position2D>();
-    app.register_component::<Color>();
+    app.register_component::<Player>();
 
-    // Register prefabs
+    register_prefab!(
+        app,
+        "camera",
+        Transform2D::new(),
+        Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)
+    );
+
     register_prefab!(
         app,
         "player",
-        Position2D::from_vec(v2::new(0.0, 0.0)),
-        Color::new(0.0, 1.0, 0.0, 1.0)
+        Player,
+        Transform2D::new(),
+        Render2D::with_texture("res/textures/comet_icon.png")
     );
 
-    register_prefab!(
-        app,
-        "enemy",
-        Position2D::from_vec(v2::new(5.0, 5.0)),
-        Color::new(1.0, 0.0, 0.0, 1.0)
-    );
+    app.spawn_prefab("camera");
+    app.spawn_prefab("player");
+}
 
-    register_prefab!(
-        app,
-        "pickup",
-        Position2D::from_vec(v2::new(-5.0, -5.0)),
-        Color::new(1.0, 1.0, 0.0, 1.0)
-    );
+fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
+    handle_input(app, dt);
 
-    if let Some(player_id) = app.spawn_prefab("player") {
-        debug!("Spawned player with ID: {:?}", player_id);
+    renderer.render_scene_2d(app.scene_mut());
+}
+
+fn handle_input(app: &mut App, dt: f32) {
+    let mut direction = v2::ZERO;
+    if app.key_held(Key::KeyW) {
+        direction += v2::Y;
+    }
+    if app.key_held(Key::KeyA) {
+        direction -= v2::X;
+    }
+    if app.key_held(Key::KeyS) {
+        direction -= v2::Y;
+    }
+    if app.key_held(Key::KeyD) {
+        direction += v2::X;
     }
 
-    if let Some(enemy_id) = app.spawn_prefab("enemy") {
-        debug!("Spawned enemy with ID: {:?}", enemy_id);
-    }
-
-    if let Some(pickup_id) = app.spawn_prefab("pickup") {
-        debug!("Spawned pickup with ID: {:?}", pickup_id);
+    if direction != v2::ZERO {
+        app.query::<&mut Transform2D, With<Player>>().for_each(|t| {
+            t.translate(direction.normalize() * 777.7 * dt);
+        });
     }
 }
 
-#[allow(unused_variables)]
-fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {}
-
 fn main() {
     App::new()
+        .with_preset(App2D)
         .with_title("Prefabs Example")
         .run::<Renderer2D>(setup, update);
 }

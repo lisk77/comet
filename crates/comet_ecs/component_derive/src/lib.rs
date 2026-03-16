@@ -2,7 +2,7 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::{parse_macro_input, Data, DeriveInput, Fields, Index};
 
 #[proc_macro_derive(Component)]
 pub fn component_derive(input: TokenStream) -> TokenStream {
@@ -10,59 +10,78 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
 
     let name = &input.ident;
 
-    let fields = if let Data::Struct(data) = &input.data {
-        match &data.fields {
-            Fields::Named(fields) => fields.named.iter().collect::<Vec<_>>(),
-            Fields::Unnamed(fields) => fields.unnamed.iter().collect::<Vec<_>>(),
-            Fields::Unit => Vec::new(),
-        }
-    } else {
-        panic!("Component derive macro only works on structs");
+    let (default_body, clone_body, debug_body, eq_body) = match &input.data {
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(fields) => {
+                let names = fields
+                    .named
+                    .iter()
+                    .map(|field| field.ident.clone().expect("named fields expected"))
+                    .collect::<Vec<_>>();
+
+                let default_body = quote! {
+                    Self {
+                        #(#names: Default::default()),*
+                    }
+                };
+
+                let clone_body = quote! {
+                    Self {
+                        #(#names: self.#names.clone()),*
+                    }
+                };
+
+                let debug_body = quote! {
+                    let mut ds = f.debug_struct(stringify!(#name));
+                    #(ds.field(stringify!(#names), &self.#names);)*
+                    ds.finish()
+                };
+
+                let eq_body = quote! {
+                    true #(&& self.#names == other.#names)*
+                };
+
+                (default_body, clone_body, debug_body, eq_body)
+            }
+            Fields::Unnamed(fields) => {
+                let indices = (0..fields.unnamed.len())
+                    .map(Index::from)
+                    .collect::<Vec<_>>();
+
+                let default_body = quote! {
+                    Self(
+                        #({ let _ = #indices; Default::default() }),*
+                    )
+                };
+
+                let clone_body = quote! {
+                    Self(
+                        #(self.#indices.clone()),*
+                    )
+                };
+
+                let debug_body = quote! {
+                    let mut dt = f.debug_tuple(stringify!(#name));
+                    #(dt.field(&self.#indices);)*
+                    dt.finish()
+                };
+
+                let eq_body = quote! {
+                    true #(&& self.#indices == other.#indices)*
+                };
+
+                (default_body, clone_body, debug_body, eq_body)
+            }
+            Fields::Unit => {
+                let default_body = quote! { Self };
+                let clone_body = quote! { Self };
+                let debug_body = quote! { f.write_str(stringify!(#name)) };
+                let eq_body = quote! { true };
+                (default_body, clone_body, debug_body, eq_body)
+            }
+        },
+        _ => panic!("Component derive macro only works on structs"),
     };
-
-    let field_comparisons = fields.iter().map(|field| {
-        let field_name = &field.ident; // Name of the field
-        quote! {
-            self.#field_name == other.#field_name
-        }
-    });
-
-    let clone_fields = fields.iter().map(|field| {
-        let field_name = &field.ident;
-        quote! {
-            #field_name: self.#field_name.clone()
-        }
-    });
-
-    let default_fields = if let Data::Struct(data) = &input.data {
-        match &data.fields {
-            Fields::Named(fields) => fields
-                .named
-                .iter()
-                .map(|field| {
-                    let field_name = &field.ident;
-                    quote! { #field_name: Default::default() }
-                })
-                .collect::<Vec<_>>(),
-            Fields::Unnamed(fields) => fields
-                .unnamed
-                .iter()
-                .map(|_field| {
-                    quote! { Default::default() }
-                })
-                .collect::<Vec<_>>(),
-            Fields::Unit => Vec::new(),
-        }
-    } else {
-        panic!("Default can only be derived for structs");
-    };
-
-    let debug_fields = fields.iter().map(|field| {
-        let field_name = field.ident.as_ref().expect("Expected named fields");
-        quote! {
-            .field(stringify!(#field_name), &self.#field_name)
-        }
-    });
 
     let expanded = quote! {
         impl Component for #name {
@@ -81,31 +100,25 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
 
         impl Default for #name {
             fn default() -> Self {
-                Self {
-                    #(#default_fields),*
-                }
+                #default_body
             }
         }
 
         impl Clone for #name {
             fn clone(&self) -> Self {
-                Self {
-                    #(#clone_fields),*
-                }
+                #clone_body
             }
         }
 
         impl std::fmt::Debug for #name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_struct(stringify!(#name))
-                    #(#debug_fields)*
-                    .finish()
+                #debug_body
             }
         }
 
         impl PartialEq for #name {
             fn eq(&self, other: &Self) -> bool {
-                true #(&& #field_comparisons)*
+                #eq_body
             }
         }
     };

@@ -32,11 +32,12 @@ pub enum Renderer2DCommand {
     InitAtlas,
     InitAtlasFromPaths(Vec<String>),
     Size,
+    ScaleFactor,
     LoadFont(String, f32),
-    PrecomputedTextBounds{ 
+    PrecomputedTextBounds {
         text: String,
         font_path: String,
-        font_size: f32
+        font_size: f32,
     },
-    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>)
+    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>),
 }

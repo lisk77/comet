@@ -1,21 +1,22 @@
 use comet::prelude::*;
-use comet_input::keyboard::Key;
+
+// Zero sized components are also called tags in the documentation
+#[derive(Component)]
+struct Player;
 
 fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     // Takes all the textures from res/textures and puts them into a texture atlas
     renderer.init_atlas();
 
-    let camera = app.new_entity();
-    app.add_component(camera, Transform2D::new());
-    app.add_component(camera, Camera2D::new(v2::new(2.0, 2.0), 1.0, 1));
+    app.register_component::<Player>();
 
-    let e1 = app.new_entity();
+    app.spawn((Transform2D::new(), Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)));
 
-    app.add_component(e1, Transform2D::new());
-
-    let renderer2d = Render2D::with_texture("res/textures/comet_icon.png");
-
-    app.add_component(e1, renderer2d);
+    app.spawn((
+        Player,
+        Transform2D::new(),
+        Render2D::with_texture("res/textures/comet_icon.png"),
+    ));
 }
 
 fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
@@ -40,19 +41,9 @@ fn handle_input(app: &mut App, dt: f32) {
     }
 
     if direction != v2::ZERO {
-        let transform = app
-            .get_component_mut::<Transform2D>(EntityId { index: 1, gen: 0 })
-            .unwrap();
-        update_position(direction, transform, dt);
-    }
-}
-
-fn update_position(direction: v2, transform: &mut Transform2D, dt: f32) {
-    // If check to prevent division by zero and the comet to fly off into infinity...
-    if direction != v2::ZERO {
-        let normalized_dir = direction.normalize();
-        let displacement = normalized_dir * 777.7 * dt;
-        transform.translate(displacement);
+        app.query::<&mut Transform2D, With<Player>>().for_each(|t| {
+            t.translate(direction.normalize() * 777.7 * dt);
+        });
     }
 }
 

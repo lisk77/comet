@@ -1,89 +1,91 @@
-use std::any::TypeId;
-use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ComponentSet {
-    set: HashSet<TypeId>,
+    words: Vec<u64>,
 }
 
 impl ComponentSet {
     pub fn new() -> Self {
-        Self {
-            set: HashSet::new(),
+        Self { words: Vec::new() }
+    }
+
+    pub fn from_indices(indices: Vec<usize>) -> Self {
+        let mut set = Self::new();
+        for index in indices {
+            set.insert(index);
+        }
+        set
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.words.is_empty()
+    }
+
+    fn trim_trailing_zeros(&mut self) {
+        while self.words.last().copied() == Some(0) {
+            self.words.pop();
         }
     }
 
-    pub fn from_ids(ids: Vec<TypeId>) -> Self {
-        Self {
-            set: ids.into_iter().collect(),
+    fn ensure_word(&mut self, index: usize) {
+        let word = index / 64;
+        if self.words.len() <= word {
+            self.words.resize(word + 1, 0);
         }
-    }
-
-    pub fn compute_subsets_up_to_size_3(ids: Vec<TypeId>) -> Vec<ComponentSet> {
-        let mut result = Vec::new();
-        let n = ids.len();
-
-        for i in 0..n {
-            result.push(ComponentSet::from_ids(vec![ids[i]]));
-        }
-
-        for i in 0..n {
-            for j in (i + 1)..n {
-                result.push(ComponentSet::from_ids(vec![ids[i], ids[j]]));
-            }
-        }
-
-        for i in 0..n {
-            for j in (i + 1)..n {
-                for k in (j + 1)..n {
-                    result.push(ComponentSet::from_ids(vec![ids[i], ids[j], ids[k]]));
-                }
-            }
-        }
-
-        result
-    }
-
-    pub fn powerset(ids: Vec<TypeId>) -> Vec<HashSet<TypeId>> {
-        let n = ids.len();
-        let mut subsets: Vec<HashSet<TypeId>> = Vec::with_capacity(1 << n);
-
-        for mask in 0..(1 << n) {
-            let mut subset = HashSet::new();
-            for i in 0..n {
-                if (mask & (1 << i)) != 0 {
-                    subset.insert(ids[i].clone());
-                }
-            }
-            subsets.push(subset);
-        }
-        subsets.remove(0);
-
-        subsets
     }
 
     pub fn is_subset(&self, other: &ComponentSet) -> bool {
-        self.set.is_subset(&other.set)
+        for (i, word) in self.words.iter().enumerate() {
+            let rhs = other.words.get(i).copied().unwrap_or(0);
+            if (word & !rhs) != 0 {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn is_superset(&self, other: &ComponentSet) -> bool {
-        self.set.is_superset(&other.set)
+        other.is_subset(self)
     }
 
-    pub fn to_vec(&self) -> Vec<TypeId> {
-        self.set.iter().cloned().collect()
+    pub fn insert(&mut self, index: usize) {
+        self.ensure_word(index);
+        let bit = index % 64;
+        self.words[index / 64] |= 1u64 << bit;
+    }
+
+    pub fn remove(&mut self, index: usize) {
+        let word = index / 64;
+        if let Some(slot) = self.words.get_mut(word) {
+            let bit = index % 64;
+            *slot &= !(1u64 << bit);
+            self.trim_trailing_zeros();
+        }
+    }
+
+    pub fn contains(&self, index: usize) -> bool {
+        let word = index / 64;
+        let bit = index % 64;
+        self.words
+            .get(word)
+            .is_some_and(|slot| (*slot & (1u64 << bit)) != 0)
+    }
+
+    pub fn to_vec(&self) -> Vec<usize> {
+        let mut result = Vec::new();
+        for (word_idx, mut word) in self.words.iter().copied().enumerate() {
+            while word != 0 {
+                let bit = word.trailing_zeros() as usize;
+                result.push(word_idx * 64 + bit);
+                word &= word - 1;
+            }
+        }
+        result
     }
 
     pub fn size(&self) -> usize {
-        self.set.len()
-    }
-}
-
-impl Hash for ComponentSet {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        let mut types: Vec<TypeId> = self.set.iter().cloned().collect();
-        types.sort();
-        types.hash(state);
+        self.words
+            .iter()
+            .map(|word| word.count_ones() as usize)
+            .sum()
     }
 }

@@ -7,16 +7,16 @@ description = "A games framework"
 repository = "https://github.com/lisk77/comet"
 
 [dependencies]
-comet_app = { path = "./crates/comet_app", workspace = true }
-comet_colors = { path = "./crates/comet_colors", workspace = true }
-comet_math = { path = "./crates/comet_math", workspace = true }
-comet_renderer = { path = "./crates/comet_renderer", workspace = true }
-comet_resources = { path = "./crates/comet_resources", workspace = true }
-comet_ecs = { path = "./crates/comet_ecs", workspace = true }
-comet_input = { path = "./crates/comet_input", workspace = true }
-comet_log = { path = "./crates/comet_log", workspace = true }
-comet_structs = { path = "./crates/comet_structs", workspace = true }
-comet_sound = { path = "./crates/comet_sound", workspace = true }
+comet_app = { workspace = true }
+comet_colors = { workspace = true }
+comet_math = { workspace = true }
+comet_renderer = { workspace = true }
+comet_resources = { workspace = true }
+comet_ecs = { workspace = true }
+comet_input = { workspace = true }
+comet_log = { workspace = true }
+comet_structs = { workspace = true }
+comet_sound = { workspace = true }
 
 cfg-if = "1"
 anyhow = "1.0"
@@ -28,7 +28,7 @@ tobj = { version = "3.2", default-features = false, features = ["async"]}
 wgpu = { version = "22.0"}
 winit = { version = "0.29", features = ["rwh_05"] }
 instant = "0.1"
-image = { version = "0.24", default_features = false, features = ["png", "jpeg", "hdr"] }
+image = { version = "0.24", default-features = false, features = ["png", "jpeg", "hdr"] }
 chrono = "0.4.38"
 colored = "2.1.0"
 winit_input_helper = "0.16.0"
@@ -55,13 +55,13 @@ members = [
 ]
 
 [workspace.dependencies]
-comet_app = { path = "./crates/comet_app", workspace = true }
-comet_colors = { path = "./crates/comet_colors", workspace = true }
-comet_math = { path = "./crates/comet_math", workspace = true }
-comet_renderer = { path = "./crates/comet_renderer", workspace = true }
-comet_resources = { path = "./crates/comet_resources", workspace = true }
-comet_ecs = { path = "./crates/comet_ecs", workspace = true }
-comet_input = { path = "./crates/comet_input", workspace = true }
-comet_log = { path = "./crates/comet_log", workspace = true }
-comet_structs = { path = "./crates/comet_structs", workspace = true }
-comet_sound = { path = "./crates/comet_sound", workspace = true }
+comet_app = { path = "./crates/comet_app" }
+comet_colors = { path = "./crates/comet_colors" }
+comet_math = { path = "./crates/comet_math" }
+comet_renderer = { path = "./crates/comet_renderer" }
+comet_resources = { path = "./crates/comet_resources" }
+comet_ecs = { path = "./crates/comet_ecs" }
+comet_input = { path = "./crates/comet_input" }
+comet_log = { path = "./crates/comet_log" }
+comet_structs = { path = "./crates/comet_structs" }
+comet_sound = { path = "./crates/comet_sound" }

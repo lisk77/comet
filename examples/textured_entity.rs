@@ -5,21 +5,16 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     renderer.init_atlas_by_paths(vec!["res/textures/comet_icon.png".to_string()]);
 
     // Creating a camera entity
-    let cam = app.new_entity();
-    app.add_component(cam, Transform2D::new());
-    app.add_component(cam, Camera2D::new(v2::new(2.0, 2.0), 1.0, 1));
+    app.spawn((Transform2D::new(), Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)));
 
     // Creating a textured entity
-    let e0 = app.new_entity();
-    app.add_component(e0, Transform2D::new());
-
-    let render = Render2D::with_texture("res/textures/comet_icon.png");
-
-    app.add_component(e0, render);
+    app.spawn((
+        Transform2D::new(),
+        Render2D::with_texture("res/textures/comet_icon.png"),
+    ));
 }
 
-#[allow(unused_variables)]
-fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
+fn update(app: &mut App, renderer: &mut RenderHandle2D, _dt: f32) {
     renderer.render_scene_2d(app.scene_mut())
 }
 

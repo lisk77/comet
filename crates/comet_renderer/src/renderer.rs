@@ -7,8 +7,8 @@ pub trait RendererHandle {
     type Command: Send + 'static;
     type Event: Send + 'static;
 
-    fn new(sender: flume::Sender<Self::Command>, receiver: flume::Receiver<Self::Event>) -> Self; 
-    fn poll_event(&self) -> Option<Self::Event>; 
+    fn new(sender: flume::Sender<Self::Command>, receiver: flume::Receiver<Self::Event>) -> Self;
+    fn poll_event(&self) -> Option<Self::Event>;
 }
 
 pub trait Renderer: Sized + Send + Sync {

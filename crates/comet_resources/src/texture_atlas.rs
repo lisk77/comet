@@ -154,7 +154,7 @@ impl TextureAtlas {
                 let height = tex.height() as i32;
 
                 if width > atlas_size as i32 || height > atlas_size as i32 {
-                    error!(
+                    warn!(
                         "Texture '{}' is too large ({width}x{height}) for current atlas size {atlas_size}x{atlas_size}",
                         name
                     );
@@ -190,12 +190,6 @@ impl TextureAtlas {
                 );
                 atlas_size *= 2;
             } else {
-                info!(
-                    "Created texture atlas ({}x{}) with {} textures.",
-                    atlas_size,
-                    atlas_size,
-                    placements.len()
-                );
                 return (max_x as u32, max_y as u32, placements);
             }
         }
@@ -220,10 +214,7 @@ impl TextureAtlas {
                         )
                     });
 
-                let u0 = rect.x as f32 / atlas_width as f32;
-                let v0 = rect.y as f32 / atlas_height as f32;
-                let u1 = (rect.x + rect.width) as f32 / atlas_width as f32;
-                let v1 = (rect.y + rect.height) as f32 / atlas_height as f32;
+                let (u0, v0, u1, v1) = Self::region_uvs(rect, atlas_width, atlas_height);
 
                 regions.insert(
                     (*name).clone(),
@@ -242,6 +233,17 @@ impl TextureAtlas {
         }
 
         (base, regions)
+    }
+
+    fn region_uvs(rect: &Rect, atlas_width: u32, atlas_height: u32) -> (f32, f32, f32, f32) {
+        let aw = atlas_width as f32;
+        let ah = atlas_height as f32;
+        let eps = 0.01_f32;
+        let x0 = rect.x as f32 + eps;
+        let y0 = rect.y as f32 + eps;
+        let x1 = (rect.x + rect.width) as f32 - eps;
+        let y1 = (rect.y + rect.height) as f32 - eps;
+        (x0 / aw, y0 / ah, x1 / aw, y1 / ah)
     }
 
     pub fn from_texture_paths(paths: Vec<String>) -> Self {
@@ -319,10 +321,7 @@ impl TextureAtlas {
                 base.copy_from(&g.render.to_rgba8(), rect.x as u32, rect.y as u32)
                     .unwrap();
 
-                let u0 = rect.x as f32 / atlas_w as f32;
-                let v0 = rect.y as f32 / atlas_h as f32;
-                let u1 = (rect.x + rect.width) as f32 / atlas_w as f32;
-                let v1 = (rect.y + rect.height) as f32 / atlas_h as f32;
+                let (u0, v0, u1, v1) = Self::region_uvs(rect, atlas_w, atlas_h);
 
                 let region = TextureRegion::new(
                     u0,
@@ -385,10 +384,7 @@ impl TextureAtlas {
                 base.copy_from(&img.to_rgba8(), rect.x as u32, rect.y as u32)
                     .unwrap();
 
-                let u0 = rect.x as f32 / atlas_w as f32;
-                let v0 = rect.y as f32 / atlas_h as f32;
-                let u1 = (rect.x + rect.width) as f32 / atlas_w as f32;
-                let v1 = (rect.y + rect.height) as f32 / atlas_h as f32;
+                let (u0, v0, u1, v1) = Self::region_uvs(rect, atlas_w, atlas_h);
 
                 regions.insert(
                     key,

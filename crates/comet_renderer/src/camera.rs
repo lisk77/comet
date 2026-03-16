@@ -1,11 +1,13 @@
 use comet_ecs::{Camera2D, Transform2D};
 use comet_math::{m4, v2, v3};
 
+#[allow(unused)]
 pub struct CameraManager {
     cameras: Vec<RenderCamera>,
     active_camera: usize,
 }
 
+#[allow(unused)]
 impl CameraManager {
     pub fn new() -> Self {
         Self {
@@ -21,7 +23,7 @@ impl CameraManager {
     pub fn update_from_scene(
         &mut self,
         scene: &comet_ecs::Scene,
-        camera_entities: Vec<comet_ecs::EntityId>,
+        camera_entities: Vec<comet_ecs::Entity>,
     ) {
         self.cameras.clear();
 

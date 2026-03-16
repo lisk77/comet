@@ -14,4 +14,7 @@ cargo run --example <example_name>
 | [simple_move_2d](simple_move_2d.rs)       | A simple demonstration of a hypothetical movement system in 2D.                        |
 | [simple_text](simple_text.rs)             | A simple demonstration of how to write some text in Comet.                             |
 | [simple_audio](simple_audio.rs)           | A simple demonstration of how to use the audio system in Comet.                        |
-| [prefabs](prefabs.rs)                     | Shows how to register and spawn prefabbed entities.                                    |
+| [prefabs](prefabs.rs)                     | Shows how to register and spawn prefabbed entities.
+                                            |
+| [bundles](bundles.rs)                     | Shows how to use a reusable entity spawning pattern.
+| [query_change_filters](query_change_filters.rs) | Shows how to use the `added`/`changed` query filters.          |

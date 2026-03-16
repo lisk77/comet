@@ -1,19 +1,22 @@
 use crate::{
-    camera::{CameraManager, RenderCamera},
+    camera::RenderCamera,
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
     render_events::Renderer2DEvent,
-    render_pass::{RenderPass, universal_clear_execute, universal_load_execute},
+    render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
     renderer::{Renderer, RendererHandle},
 };
 use comet_colors::Color;
+use comet_ecs::Render;
 use comet_log::*;
 use comet_math::{m4, v2, v3};
 use comet_resources::{
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
 };
-use comet_ecs::{Component, Render, Render2D, Transform2D};
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -64,14 +67,12 @@ pub struct Renderer2D<'a> {
     render_passes: Vec<RenderPass>,
     last_frame_time: std::time::Instant,
     delta_time: f32,
-    event_sender: flume::Sender<Renderer2DEvent>
+    event_sender: flume::Sender<Renderer2DEvent>,
 }
 
-#[derive(Debug)]
 pub struct RenderHandle2D {
     command_sender: flume::Sender<Renderer2DCommand>,
     event_receiver: flume::Receiver<Renderer2DEvent>,
-    cached_render_entities: Vec<comet_ecs::EntityId>,
     last_size: Option<PhysicalSize<u32>>,
 }
 
@@ -81,17 +82,63 @@ impl RenderHandle2D {
     }
 
     pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
-        let _ = self.command_sender.send(Renderer2DCommand::InitAtlasFromPaths(paths));
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::InitAtlasFromPaths(paths));
     }
 
     pub fn load_font(&mut self, path: &str, size: f32) {
-        let _ = self.command_sender.send(Renderer2DCommand::LoadFont(path.to_string(), size));
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::LoadFont(path.to_string(), size));
     }
 
     pub fn size(&mut self) -> PhysicalSize<u32> {
         let _ = self.command_sender.send(Renderer2DCommand::Size);
-        self.poll_events();
-        self.last_size.unwrap_or_else(|| PhysicalSize::new(0, 0))
+        self.recv_matching_event(Duration::from_millis(25), |event| {
+            matches!(event, Renderer2DEvent::Size(_))
+        })
+        .and_then(|e| match e {
+            Renderer2DEvent::Size(size) => Some(size),
+            _ => None,
+        })
+        .map(|size| {
+            self.last_size = Some(size);
+            size
+        })
+        .unwrap_or_else(|| self.last_size.unwrap_or(PhysicalSize::new(0, 0)))
+    }
+
+    pub fn scale_factor(&mut self) -> f64 {
+        let _ = self.command_sender.send(Renderer2DCommand::ScaleFactor);
+        self.recv_matching_event(Duration::from_millis(25), |event| {
+            matches!(event, Renderer2DEvent::ScaleFactor(_))
+        })
+        .and_then(|e| match e {
+            Renderer2DEvent::ScaleFactor(factor) => Some(factor),
+            _ => None,
+        })
+        .unwrap_or(1.0)
+    }
+
+    pub fn precompute_text_bounds(&mut self, text: &str, font_path: &str, font_size: f32) -> v2 {
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::PrecomputedTextBounds {
+                text: text.to_string(),
+                font_path: font_path.to_string(),
+                font_size,
+            });
+        self.recv_matching_event(Duration::from_secs(5), |event| {
+            matches!(event, Renderer2DEvent::PrecomputedTextBounds { .. })
+        })
+        .and_then(|e| match e {
+            Renderer2DEvent::PrecomputedTextBounds { width, height } => {
+                Some(v2::new(width, height))
+            }
+            _ => None,
+        })
+        .unwrap_or(v2::ZERO)
     }
 
     pub fn poll_events(&mut self) {
@@ -102,124 +149,109 @@ impl RenderHandle2D {
         }
     }
 
-    pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
-        let cameras = scene.get_entities_with(vec![
-            comet_ecs::Transform2D::type_id(),
-            comet_ecs::Camera2D::type_id(),
-        ]);
+    fn recv_matching_event<F>(&mut self, timeout: Duration, predicate: F) -> Option<Renderer2DEvent>
+    where
+        F: Fn(&Renderer2DEvent) -> bool,
+    {
+        let deadline = Instant::now() + timeout;
 
-        if cameras.is_empty() {
-            return;
-        }
-
-        let unsorted_entities = scene.get_entities_with(vec![
-            comet_ecs::Transform2D::type_id(),
-            comet_ecs::Render2D::type_id(),
-        ]);
-
-        let mut dirty_sort = self.cached_render_entities.len() != unsorted_entities.len();
-
-        if !dirty_sort {
-            let unsorted_set: HashSet<comet_ecs::EntityId> =
-                unsorted_entities.iter().copied().collect();
-            dirty_sort = self
-                .cached_render_entities
-                .iter()
-                .any(|e| !unsorted_set.contains(e));
-        }
-
-        if !dirty_sort {
-            dirty_sort = !self.cached_render_entities.windows(2).all(|w| {
-                let a = scene
-                    .get_component::<comet_ecs::Render2D>(w[0])
-                    .map(|r| r.draw_index());
-                let b = scene
-                    .get_component::<comet_ecs::Render2D>(w[1])
-                    .map(|r| r.draw_index());
-                matches!((a, b), (Some(da), Some(db)) if da <= db)
-            });
-        }
-
-        if dirty_sort {
-            let mut entities = unsorted_entities;
-            entities.sort_by(|&a, &b| {
-                let ra = scene.get_component::<comet_ecs::Render2D>(a).unwrap();
-                let rb = scene.get_component::<comet_ecs::Render2D>(b).unwrap();
-                ra.draw_index().cmp(&rb.draw_index())
-            });
-            self.cached_render_entities = entities;
-        }
-
-        let mut draws = Vec::new();
-        for entity in &self.cached_render_entities {
-            if let (Some(transform), Some(render)) = (
-                scene.get_component::<comet_ecs::Transform2D>(*entity),
-                scene.get_component::<comet_ecs::Render2D>(*entity),
-            ) {
-                draws.push(Draw2D {
-                    position: [transform.position().x(), transform.position().y()],
-                    rotation_deg: transform.rotation().to_degrees(),
-                    scale: [1.0, 1.0],
-                    texture: render.get_texture(),
-                    draw_index: render.draw_index(),
-                    visible: render.is_visible(),
-                });
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return None;
             }
-        }
 
-        let mut texts = Vec::new();
-        let text_entities = scene.get_entities_with(vec![
-            comet_ecs::Transform2D::type_id(),
-            comet_ecs::Text::type_id(),
-        ]);
-
-        for entity in text_entities {
-            if let (Some(transform), Some(text)) = (
-                scene.get_component::<comet_ecs::Transform2D>(entity),
-                scene.get_component::<comet_ecs::Text>(entity),
-            ) {
-                if !text.is_visible() {
-                    continue;
+            match self.event_receiver.recv_timeout(remaining) {
+                Ok(event) => {
+                    if let Renderer2DEvent::Size(size) = event {
+                        self.last_size = Some(size);
+                    }
+                    if predicate(&event) {
+                        return Some(event);
+                    }
                 }
-
-                let color = text.color().to_wgpu();
-                texts.push(Text2D {
-                    position: [transform.position().x(), transform.position().y()],
-                    content: text.content().to_string(),
-                    font: text.font(),
-                    size: text.font_size(),
-                    color: [color.r as f32, color.g as f32, color.b as f32, color.a as f32],
-                    visible: true,
-                });
+                Err(flume::RecvTimeoutError::Timeout) => return None,
+                Err(flume::RecvTimeoutError::Disconnected) => return None,
             }
         }
+    }
 
-        let camera_entity = cameras
-            .into_iter()
-            .min_by_key(|entity| {
-                scene
-                    .get_component::<comet_ecs::Camera2D>(*entity)
-                    .map(|camera| camera.priority())
-                    .unwrap_or(u8::MAX)
-            })
-            .unwrap();
-        let camera_transform = scene
-            .get_component::<comet_ecs::Transform2D>(camera_entity)
-            .unwrap();
-        let camera = scene
-            .get_component::<comet_ecs::Camera2D>(camera_entity)
-            .unwrap();
-        let camera_packet = CameraPacket2D {
-            position: [camera_transform.position().x(), camera_transform.position().y()],
-            rotation_deg: camera_transform.rotation().to_degrees(),
-            zoom: camera.zoom(),
-            dimensions: [camera.dimensions().x(), camera.dimensions().y()],
-            priority: camera.priority(),
+    pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
+        let mut selected_camera: Option<([f32; 2], f32, f32, [f32; 2], u8)> = None;
+        for (transform, camera) in scene
+            .query::<(&comet_ecs::Transform2D, &comet_ecs::Camera2D), ()>()
+            .iter()
+        {
+            let should_replace = selected_camera
+                .as_ref()
+                .is_none_or(|(_, _, _, _, current_priority)| camera.priority() < *current_priority);
+            if should_replace {
+                selected_camera = Some((
+                    [transform.position().x(), transform.position().y()],
+                    transform.rotation().to_degrees(),
+                    camera.zoom(),
+                    [camera.dimensions().x(), camera.dimensions().y()],
+                    camera.priority(),
+                ));
+            }
+        }
+        let Some((camera_pos, camera_rot, camera_zoom, camera_dims, camera_priority)) =
+            selected_camera
+        else {
+            return;
         };
 
-        let _ = self
-            .command_sender
-            .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts));
+        let mut draws = Vec::new();
+        for (transform, render) in scene
+            .query::<(&comet_ecs::Transform2D, &comet_ecs::Render2D), ()>()
+            .iter()
+        {
+            draws.push(Draw2D {
+                position: [transform.position().x(), transform.position().y()],
+                rotation_deg: transform.rotation().to_degrees(),
+                scale: [1.0, 1.0],
+                texture: render.get_texture(),
+                draw_index: render.draw_index(),
+                visible: render.is_visible(),
+            });
+        }
+        draws.sort_by_key(|draw| draw.draw_index);
+
+        let mut texts = Vec::new();
+        for (transform, text) in scene
+            .query::<(&comet_ecs::Transform2D, &comet_ecs::Text), ()>()
+            .iter()
+        {
+            if !text.is_visible() {
+                continue;
+            }
+            let color = text.color().to_wgpu();
+            texts.push(Text2D {
+                position: [transform.position().x(), transform.position().y()],
+                content: text.content().to_string(),
+                font: text.font(),
+                size: text.font_size(),
+                color: [
+                    color.r as f32,
+                    color.g as f32,
+                    color.b as f32,
+                    color.a as f32,
+                ],
+                visible: true,
+            });
+        }
+
+        let camera_packet = CameraPacket2D {
+            position: camera_pos,
+            rotation_deg: camera_rot,
+            zoom: camera_zoom,
+            dimensions: camera_dims,
+            priority: camera_priority,
+        };
+
+        let _ =
+            self.command_sender
+                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts));
     }
 }
 
@@ -231,7 +263,6 @@ impl RendererHandle for RenderHandle2D {
         Self {
             command_sender: sender,
             event_receiver: receiver,
-            cached_render_entities: Vec::new(),
             last_size: None,
         }
     }
@@ -738,7 +769,7 @@ impl<'a> Renderer2D<'a> {
             .textures()
             .contains_key(texture_path)
         {
-            #[cfg(comet_debug)]
+            #[cfg(feature = "comet_debug")]
             error!("Texture {} not found in atlas", texture_path);
         }
         self.resource_manager
@@ -753,7 +784,7 @@ impl<'a> Renderer2D<'a> {
         match self.resource_manager.font_atlas().textures().get(&key) {
             Some(region) => region,
             None => {
-                #[cfg(comet_debug)]
+                #[cfg(feature = "comet_debug")]
                 warn!(
                     "Missing glyph for character '{}' in font '{}', using fallback.",
                     glyph, font
@@ -840,8 +871,8 @@ impl<'a> Renderer2D<'a> {
             total_height_px += font_data.line_height();
         }
 
-        bounds.set_x((max_line_width_px / config.width as f32) * scale_factor);
-        bounds.set_y((total_height_px / config.height as f32) * scale_factor);
+        bounds.set_x(max_line_width_px * scale_factor);
+        bounds.set_y(total_height_px * scale_factor);
 
         let mut x_offset = 0.0;
         let mut y_offset = 0.0;
@@ -954,25 +985,29 @@ impl<'a> Renderer2D<'a> {
                 (
                     world_corners[0].0 * cos_angle - world_corners[0].1 * sin_angle
                         + draw.position[0],
-                    world_corners[0].0 * sin_angle + world_corners[0].1 * cos_angle
+                    world_corners[0].0 * sin_angle
+                        + world_corners[0].1 * cos_angle
                         + draw.position[1],
                 ),
                 (
                     world_corners[1].0 * cos_angle - world_corners[1].1 * sin_angle
                         + draw.position[0],
-                    world_corners[1].0 * sin_angle + world_corners[1].1 * cos_angle
+                    world_corners[1].0 * sin_angle
+                        + world_corners[1].1 * cos_angle
                         + draw.position[1],
                 ),
                 (
                     world_corners[2].0 * cos_angle - world_corners[2].1 * sin_angle
                         + draw.position[0],
-                    world_corners[2].0 * sin_angle + world_corners[2].1 * cos_angle
+                    world_corners[2].0 * sin_angle
+                        + world_corners[2].1 * cos_angle
                         + draw.position[1],
                 ),
                 (
                     world_corners[3].0 * cos_angle - world_corners[3].1 * sin_angle
                         + draw.position[0],
-                    world_corners[3].0 * sin_angle + world_corners[3].1 * cos_angle
+                    world_corners[3].0 * sin_angle
+                        + world_corners[3].1 * cos_angle
                         + draw.position[1],
                 ),
             ];
@@ -1001,22 +1036,38 @@ impl<'a> Renderer2D<'a> {
 
             vertex_buffer.extend_from_slice(&[
                 Vertex::new(
-                    [snapped_screen_corners[0].0, snapped_screen_corners[0].1, 0.0],
+                    [
+                        snapped_screen_corners[0].0,
+                        snapped_screen_corners[0].1,
+                        0.0,
+                    ],
                     [region.u0(), region.v0()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [snapped_screen_corners[1].0, snapped_screen_corners[1].1, 0.0],
+                    [
+                        snapped_screen_corners[1].0,
+                        snapped_screen_corners[1].1,
+                        0.0,
+                    ],
                     [region.u0(), region.v1()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [snapped_screen_corners[2].0, snapped_screen_corners[2].1, 0.0],
+                    [
+                        snapped_screen_corners[2].0,
+                        snapped_screen_corners[2].1,
+                        0.0,
+                    ],
                     [region.u1(), region.v1()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [snapped_screen_corners[3].0, snapped_screen_corners[3].1, 0.0],
+                    [
+                        snapped_screen_corners[3].0,
+                        snapped_screen_corners[3].1,
+                        0.0,
+                    ],
                     [region.u1(), region.v0()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
@@ -1136,7 +1187,7 @@ impl<'a> Renderer2D<'a> {
         }
 
         if resources.get_bind_group_layout("Font").is_none() {
-            #[cfg(comet_debug)]
+            #[cfg(feature = "comet_debug")]
             debug!("Font pass not initialized yet; skipping Font camera bind group setup.");
         }
     }
@@ -1144,8 +1195,12 @@ impl<'a> Renderer2D<'a> {
 
 impl<'a> Renderer for Renderer2D<'a> {
     type Handle = RenderHandle2D;
-    
-    fn new(window: Arc<Window>, clear_color: Option<impl Color>, event_sender: flume::Sender<Renderer2DEvent>) -> Self {
+
+    fn new(
+        window: Arc<Window>,
+        clear_color: Option<impl Color>,
+        event_sender: flume::Sender<Renderer2DEvent>,
+    ) -> Self {
         Self {
             render_context: RenderContext::new(window, clear_color),
             resource_manager: GraphicResourceManager::new(),
@@ -1162,12 +1217,28 @@ impl<'a> Renderer for Renderer2D<'a> {
             Renderer2DCommand::InitAtlas => self.init_atlas(),
             Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
             Renderer2DCommand::Size => {
-                let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));            
+                let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));
             }
-            Renderer2DCommand::LoadFont(font_path, font_size) => self.load_font(font_path.as_str(), font_size),
-            Renderer2DCommand::PrecomputedTextBounds { text, font_path, font_size } => {
+            Renderer2DCommand::ScaleFactor => {
+                let _ = self
+                    .event_sender
+                    .send(Renderer2DEvent::ScaleFactor(self.scale_factor()));
+            }
+            Renderer2DCommand::LoadFont(font_path, font_size) => {
+                self.load_font(font_path.as_str(), font_size)
+            }
+            Renderer2DCommand::PrecomputedTextBounds {
+                text,
+                font_path,
+                font_size,
+            } => {
                 let bounds = self.precompute_text_bounds(&text, font_path.as_str(), font_size);
-                let _ = self.event_sender.send(Renderer2DEvent::PrecomputedTextBounds { width: bounds.x(), height: bounds.y() });
+                let _ = self
+                    .event_sender
+                    .send(Renderer2DEvent::PrecomputedTextBounds {
+                        width: bounds.x(),
+                        height: bounds.y(),
+                    });
             }
             Renderer2DCommand::SubmitFrame(camera, draws, texts) => {
                 self.submit_frame(camera, draws, texts)

@@ -1,6 +1,7 @@
 use comet_colors::{Color as ColorTrait, LinearRgba};
 use comet_ecs::{
-    Camera2D, Component, Entity, EntityId, Render2D, Scene, Text, Transform2D, Transform3D,
+    Camera2D, Component, ComponentTuple, ComponentValueTuple, Entity, Render2D, Scene, Text,
+    Transform2D, Transform3D,
 };
 use comet_input::keyboard::Key;
 use comet_log::*;
@@ -8,6 +9,10 @@ use comet_renderer::renderer::{Renderer, RendererHandle};
 use comet_sound::*;
 use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use winit::dpi::LogicalSize;
 use winit::{
     event::*,
@@ -15,7 +20,6 @@ use winit::{
     window::{Icon, Window},
 };
 use winit_input_helper::WinitInputHelper as InputManager;
-use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
 
 /// Represents the presets of an `App` instance.
 pub enum ApplicationType {
@@ -37,6 +41,9 @@ pub struct App {
     audio: Box<dyn Audio>,
     scene: Scene,
     should_quit: bool,
+    tick_systems: Vec<fn(&mut App, f32)>,
+    pending_tick_add: Vec<fn(&mut App, f32)>,
+    pending_tick_remove: Vec<fn(&mut App, f32)>,
 }
 
 impl App {
@@ -54,6 +61,9 @@ impl App {
             audio: Box::new(KiraAudio::new()),
             scene: Scene::new(),
             should_quit: false,
+            tick_systems: Vec::new(),
+            pending_tick_add: Vec::new(),
+            pending_tick_remove: Vec::new(),
         }
     }
 
@@ -98,15 +108,12 @@ impl App {
         match preset {
             ApplicationType::App2D => {
                 info!("Creating 2D app!");
-                self.scene.register_component::<Transform2D>();
-                self.scene.register_component::<Render2D>();
-                self.scene.register_component::<Camera2D>();
-                self.scene.register_component::<Text>();
+                self.scene
+                    .register_components::<(Transform2D, Render2D, Camera2D, Text)>();
             }
             ApplicationType::App3D => {
                 info!("Creating 3D app!");
-                self.scene.register_component::<Transform3D>();
-                self.scene.register_component::<Text>();
+                self.scene.register_components::<(Transform3D, Text)>();
             }
         };
         self
@@ -115,6 +122,43 @@ impl App {
     pub fn with_audio(mut self, audio_system: Box<dyn Audio>) -> Self {
         self.audio = audio_system;
         self
+    }
+
+    /// Registers a system that runs every tick in deterministic order.
+    pub fn add_tick_system(&mut self, system: fn(&mut App, f32)) {
+        self.pending_tick_add.push(system);
+    }
+
+    /// Removes a tick system if present.
+    pub fn remove_tick_system(&mut self, system: fn(&mut App, f32)) -> bool {
+        self.pending_tick_remove.push(system);
+        true
+    }
+
+    fn apply_tick_system_changes(&mut self) {
+        if !self.pending_tick_remove.is_empty() {
+            for remove in self.pending_tick_remove.drain(..) {
+                if let Some(pos) = self
+                    .tick_systems
+                    .iter()
+                    .position(|s| std::ptr::fn_addr_eq(*s, remove))
+                {
+                    self.tick_systems.remove(pos);
+                }
+            }
+        }
+
+        if !self.pending_tick_add.is_empty() {
+            for system in self.pending_tick_add.drain(..) {
+                if !self
+                    .tick_systems
+                    .iter()
+                    .any(|s| std::ptr::fn_addr_eq(*s, system))
+                {
+                    self.tick_systems.push(system);
+                }
+            }
+        }
     }
 
     fn load_icon(path: &std::path::Path) -> Option<Icon> {
@@ -150,6 +194,127 @@ impl App {
         &mut self.scene
     }
 
+    /// Spawns a new entity from an inline tuple of component values.
+    pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
+        self.scene.spawn(components)
+    }
+
+    /// Spawns a batch of entities from tuples of component values.
+    pub fn spawn_batch<V: ComponentValueTuple + 'static>(
+        &mut self,
+        components_batch: Vec<V>,
+    ) -> Vec<Entity> {
+        self.scene.spawn_batch(components_batch)
+    }
+
+    /// Spawns a new entity using a bundle of components.
+    pub fn spawn_bundle<B: comet_ecs::Bundle>(&mut self, bundle: B) -> Entity {
+        self.scene.spawn_bundle(bundle)
+    }
+
+    /// Queues spawning an empty entity.
+    pub fn deferred_spawn_empty(&mut self) {
+        self.scene.deferred_spawn_empty();
+    }
+
+    /// Queues deleting an entity.
+    pub fn deferred_delete_entity(&mut self, entity: Entity) {
+        self.scene.deferred_delete_entity(entity);
+    }
+
+    /// Queues registration of a single component type.
+    pub fn deferred_register_component<C: Component>(&mut self) {
+        self.scene.deferred_register_component::<C>();
+    }
+
+    /// Queues registration of a tuple of component types.
+    pub fn deferred_register_components<T: comet_ecs::ComponentTuple>(&mut self) {
+        self.scene.deferred_register_components::<T>();
+    }
+
+    /// Queues deregistration of a single component type.
+    pub fn deferred_deregister_component<C: Component>(&mut self) {
+        self.scene.deferred_deregister_component::<C>();
+    }
+
+    /// Queues adding or setting a component on an entity.
+    pub fn deferred_add_component<C: Component>(&mut self, entity: Entity, component: C) {
+        self.scene.deferred_add_component::<C>(entity, component);
+    }
+
+    /// Queues adding or setting multiple components on an entity.
+    pub fn deferred_add_components<V: ComponentValueTuple>(
+        &mut self,
+        entity: Entity,
+        components: V,
+    ) {
+        self.scene.deferred_add_components(entity, components);
+    }
+
+    /// Queues removing a single component from an entity.
+    pub fn deferred_remove_component<C: Component>(&mut self, entity: Entity) {
+        self.scene.deferred_remove_component::<C>(entity);
+    }
+
+    /// Queues removing multiple components from an entity.
+    pub fn deferred_remove_components<T: comet_ecs::ComponentTuple>(&mut self, entity: Entity) {
+        self.scene.deferred_remove_components::<T>(entity);
+    }
+
+    /// Queues deleting all entities matching the given component type IDs.
+    pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {
+        self.scene.deferred_delete_entities_with(components);
+    }
+
+    /// Queues prefab registration.
+    pub fn deferred_register_prefab(
+        &mut self,
+        name: impl Into<String>,
+        factory: comet_ecs::PrefabFactory,
+    ) {
+        self.scene.deferred_register_prefab(name, factory);
+    }
+
+    /// Queues prefab spawning by name.
+    pub fn deferred_spawn_prefab(&mut self, name: impl Into<String>) {
+        self.scene.deferred_spawn_prefab(name);
+    }
+
+    /// Queues spawning a single bundle.
+    pub fn deferred_spawn_bundle<B: comet_ecs::Bundle>(&mut self, bundle: B) {
+        self.scene.deferred_spawn_bundle(bundle);
+    }
+
+    /// Queues batch spawning of bundles.
+    pub fn deferred_spawn_bundle_batch<B: comet_ecs::Bundle>(&mut self, bundles: Vec<B>) {
+        self.scene.deferred_spawn_bundle_batch(bundles);
+    }
+
+    /// Queues adding a bundle to an existing entity.
+    pub fn deferred_add_bundle<B: comet_ecs::Bundle>(&mut self, entity: Entity, bundle: B) {
+        self.scene.deferred_add_bundle(entity, bundle);
+    }
+
+    /// Applies all queued deferred scene commands immediately.
+    pub fn apply_deferred_commands(&mut self) {
+        self.scene.apply_commands();
+    }
+
+    /// Returns the number of queued deferred scene commands.
+    pub fn queued_deferred_command_count(&self) -> usize {
+        self.scene.queued_command_count()
+    }
+
+    /// Creates a query against the current scene.
+    pub fn query<'a, Data, Filters>(
+        &'a mut self,
+    ) -> <comet_ecs::QueryParam<Data, Filters> as comet_ecs::QuerySpecMut<'a>>::Builder
+    where
+        comet_ecs::QueryParam<Data, Filters>: comet_ecs::QuerySpecMut<'a>,
+    {
+        self.scene.query_mut::<Data, Filters>()
+    }
+
     /// Retrieves a reference to the `InputManager`.
     pub fn input_manager(&self) -> std::sync::MutexGuard<'_, InputManager> {
         self.input_manager.lock().unwrap()
@@ -171,28 +336,28 @@ impl App {
     }
 
     /// Creates a new entity and returns its ID.
-    pub fn new_entity(&mut self) -> EntityId {
+    pub fn new_entity(&mut self) -> Entity {
         self.scene.new_entity()
     }
 
     /// Deletes an entity by its ID.
-    pub fn delete_entity(&mut self, entity_id: EntityId) {
+    pub fn delete_entity(&mut self, entity_id: Entity) {
         self.scene.delete_entity(entity_id)
     }
 
     /// Gets an immutable reference to an entity by its ID.
-    pub fn get_entity(&self, entity_id: EntityId) -> Option<&Entity> {
+    pub fn get_entity(&self, entity_id: Entity) -> Option<&Entity> {
         self.scene.get_entity(entity_id)
-    }
-
-    /// Gets a mutable reference to an entity by its ID.
-    pub fn get_entity_mut(&mut self, entity_id: EntityId) -> Option<&mut Entity> {
-        self.scene.get_entity_mut(entity_id)
     }
 
     /// Registers a new component in the `Scene`.
     pub fn register_component<C: Component>(&mut self) {
         self.scene.register_component::<C>()
+    }
+
+    /// Registers a tuple of component types in the `Scene`.
+    pub fn register_components<T: comet_ecs::ComponentTuple>(&mut self) {
+        self.scene.register_components::<T>()
     }
 
     /// Deregisters a component from the `Scene`.
@@ -202,30 +367,33 @@ impl App {
 
     /// Adds a component to an entity by its ID and an instance of the component.
     /// Overwrites the previous component if another component of the same type is added.
-    pub fn add_component<C: Component>(&mut self, entity_id: EntityId, component: C) {
+    pub fn add_component<C: Component>(&mut self, entity_id: Entity, component: C) {
         self.scene.add_component(entity_id, component)
     }
 
+    /// Adds or sets multiple components on an entity.
+    pub fn add_components<V: ComponentValueTuple>(&mut self, entity_id: Entity, components: V) {
+        self.scene.add_components(entity_id, components);
+    }
+
     /// Removes a component from an entity by its ID.
-    pub fn remove_component<C: Component>(&mut self, entity_id: EntityId) {
+    pub fn remove_component<C: Component>(&mut self, entity_id: Entity) {
         self.scene.remove_component::<C>(entity_id)
     }
 
+    /// Removes multiple components from an entity.
+    pub fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity) {
+        self.scene.remove_components::<T>(entity_id);
+    }
+
     /// Returns a reference to a component of an entity by its ID.
-    pub fn get_component<C: Component>(&self, entity_id: EntityId) -> Option<&C> {
+    pub fn get_component<C: Component>(&self, entity_id: Entity) -> Option<&C> {
         self.scene.get_component::<C>(entity_id)
     }
 
     /// Returns a mutable reference to a component of an entity by its ID.
-    pub fn get_component_mut<C: Component>(&mut self, entity_id: EntityId) -> Option<&mut C> {
+    pub fn get_component_mut<C: Component>(&mut self, entity_id: Entity) -> Option<&mut C> {
         self.scene.get_component_mut::<C>(entity_id)
-    }
-
-    /// Returns a list of entities that have the given components.
-    /// The amount of queriable components is limited to 3 such that the `Archetype` creation is more efficient.
-    /// Otherwise it would be a factorial complexity chaos.
-    pub fn get_entities_with(&self, components: Vec<TypeId>) -> Vec<EntityId> {
-        self.scene.get_entities_with(components)
     }
 
     /// Deletes all entities that have the given components.
@@ -235,13 +403,8 @@ impl App {
         self.scene.delete_entities_with(components)
     }
 
-    /// Iterates over all entities that have the two given components and calls the given function.
-    pub fn foreach<C: Component, K: Component>(&mut self, func: fn(&mut C, &mut K)) {
-        self.scene.foreach::<C, K>(func)
-    }
-
     /// Returns whether an entity has the given component.
-    pub fn has<C: Component>(&self, entity_id: EntityId) -> bool {
+    pub fn has<C: Component>(&self, entity_id: Entity) -> bool {
         self.scene.has::<C>(entity_id)
     }
 
@@ -251,7 +414,7 @@ impl App {
     }
 
     /// Spawns a prefab with the given name.
-    pub fn spawn_prefab(&mut self, name: &str) -> Option<EntityId> {
+    pub fn spawn_prefab(&mut self, name: &str) -> Option<Entity> {
         self.scene.spawn_prefab(name)
     }
 
@@ -316,6 +479,17 @@ impl App {
         self.update_timer = 1.0 / update_rate as f32;
     }
 
+    fn begin_logic_tick(&mut self) {
+        let default_query_since_tick = self.scene.component_event_tick().wrapping_sub(1);
+        self.scene
+            .set_default_query_since_tick(default_query_since_tick);
+    }
+
+    fn end_logic_tick(&mut self) {
+        self.scene.apply_commands();
+        let _ = self.scene.advance_component_event_tick();
+    }
+
     fn create_window(
         app_title: String,
         app_icon: &Option<Icon>,
@@ -357,8 +531,12 @@ impl App {
             let size = self.size.clone();
             let clear_color = self.clear_color.clone();
 
-            let (cmd_tx, cmd_rx) = flume::unbounded::<<R::Handle as comet_renderer::renderer::RendererHandle>::Command>();
-            let (evt_tx, evt_rx) = flume::unbounded::<<R::Handle as comet_renderer::renderer::RendererHandle>::Event>();
+            let (cmd_tx, cmd_rx) = flume::unbounded::<
+                <R::Handle as comet_renderer::renderer::RendererHandle>::Command,
+            >();
+            let (evt_tx, evt_rx) = flume::unbounded::<
+                <R::Handle as comet_renderer::renderer::RendererHandle>::Event,
+            >();
 
             let event_loop = EventLoop::new().unwrap();
             let mut renderer = R::new(
@@ -383,6 +561,7 @@ impl App {
 
                 let mut time_stack = 0.0;
                 let mut last_tick = std::time::Instant::now();
+                let max_steps = 5;
 
                 while !logic_quit.load(Ordering::Relaxed) {
                     let now = std::time::Instant::now();
@@ -392,13 +571,33 @@ impl App {
 
                     if app.dt() != f32::INFINITY {
                         time_stack += frame_dt;
-                        while time_stack > app.update_timer {
+                        let mut steps = 0;
+                        while time_stack > app.update_timer && steps < max_steps {
                             let step = app.dt();
+                            app.begin_logic_tick();
+                            app.apply_tick_system_changes();
+                            let mut i = 0;
+                            while i < app.tick_systems.len() {
+                                let system = app.tick_systems[i];
+                                system(&mut app, step);
+                                i += 1;
+                            }
                             update(&mut app, &mut handle, step);
+                            app.end_logic_tick();
                             time_stack -= app.update_timer;
+                            steps += 1;
                         }
                     } else {
+                        app.begin_logic_tick();
+                        app.apply_tick_system_changes();
+                        let mut i = 0;
+                        while i < app.tick_systems.len() {
+                            let system = app.tick_systems[i];
+                            system(&mut app, frame_dt);
+                            i += 1;
+                        }
                         update(&mut app, &mut handle, frame_dt);
+                        app.end_logic_tick();
                     }
 
                     if app.should_quit {
@@ -406,7 +605,15 @@ impl App {
                         break;
                     }
 
-                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    if app.update_timer.is_finite() && app.update_timer > 0.0 {
+                        let target_step = std::time::Duration::from_secs_f32(app.update_timer);
+                        let elapsed = last_tick.elapsed();
+                        if elapsed < target_step {
+                            std::thread::sleep(target_step - elapsed);
+                        }
+                    } else {
+                        std::thread::yield_now();
+                    }
                 }
             });
 

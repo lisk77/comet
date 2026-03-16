@@ -28,4 +28,4 @@ Future endeavors might include:
 
 - [ ] project creation tool
 - [ ] editor
-- [ ] scripting using Rhai
+- [ ] scripting

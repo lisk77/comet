@@ -32,7 +32,7 @@ impl<V: InnerSpace + Clone> Bezier<V> {
         let mut d_pts: Vec<V> = self
             .points
             .windows(2)
-            .map(|w| ((w[1] - w[0]) * n))
+            .map(|w| (w[1] - w[0]) * n)
             .collect::<Vec<V>>();
 
         for i in 0..(self.degree - 1) {
