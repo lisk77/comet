@@ -1,4 +1,4 @@
-use comet_resources::AtlasRef;
+use comet_assets::AtlasRef;
 use winit::dpi::PhysicalSize;
 
 pub enum Renderer2DEvent {

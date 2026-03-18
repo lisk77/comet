@@ -1,4 +1,4 @@
-use comet_resources::AtlasRef;
+use comet_assets::AtlasRef;
 
 #[derive(Clone, Copy, Debug)]
 pub struct CameraPacket2D {

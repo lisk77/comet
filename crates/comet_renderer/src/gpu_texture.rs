@@ -1,5 +1,5 @@
 use anyhow::*;
-use comet_resources::{Image, ImageFormat};
+use comet_assets::{Image, ImageFormat};
 use image::DynamicImage;
 
 #[derive(Debug)]

@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 comet_ecs = { path = "../comet_ecs" }
 comet_renderer = { path = "../comet_renderer" }
-comet_resources = { path = "../comet_resources" }
+comet_assets = { path = "../comet_assets" }
 comet_colors = { path = "../comet_colors" }
 comet_log = { path = "../comet_log" }
 comet_input = { path = "../comet_input" }

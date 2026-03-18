@@ -8,7 +8,7 @@ use crate::{Entity, Scene};
 use comet_colors::Color as ColorTrait;
 use comet_log::*;
 use comet_math::m4;
-use comet_resources::ImageRef;
+use comet_assets::ImageRef;
 use component_derive::Component;
 
 // ##################################################

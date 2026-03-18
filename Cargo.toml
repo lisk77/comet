@@ -11,7 +11,7 @@ comet_app = { workspace = true }
 comet_colors = { workspace = true }
 comet_math = { workspace = true }
 comet_renderer = { workspace = true }
-comet_resources = { workspace = true }
+comet_assets = { workspace = true }
 comet_ecs = { workspace = true }
 comet_input = { workspace = true }
 comet_log = { workspace = true }
@@ -45,7 +45,7 @@ members = [
     "./crates/comet_colors",
     "./crates/comet_math",
     "./crates/comet_renderer",
-    "./crates/comet_resources",
+    "./crates/comet_assets",
     "./crates/comet_ecs",
     "./crates/comet_input",
     "./crates/comet_log",
@@ -59,7 +59,7 @@ comet_app = { path = "./crates/comet_app" }
 comet_colors = { path = "./crates/comet_colors" }
 comet_math = { path = "./crates/comet_math" }
 comet_renderer = { path = "./crates/comet_renderer" }
-comet_resources = { path = "./crates/comet_resources" }
+comet_assets = { path = "./crates/comet_assets" }
 comet_ecs = { path = "./crates/comet_ecs" }
 comet_input = { path = "./crates/comet_input" }
 comet_log = { path = "./crates/comet_log" }

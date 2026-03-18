@@ -11,7 +11,7 @@ use comet_colors::Color;
 use comet_ecs::Render;
 use comet_log::*;
 use comet_math::{m4, v2, v3};
-use comet_resources::{
+use comet_assets::{
     asset_root, AtlasRef, ImageRef,
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Vertex,
 };
@@ -662,7 +662,7 @@ impl<'a> Renderer2D<'a> {
                 vertex: wgpu::VertexState {
                     module: shader_module,
                     entry_point: "vs_main",
-                    buffers: &[comet_resources::Vertex::desc()],
+                    buffers: &[comet_assets::Vertex::desc()],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
