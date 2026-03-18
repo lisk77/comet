@@ -7,6 +7,7 @@ use comet_input::keyboard::Key;
 use comet_log::*;
 use comet_renderer::renderer::{Renderer, RendererHandle};
 use comet_sound::*;
+use comet_assets::{AssetManager, AssetProvider};
 use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
 use std::sync::{
@@ -44,6 +45,7 @@ pub struct App {
     tick_systems: Vec<fn(&mut App, f32)>,
     pending_tick_add: Vec<fn(&mut App, f32)>,
     pending_tick_remove: Vec<fn(&mut App, f32)>,
+    asset_provider: Arc<AssetProvider>,
 }
 
 impl App {
@@ -64,6 +66,7 @@ impl App {
             tick_systems: Vec::new(),
             pending_tick_add: Vec::new(),
             pending_tick_remove: Vec::new(),
+            asset_provider: Arc::new(AssetProvider::new(AssetManager::new()))
         }
     }
 
@@ -194,16 +197,18 @@ impl App {
         &mut self.scene
     }
 
+    /// Retrieves a reference to the `AssetProvider` for accessing assets.
+    pub fn asset_provider(&self) -> &Arc<AssetProvider> {
+        &self.asset_provider
+    }
+
     /// Spawns a new entity from an inline tuple of component values.
     pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
         self.scene.spawn(components)
     }
 
     /// Spawns a batch of entities from tuples of component values.
-    pub fn spawn_batch<V: ComponentValueTuple + 'static>(
-        &mut self,
-        components_batch: Vec<V>,
-    ) -> Vec<Entity> {
+    pub fn spawn_batch<V: ComponentValueTuple + 'static>(&mut self, components_batch: Vec<V>) -> Vec<Entity> {
         self.scene.spawn_batch(components_batch)
     }
 
@@ -306,9 +311,7 @@ impl App {
     }
 
     /// Creates a query against the current scene.
-    pub fn query<'a, Data, Filters>(
-        &'a mut self,
-    ) -> <comet_ecs::QueryParam<Data, Filters> as comet_ecs::QuerySpecMut<'a>>::Builder
+    pub fn query<'a, Data, Filters>(&'a mut self) -> <comet_ecs::QueryParam<Data, Filters> as comet_ecs::QuerySpecMut<'a>>::Builder
     where
         comet_ecs::QueryParam<Data, Filters>: comet_ecs::QuerySpecMut<'a>,
     {
