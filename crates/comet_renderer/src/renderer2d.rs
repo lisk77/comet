@@ -65,6 +65,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 pub struct Renderer2D<'a> {
     render_context: RenderContext<'a>,
+    asset_provider: Arc<comet_assets::AssetProvider>,
     resource_manager: GraphicResourceManager,
     render_passes: Vec<RenderPass>,
     last_frame_time: std::time::Instant,
@@ -1183,9 +1184,11 @@ impl<'a> Renderer for Renderer2D<'a> {
         window: Arc<Window>,
         clear_color: Option<impl Color>,
         event_sender: flume::Sender<Renderer2DEvent>,
+        asset_provider: Arc<comet_assets::AssetProvider>,
     ) -> Self {
         Self {
             render_context: RenderContext::new(window, clear_color),
+            asset_provider,
             resource_manager: GraphicResourceManager::new(),
             render_passes: Vec::new(),
             last_frame_time: std::time::Instant::now(),

@@ -533,6 +533,7 @@ impl App {
             let icon = self.icon.clone();
             let size = self.size.clone();
             let clear_color = self.clear_color.clone();
+            let asset_provider = self.asset_provider.clone();
 
             let (cmd_tx, cmd_rx) = flume::unbounded::<
                 <R::Handle as comet_renderer::renderer::RendererHandle>::Command,
@@ -551,6 +552,7 @@ impl App {
                 )),
                 clear_color,
                 evt_tx,
+                asset_provider,
             );
             let quit_flag = Arc::new(AtomicBool::new(false));
             let logic_quit = quit_flag.clone();

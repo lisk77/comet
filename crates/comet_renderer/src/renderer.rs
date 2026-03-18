@@ -1,4 +1,5 @@
 use comet_colors::Color;
+use comet_assets::AssetProvider;
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
@@ -18,6 +19,7 @@ pub trait Renderer: Sized + Send + Sync {
         window: Arc<Window>,
         clear_color: Option<impl Color>,
         event_sender: flume::Sender<<Self::Handle as RendererHandle>::Event>,
+        asset_provider: Arc<AssetProvider>,
     ) -> Self;
     fn apply_command(&mut self, command: <Self::Handle as RendererHandle>::Command);
     fn window(&self) -> &Window;
