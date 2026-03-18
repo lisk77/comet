@@ -12,7 +12,7 @@ use comet_ecs::Render;
 use comet_log::*;
 use comet_math::{m4, v2, v3};
 use comet_resources::{
-    asset_root,
+    asset_root, AtlasRef, ImageRef,
     font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Vertex,
 };
 use std::{
@@ -93,6 +93,19 @@ impl RenderHandle2D {
         let _ = self
             .command_sender
             .send(Renderer2DCommand::LoadFont(path.to_string(), size));
+    }
+
+    fn resolve_atlas_ref(&mut self, path: &'static str) -> Option<AtlasRef> {
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::ResolveAtlasRef(path));
+        self.recv_matching_event(Duration::from_millis(25), |event| {
+            matches!(event, Renderer2DEvent::AtlasRef(_))
+        })
+        .and_then(|event| match event {
+            Renderer2DEvent::AtlasRef(atlas_ref) => atlas_ref,
+            _ => None,
+        })
     }
 
     pub fn size(&mut self) -> PhysicalSize<u32> {
@@ -178,7 +191,7 @@ impl RenderHandle2D {
         }
     }
 
-    pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
+    pub fn render_scene_2d(&mut self, scene: &mut comet_ecs::Scene) {
         let mut selected_camera: Option<([f32; 2], f32, f32, [f32; 2], u8)> = None;
         for (transform, camera) in scene
             .query::<(&comet_ecs::Transform2D, &comet_ecs::Camera2D), ()>()
@@ -205,14 +218,25 @@ impl RenderHandle2D {
 
         let mut draws = Vec::new();
         for (transform, render) in scene
-            .query::<(&comet_ecs::Transform2D, &comet_ecs::Render2D), ()>()
+            .query_mut::<(&comet_ecs::Transform2D, &mut comet_ecs::Render2D), ()>()
             .iter()
         {
+            let atlas_ref = match render.texture() {
+                ImageRef::Atlas(atlas_ref) => atlas_ref,
+                ImageRef::Unresolved(path) => {
+                    let Some(atlas_ref) = self.resolve_atlas_ref(path) else {
+                        continue;
+                    };
+                    render.set_texture(ImageRef::Atlas(atlas_ref));
+                    atlas_ref
+                }
+            };
+
             draws.push(Draw2D {
                 position: [transform.position().x(), transform.position().y()],
                 rotation_deg: transform.rotation().to_degrees(),
                 scale: [1.0, 1.0],
-                texture: render.get_texture(),
+                texture: atlas_ref,
                 draw_index: render.draw_index(),
                 visible: render.is_visible(),
             });
@@ -736,20 +760,8 @@ impl<'a> Renderer2D<'a> {
         info!("Created render pass {}!", label)
     }
 
-    fn get_texture_region(&self, texture_path: &str) -> Option<&TextureRegion> {
-        if !self
-            .resource_manager
-            .texture_atlas()
-            .textures()
-            .contains_key(texture_path)
-        {
-            #[cfg(feature = "comet_debug")]
-            error!("Texture {} not found in atlas", texture_path);
-        }
-        self.resource_manager
-            .texture_atlas()
-            .textures()
-            .get(texture_path)
+    fn get_texture_region(&self, texture: AtlasRef) -> TextureRegion {
+        texture.region()
     }
 
     fn get_glyph_region(&self, glyph: char, font: &str) -> &TextureRegion {
@@ -933,10 +945,7 @@ impl<'a> Renderer2D<'a> {
                 continue;
             }
 
-            let region = match self.get_texture_region(draw.texture) {
-                Some(r) => r,
-                None => continue,
-            };
+            let region = self.get_texture_region(draw.texture);
 
             let (dim_x, dim_y) = region.dimensions();
             let half_width = dim_x as f32 * 0.5 * draw.scale[0];
@@ -1190,6 +1199,11 @@ impl<'a> Renderer for Renderer2D<'a> {
             Renderer2DCommand::Clear => {}
             Renderer2DCommand::InitAtlas => self.init_atlas(),
             Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
+            Renderer2DCommand::ResolveAtlasRef(path) => {
+                let _ = self
+                    .event_sender
+                    .send(Renderer2DEvent::AtlasRef(self.resource_manager.resolve_atlas_ref(path)));
+            }
             Renderer2DCommand::Size => {
                 let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));
             }

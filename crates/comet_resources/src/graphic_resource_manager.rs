@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
+    asset_handle::Asset,
+    asset_manager::AssetManager,
     asset_path::{asset_root, resolve_asset_path},
+    atlas_ref::AtlasRef,
     font::Font,
     texture_atlas::{TextureAtlas, TextureRegion},
     Image,
@@ -10,7 +13,8 @@ use comet_log::info;
 use wgpu::{naga::ShaderStage, Device, ShaderModule};
 
 pub struct GraphicResourceManager {
-    texture_atlas: TextureAtlas,
+    asset_manager: AssetManager,
+    texture_atlas_handle: Option<Asset<TextureAtlas>>,
     font_atlas: TextureAtlas,
     fonts: Vec<Font>,
     data_files: HashMap<String, String>,
@@ -20,7 +24,8 @@ pub struct GraphicResourceManager {
 impl GraphicResourceManager {
     pub fn new() -> Self {
         Self {
-            texture_atlas: TextureAtlas::empty(),
+            asset_manager: AssetManager::new(),
+            texture_atlas_handle: None,
             font_atlas: TextureAtlas::empty(),
             fonts: Vec::new(),
             data_files: HashMap::new(),
@@ -29,7 +34,16 @@ impl GraphicResourceManager {
     }
 
     pub fn texture_atlas(&self) -> &TextureAtlas {
-        &self.texture_atlas
+        let handle = self
+            .texture_atlas_handle
+            .expect("texture atlas requested before initialization");
+        self.asset_manager
+            .get_texture_atlas(handle)
+            .expect("texture atlas handle is stale")
+    }
+
+    pub fn texture_atlas_handle(&self) -> Option<Asset<TextureAtlas>> {
+        self.texture_atlas_handle
     }
 
     pub fn font_atlas(&self) -> &TextureAtlas {
@@ -41,7 +55,7 @@ impl GraphicResourceManager {
     }
 
     pub fn texture_locations(&self) -> &HashMap<String, TextureRegion> {
-        &self.texture_atlas.textures()
+        self.texture_atlas().textures()
     }
 
     pub fn data_files(&self) -> &HashMap<String, String> {
@@ -64,11 +78,25 @@ impl GraphicResourceManager {
     }
 
     pub fn set_texture_atlas(&mut self, texture_atlas: TextureAtlas) {
-        self.texture_atlas = texture_atlas;
+        if let Some(handle) = self.texture_atlas_handle.take() {
+            let _ = self.asset_manager.remove_texture_atlas(handle);
+        }
+        self.texture_atlas_handle = Some(self.asset_manager.add_texture_atlas(texture_atlas));
     }
 
     pub fn create_texture_atlas(&mut self, paths: Vec<String>) {
-        self.texture_atlas = TextureAtlas::from_texture_paths(paths)
+        self.set_texture_atlas(TextureAtlas::from_texture_paths(paths))
+    }
+
+    pub fn resolve_atlas_ref(&self, path: &'static str) -> Option<AtlasRef> {
+        let atlas = self.texture_atlas_handle?;
+        let region = self
+            .asset_manager
+            .get_texture_atlas(atlas)?
+            .textures()
+            .get(path)
+            .copied()?;
+        Some(AtlasRef::new(region, atlas))
     }
 
     pub fn load_string(&self, file_name: &str) -> anyhow::Result<String> {

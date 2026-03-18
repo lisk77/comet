@@ -5,7 +5,7 @@ use image::{DynamicImage, GenericImage, GenericImageView, RgbaImage};
 use rect_packer::{Config, Packer, Rect};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextureRegion {
     u0: f32,
     v0: f32,

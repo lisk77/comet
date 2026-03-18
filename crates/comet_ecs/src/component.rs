@@ -8,6 +8,7 @@ use crate::{Entity, Scene};
 use comet_colors::Color as ColorTrait;
 use comet_log::*;
 use comet_math::m4;
+use comet_resources::ImageRef;
 use component_derive::Component;
 
 // ##################################################
@@ -45,7 +46,7 @@ pub struct Rectangle2D {
 #[derive(Component)]
 pub struct Render2D {
     is_visible: bool,
-    texture_name: &'static str,
+    texture: ImageRef,
     scale: v2,
     draw_index: u32,
 }
@@ -135,8 +136,8 @@ pub trait Collider {
 pub trait Render {
     fn is_visible(&self) -> bool;
     fn set_visibility(&mut self, is_visible: bool);
-    fn get_texture(&self) -> &'static str;
-    fn set_texture(&mut self, texture: &'static str);
+    fn texture(&self) -> ImageRef;
+    fn set_texture(&mut self, texture: ImageRef);
 }
 
 pub trait Camera {
@@ -279,7 +280,7 @@ impl Render2D {
     pub fn new(texture: &'static str, is_visible: bool, scale: v2, draw_index: u32) -> Self {
         Self {
             is_visible,
-            texture_name: texture,
+            texture: ImageRef::Unresolved(texture),
             scale,
             draw_index,
         }
@@ -288,7 +289,7 @@ impl Render2D {
     pub fn with_texture(texture: &'static str) -> Self {
         Self {
             is_visible: true,
-            texture_name: texture,
+            texture: ImageRef::Unresolved(texture),
             scale: v2::new(1.0, 1.0),
             draw_index: 0,
         }
@@ -320,16 +321,12 @@ impl Render for Render2D {
         self.is_visible = is_visible;
     }
 
-    fn get_texture(&self) -> &'static str {
-        self.texture_name
+    fn texture(&self) -> ImageRef {
+        self.texture
     }
 
-    /// Use the actual file name of the texture instead of the path
-    /// e.g. "comet_icon.png" instead of "resources/textures/comet_icon.png"
-    /// The resource manager will already look in the resources/textures directory
-    /// This behavior will later be expanded so that it can be used with other project structures
-    fn set_texture(&mut self, texture: &'static str) {
-        self.texture_name = texture;
+    fn set_texture(&mut self, texture: ImageRef) {
+        self.texture = texture;
     }
 }
 
