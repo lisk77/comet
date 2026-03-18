@@ -1,8 +1,9 @@
 use anyhow::*;
-use image::{DynamicImage, GenericImageView, RgbaImage};
+use comet_resources::{Image, ImageFormat};
+use image::DynamicImage;
 
 #[derive(Debug)]
-pub struct Texture {
+pub struct GpuTexture {
     #[allow(unused)]
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -10,7 +11,7 @@ pub struct Texture {
     pub size: wgpu::Extent3d,
 }
 
-impl Texture {
+impl GpuTexture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     pub fn create_depth_texture(
@@ -56,7 +57,6 @@ impl Texture {
         }
     }
 
-    #[allow(dead_code)]
     pub fn from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -64,36 +64,30 @@ impl Texture {
         label: &str,
         is_normal_map: bool,
     ) -> Result<Self> {
-        let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, Some(label), is_normal_map)
+        let image = Image::from_bytes(bytes, is_normal_map)?;
+        Self::from_image(device, queue, &image, Some(label))
     }
 
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        img: &image::DynamicImage,
+        image: &Image,
         label: Option<&str>,
-        is_normal_map: bool,
     ) -> Result<Self> {
-        let dimensions = img.dimensions();
-        let rgba = img.to_rgba8();
-
-        let format = if is_normal_map {
-            wgpu::TextureFormat::Rgba8Unorm
-        } else {
-            wgpu::TextureFormat::Rgba8UnormSrgb
-        };
         let usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
         let size = wgpu::Extent3d {
-            width: img.width(),
-            height: img.height(),
+            width: image.width(),
+            height: image.height(),
             depth_or_array_layers: 1,
         };
         let texture = Self::create_2d_texture(
             device,
             size.width,
             size.height,
-            format,
+            match image.format() {
+                ImageFormat::Rgba8Unorm => wgpu::TextureFormat::Rgba8Unorm,
+                ImageFormat::Rgba8UnormSrgb => wgpu::TextureFormat::Rgba8UnormSrgb,
+            },
             usage,
             wgpu::FilterMode::Nearest,
             label,
@@ -106,16 +100,27 @@ impl Texture {
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
-            &rgba,
+            image.data(),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
+                bytes_per_row: Some(4 * image.width()),
+                rows_per_image: Some(image.height()),
             },
             size,
         );
 
         Ok(texture)
+    }
+
+    pub fn from_dynamic_image(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        image: &DynamicImage,
+        label: Option<&str>,
+        is_normal_map: bool,
+    ) -> Result<Self> {
+        let image = Image::from_dynamic_image(image, is_normal_map);
+        Self::from_image(device, queue, &image, label)
     }
 
     pub(crate) fn create_2d_texture(
@@ -178,11 +183,11 @@ impl Texture {
             texture,
             view,
             sampler,
-            size, // NEW!
+            size,
         }
     }
 
-    pub fn to_image(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<DynamicImage> {
+    pub fn to_image(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Image> {
         let width = self.size.width;
         let height = self.size.height;
 
@@ -228,12 +233,14 @@ impl Texture {
 
         let data = buffer_slice.get_mapped_range();
 
-        let image = RgbaImage::from_raw(width, height, data.to_vec())
-            .ok_or_else(|| anyhow!("Failed to create image from raw texture data"))?;
-
         buffer.unmap();
 
-        Ok(DynamicImage::ImageRgba8(image))
+        Ok(Image::new(
+            data.to_vec(),
+            width,
+            height,
+            ImageFormat::Rgba8UnormSrgb,
+        ))
     }
 }
 
@@ -259,7 +266,6 @@ impl CubeTexture {
             size: wgpu::Extent3d {
                 width,
                 height,
-                // A cube has 6 sides, so we need 6 layers
                 depth_or_array_layers: 6,
             },
             mip_level_count,

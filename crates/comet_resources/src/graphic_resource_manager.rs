@@ -1,12 +1,13 @@
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
 use crate::{
+    asset_path::{asset_root, resolve_asset_path},
     font::Font,
     texture_atlas::{TextureAtlas, TextureRegion},
-    Texture,
+    Image,
 };
 use comet_log::info;
-use wgpu::{naga::ShaderStage, Device, Queue, ShaderModule};
+use wgpu::{naga::ShaderStage, Device, ShaderModule};
 
 pub struct GraphicResourceManager {
     texture_atlas: TextureAtlas,
@@ -71,11 +72,7 @@ impl GraphicResourceManager {
     }
 
     pub fn load_string(&self, file_name: &str) -> anyhow::Result<String> {
-        let base_path = std::env::var("OUT_DIR")
-            .map(|p| Path::new(&p).to_path_buf())
-            .unwrap_or_else(|_| Path::new(".").to_path_buf());
-
-        let path = base_path.join(file_name);
+        let path = resolve_asset_path(file_name);
         let txt = std::fs::read_to_string(&path)
             .map_err(|e| anyhow::anyhow!("Failed to load {}: {}", path.display(), e))?;
 
@@ -83,23 +80,15 @@ impl GraphicResourceManager {
     }
 
     pub fn load_binary(&self, file_name: &str) -> anyhow::Result<Vec<u8>> {
-        let path = Path::new(std::env::var("OUT_DIR")?.as_str())
-            .join("res")
-            .join(file_name);
+        let path = resolve_asset_path(file_name);
         let data = std::fs::read(path)?;
 
         Ok(data)
     }
 
-    pub fn load_texture(
-        &self,
-        file_name: &str,
-        is_normal_map: bool,
-        device: &Device,
-        queue: &Queue,
-    ) -> anyhow::Result<Texture> {
+    pub fn load_image(&self, file_name: &str, is_normal_map: bool) -> anyhow::Result<Image> {
         let data = self.load_binary(file_name)?;
-        Texture::from_bytes(device, queue, &data, file_name, is_normal_map)
+        Image::from_bytes(&data, is_normal_map)
     }
 
     /// `file_name` is the full name, so with the extension
@@ -164,5 +153,9 @@ impl GraphicResourceManager {
         let font = Font::new(path, size);
         info!("Font {} loaded!", font.name());
         self.fonts.push(font);
+    }
+
+    pub fn texture_directory(&self) -> std::path::PathBuf {
+        asset_root().join("textures")
     }
 }

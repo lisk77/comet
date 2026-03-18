@@ -21,7 +21,7 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
         "player",
         Player,
         Transform2D::new(),
-        Render2D::with_texture("res/textures/comet_icon.png")
+        Render2D::with_texture("res://textures/comet_icon.png")
     );
 
     app.spawn_prefab("camera");

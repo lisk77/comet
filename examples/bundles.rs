@@ -28,7 +28,7 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     app.spawn_bundle(Comet {
         player: Player,
         transform: Transform2D::new(),
-        render: Render2D::with_texture("res/textures/comet_icon.png"),
+        render: Render2D::with_texture("res://textures/comet_icon.png"),
     });
 }
 

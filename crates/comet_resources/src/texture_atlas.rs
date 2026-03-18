@@ -1,9 +1,9 @@
+use crate::asset_path::resolve_asset_path;
 use crate::font::*;
 use comet_log::*;
 use image::{DynamicImage, GenericImage, GenericImageView, RgbaImage};
 use rect_packer::{Config, Packer, Rect};
 use std::collections::HashMap;
-use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct TextureRegion {
@@ -251,7 +251,7 @@ impl TextureAtlas {
 
         info!("Loading textures...");
         for path in &paths {
-            let img = image::open(Path::new(path)).expect("Failed to load texture");
+            let img = image::open(resolve_asset_path(path)).expect("Failed to load texture");
             textures.push((path, img));
         }
 

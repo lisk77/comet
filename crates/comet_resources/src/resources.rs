@@ -1,7 +1,8 @@
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
 use crate::{
-    texture,
+    asset_path::resolve_asset_path,
+    image::Image,
     texture_atlas::{TextureAtlas, TextureRegion},
 };
 
@@ -43,32 +44,26 @@ impl ResourceManager {
     }
 
     pub async fn load_string(&self, file_name: &str) -> anyhow::Result<String> {
-        let path = Path::new(std::env::var("OUT_DIR")?.as_str())
-            .join("res")
-            .join(file_name);
+        let path = resolve_asset_path(file_name);
         let txt = std::fs::read_to_string(path)?;
 
         Ok(txt)
     }
 
     pub async fn load_binary(&self, file_name: &str) -> anyhow::Result<Vec<u8>> {
-        let path = Path::new(std::env::var("OUT_DIR").unwrap().as_str())
-            .join("res")
-            .join(file_name);
+        let path = resolve_asset_path(file_name);
         let data = std::fs::read(path)?;
 
         Ok(data)
     }
 
-    pub async fn load_texture(
+    pub async fn load_image(
         &self,
         file_name: &str,
         is_normal_map: bool,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> anyhow::Result<texture::Texture> {
+    ) -> anyhow::Result<Image> {
         let data = self.load_binary(file_name).await?;
-        texture::Texture::from_bytes(device, queue, &data, file_name, is_normal_map)
+        Image::from_bytes(&data, is_normal_map)
     }
 
     /*pub async fn load_model(

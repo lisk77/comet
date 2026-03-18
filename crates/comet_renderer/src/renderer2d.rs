@@ -1,5 +1,6 @@
 use crate::{
     camera::RenderCamera,
+    gpu_texture::GpuTexture,
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
     render_events::Renderer2DEvent,
@@ -11,7 +12,8 @@ use comet_ecs::Render;
 use comet_log::*;
 use comet_math::{m4, v2, v3};
 use comet_resources::{
-    font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
+    asset_root,
+    font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Vertex,
 };
 use std::{
     sync::Arc,
@@ -274,20 +276,10 @@ impl RendererHandle for RenderHandle2D {
 
 impl<'a> Renderer2D<'a> {
     pub fn init_atlas(&mut self) {
-        let texture_path = "res/textures/".to_string();
+        let texture_path = "res://textures/".to_string();
         let mut paths: Vec<String> = Vec::new();
 
-        for path in std::fs::read_dir(
-            Self::get_project_root()
-                .unwrap()
-                .as_os_str()
-                .to_str()
-                .unwrap()
-                .to_string()
-                + "/res/textures",
-        )
-        .unwrap()
-        {
+        for path in std::fs::read_dir(asset_root().join("textures")).unwrap() {
             paths.push(texture_path.clone() + path.unwrap().file_name().to_str().unwrap());
         }
 
@@ -362,7 +354,7 @@ impl<'a> Renderer2D<'a> {
             Box::new(universal_clear_execute),
             BASE_2D_SHADER_SRC,
             None,
-            &Texture::from_image(
+            &GpuTexture::from_dynamic_image(
                 self.render_context.device(),
                 self.render_context.queue(),
                 self.resource_manager.texture_atlas().atlas(),
@@ -376,7 +368,7 @@ impl<'a> Renderer2D<'a> {
             &[camera_bind_group_layout],
         );
 
-        let atlas_texture = Texture::from_image(
+        let atlas_texture = GpuTexture::from_dynamic_image(
             self.render_context.device(),
             self.render_context.queue(),
             self.resource_manager.texture_atlas().atlas(),
@@ -437,7 +429,7 @@ impl<'a> Renderer2D<'a> {
         let merged_atlas = TextureAtlas::from_fonts(fonts);
         self.resource_manager.set_font_atlas(merged_atlas.clone());
 
-        let font_texture = Texture::from_image(
+        let font_texture = GpuTexture::from_dynamic_image(
             self.render_context.device(),
             self.render_context.queue(),
             merged_atlas.atlas(),
@@ -576,7 +568,7 @@ impl<'a> Renderer2D<'a> {
         >,
         shader_path: &str,
         shader_stage: Option<wgpu::naga::ShaderStage>,
-        texture: &Texture,
+        texture: &GpuTexture,
         texture_bind_group_layout: Arc<wgpu::BindGroupLayout>,
         texture_sampler: wgpu::Sampler,
         bind_groups: Vec<Arc<wgpu::BindGroup>>,
@@ -742,24 +734,6 @@ impl<'a> Renderer2D<'a> {
         self.render_context
             .new_batch(label.clone(), Vec::new(), Vec::new());
         info!("Created render pass {}!", label)
-    }
-
-    fn get_project_root() -> std::io::Result<std::path::PathBuf> {
-        let path = std::env::current_dir()?;
-        let mut path_ancestors = path.as_path().ancestors();
-
-        while let Some(p) = path_ancestors.next() {
-            let has_cargo = std::fs::read_dir(p)?
-                .into_iter()
-                .any(|p| p.unwrap().file_name() == std::ffi::OsString::from("Cargo.lock"));
-            if has_cargo {
-                return Ok(std::path::PathBuf::from(p));
-            }
-        }
-        Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Ran out of places to find Cargo.toml",
-        ))
     }
 
     fn get_texture_region(&self, texture_path: &str) -> Option<&TextureRegion> {

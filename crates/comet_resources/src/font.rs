@@ -1,3 +1,4 @@
+use crate::asset_path::resolve_asset_path;
 use crate::texture_atlas::{TextureAtlas, TextureRegion};
 use ab_glyph::{point, Font as AbFont, FontArc, Glyph, PxScale, ScaleFont};
 use image::{DynamicImage, Rgba, RgbaImage};
@@ -49,7 +50,7 @@ impl Font {
     }
 
     fn generate_atlas(path: &str, size: f32) -> (TextureAtlas, f32) {
-        let font_data = std::fs::read(path).expect("Failed to read font file");
+        let font_data = std::fs::read(resolve_asset_path(path)).expect("Failed to read font file");
         let font = FontArc::try_from_vec(font_data).expect("Failed to load font");
 
         let scale = PxScale::from(size);

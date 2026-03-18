@@ -2,8 +2,8 @@ use comet::prelude::*;
 
 fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     renderer.init_atlas();
-    // Loading the font from the res/fonts directory with a rendered size of 77px
-    renderer.load_font("./res/fonts/PublicPixel.ttf", 77.0);
+    // Loading the font from the res://fonts directory with a rendered size of 77px
+    renderer.load_font("res://fonts/PublicPixel.ttf", 77.0);
 
     // Setting up camera
     app.spawn((Transform2D::new(), Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)));
@@ -13,7 +13,7 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
         Transform2D::new(),
         Text::new(
             "comet",                             // The content of the text
-            "./res/fonts/PublicPixel.ttf",       // The used font (right now exact to the font path)
+            "res://fonts/PublicPixel.ttf",       // The used font
             77.0,                                // Pixel size at which the font will be drawn
             true,                                // Should the text be visible
             sRgba::<f32>::from_hex("#abb2bfff"), // Color of the text
