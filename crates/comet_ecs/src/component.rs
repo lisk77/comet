@@ -137,7 +137,7 @@ pub trait Render {
     fn is_visible(&self) -> bool;
     fn set_visibility(&mut self, is_visible: bool);
     fn texture(&self) -> ImageRef;
-    fn set_texture(&mut self, texture: ImageRef);
+    fn set_texture(&mut self, texture: &'static str);
 }
 
 pub trait Camera {
@@ -310,6 +310,10 @@ impl Render2D {
     pub fn set_draw_index(&mut self, index: u32) {
         self.draw_index = index
     }
+
+    pub fn set_image_ref(&mut self, image_ref: ImageRef) {
+        self.texture = image_ref;
+    }
 }
 
 impl Render for Render2D {
@@ -325,8 +329,8 @@ impl Render for Render2D {
         self.texture
     }
 
-    fn set_texture(&mut self, texture: ImageRef) {
-        self.texture = texture;
+    fn set_texture(&mut self, texture: &'static str) {
+        self.texture = ImageRef::Unresolved(texture);
     }
 }
 

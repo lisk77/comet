@@ -227,7 +227,7 @@ impl RenderHandle2D {
                     let Some(atlas_ref) = self.resolve_atlas_ref(path) else {
                         continue;
                     };
-                    render.set_texture(ImageRef::Atlas(atlas_ref));
+                    render.set_image_ref(ImageRef::Atlas(atlas_ref));
                     atlas_ref
                 }
             };
@@ -613,7 +613,7 @@ impl<'a> Renderer2D<'a> {
             }
         }
 
-        info!("Font {} successfully loaded into renderer (cached)", path);
+        info!("Font {} successfully loaded", path);
     }
 
     pub fn new_render_pass(
