@@ -1,6 +1,7 @@
 use crate::asset_path::resolve_asset_path;
 use crate::texture_atlas::{TextureAtlas, TextureRegion};
 use ab_glyph::{point, Font as AbFont, FontArc, Glyph, PxScale, ScaleFont};
+use comet_log::error;
 use image::{DynamicImage, Rgba, RgbaImage};
 
 pub struct GlyphData {
@@ -21,12 +22,19 @@ pub struct Font {
 
 impl Font {
     pub fn new(path: &str, size: f32) -> Self {
-        let (glyphs, line_height) = Self::generate_atlas(path, size);
-        Font {
-            name: path.to_string(),
-            size,
-            line_height,
-            glyphs,
+        match Self::generate_atlas(path, size) {
+            Some((glyphs, line_height)) => Font {
+                name: path.to_string(),
+                size,
+                line_height,
+                glyphs,
+            },
+            None => Font {
+                name: path.to_string(),
+                size,
+                line_height: 0.0,
+                glyphs: TextureAtlas::empty(),
+            },
         }
     }
 
@@ -50,9 +58,21 @@ impl Font {
         self.glyphs.textures().get(&ch.to_string())
     }
 
-    fn generate_atlas(path: &str, size: f32) -> (TextureAtlas, f32) {
-        let font_data = std::fs::read(resolve_asset_path(path)).expect("Failed to read font file");
-        let font = FontArc::try_from_vec(font_data).expect("Failed to load font");
+    fn generate_atlas(path: &str, size: f32) -> Option<(TextureAtlas, f32)> {
+        let font_data = match std::fs::read(resolve_asset_path(path)) {
+            Ok(d) => d,
+            Err(e) => {
+                error!("Failed to read font file '{}': {}", path, e);
+                return None;
+            }
+        };
+        let font = match FontArc::try_from_vec(font_data) {
+            Ok(f) => f,
+            Err(e) => {
+                error!("Failed to parse font '{}': {}", path, e);
+                return None;
+            }
+        };
 
         let scale = PxScale::from(size);
         let scaled_font = font.as_scaled(scale);
@@ -114,9 +134,9 @@ impl Font {
             }
         }
 
-        (
+        Some((
             TextureAtlas::from_glyphs(glyphs),
             scaled_font.ascent() - scaled_font.descent(),
-        )
+        ))
     }
 }

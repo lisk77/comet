@@ -303,15 +303,28 @@ impl<'a> Renderer2D<'a> {
         let texture_path = "res://textures/".to_string();
         let mut paths: Vec<String> = Vec::new();
 
-        for path in std::fs::read_dir(asset_root().join("textures")).unwrap() {
-            paths.push(texture_path.clone() + path.unwrap().file_name().to_str().unwrap());
+        let dir = match std::fs::read_dir(asset_root().join("textures")) {
+            Ok(d) => d,
+            Err(e) => {
+                error!("Failed to read textures directory: {}", e);
+                return;
+            }
+        };
+        for entry in dir {
+            match entry {
+                Ok(e) => {
+                    if let Some(name) = e.file_name().to_str() {
+                        paths.push(texture_path.clone() + name);
+                    }
+                }
+                Err(e) => error!("Failed to read directory entry: {}", e),
+            }
         }
 
         self.init_atlas_by_paths(paths);
     }
 
     pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
-        // Load TextureAtlas from paths
         let texture_atlas = match comet_assets::TextureAtlas::from_texture_paths(paths.clone()) {
             atlas => {
                 info!("Loaded texture atlas from paths: {} images", paths.len());
@@ -319,7 +332,6 @@ impl<'a> Renderer2D<'a> {
             }
         };
 
-        // Store atlas metadata in resources for texture region lookups
         if let Some(handle) = self.asset_provider.add_texture_atlas(texture_atlas.clone()) {
             self.render_context.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
         } else {
@@ -327,7 +339,6 @@ impl<'a> Renderer2D<'a> {
             return;
         }
 
-        // Convert to GPU texture
         let gpu_texture = match GpuTexture::from_dynamic_image(
             self.render_context.device(),
             self.render_context.queue(),
@@ -342,7 +353,6 @@ impl<'a> Renderer2D<'a> {
             }
         };
 
-        // Wrap in Arc and cache GPU texture  
         let gpu_texture_arc = Arc::new(gpu_texture);
         self.render_context
             .resources_mut()
@@ -449,7 +459,6 @@ impl<'a> Renderer2D<'a> {
     pub fn load_font(&mut self, path: &str, size: f32) {
         info!("Loading font from {}", path);
 
-        // Load font and store it in the asset provider for metric lookups
         let font = comet_assets::Font::new(path, size);
         let font_handle = match self.asset_provider.add_font(font) {
             Some(h) => h,
@@ -460,7 +469,6 @@ impl<'a> Renderer2D<'a> {
         };
         self.render_context.resources_mut().insert_asset_font_handle(path.to_string(), font_handle);
 
-        // Build the merged font atlas using a reference to the stored font
         let font_atlas = self.asset_provider.with_font(font_handle, |f| {
             comet_assets::TextureAtlas::from_fonts(std::slice::from_ref(f))
         }).unwrap_or_else(|| {
@@ -468,7 +476,6 @@ impl<'a> Renderer2D<'a> {
             comet_assets::TextureAtlas::empty()
         });
 
-        // Store atlas handle in asset provider
         if let Some(handle) = self.asset_provider.add_texture_atlas(font_atlas.clone()) {
             self.render_context.resources_mut().insert_asset_atlas_handle("font_atlas".to_string(), handle);
         } else {
@@ -490,7 +497,6 @@ impl<'a> Renderer2D<'a> {
             }
         };
 
-        // Wrap in Arc and cache GPU texture
         let font_texture_arc = Arc::new(font_texture);
         self.render_context
             .resources_mut()
@@ -783,7 +789,6 @@ impl<'a> Renderer2D<'a> {
     fn get_glyph_region(&self, glyph: char, font: &str) -> TextureRegion {
         let key = format!("{}::{}", font, glyph);
 
-        // Query font atlas from asset provider using stored handle
         if let Some(handle) = self.render_context.resources().get_asset_atlas_handle("font_atlas") {
             self.asset_provider.with_texture_atlas(handle, |atlas| {
                 match atlas.textures().get(&key) {
@@ -843,10 +848,20 @@ impl<'a> Renderer2D<'a> {
             position.y() / config.height as f32,
         );
 
-        let font_handle = self.render_context.resources().get_asset_font_handle(font)
-            .unwrap_or_else(|| panic!("Font '{}' not found", font));
-        let font_data = self.asset_provider.with_font(font_handle, |f| f.clone())
-            .unwrap_or_else(|| panic!("Font '{}' not accessible via asset provider", font));
+        let font_handle = match self.render_context.resources().get_asset_font_handle(font) {
+            Some(h) => h,
+            None => {
+                error!("Font '{}' not found", font);
+                return (Vec::new(), Vec::new());
+            }
+        };
+        let font_data = match self.asset_provider.with_font(font_handle, |f| f.clone()) {
+            Some(f) => f,
+            None => {
+                error!("Font '{}' not accessible via asset provider", font);
+                return (Vec::new(), Vec::new());
+            }
+        };
 
         let scale_factor = size / font_data.size();
         let line_height = (font_data.line_height() / config.height as f32) * scale_factor;

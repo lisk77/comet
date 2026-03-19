@@ -33,9 +33,12 @@ impl Audio for KiraAudio {
     }
 
     fn load_asset(&mut self, name: &str, clip: &comet_assets::AudioClip) {
+        if clip.is_empty() {
+            return;
+        }
         match StaticSoundData::from_cursor(Cursor::new(clip.bytes().to_vec())) {
             Ok(sound) => { self.sounds.insert(name.to_string(), sound); }
-            Err(e) => eprintln!("Failed to load audio clip '{}': {}", name, e),
+            Err(e) => eprintln!("Failed to decode audio clip '{}': {}", name, e),
         }
     }
 

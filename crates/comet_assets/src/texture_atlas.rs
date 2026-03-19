@@ -206,13 +206,10 @@ impl TextureAtlas {
 
         for (name, tex) in textures {
             if let Some(rect) = placements.get(*name) {
-                base.copy_from(&tex.to_rgba8(), rect.x as u32, rect.y as u32)
-                    .unwrap_or_else(|_| {
-                        panic!(
-                            "Failed to blit texture '{}' into atlas at ({}, {})",
-                            name, rect.x, rect.y
-                        )
-                    });
+                if let Err(e) = base.copy_from(&tex.to_rgba8(), rect.x as u32, rect.y as u32) {
+                    error!("Failed to blit texture '{}' into atlas at ({}, {}): {}", name, rect.x, rect.y, e);
+                    continue;
+                }
 
                 let (u0, v0, u1, v1) = Self::region_uvs(rect, atlas_width, atlas_height);
 
@@ -251,7 +248,13 @@ impl TextureAtlas {
 
         info!("Loading textures...");
         for path in &paths {
-            let img = image::open(resolve_asset_path(path)).expect("Failed to load texture");
+            let img = match image::open(resolve_asset_path(path)) {
+                Ok(i) => i,
+                Err(e) => {
+                    error!("Failed to load texture '{}': {}", path, e);
+                    continue;
+                }
+            };
             textures.push((path, img));
         }
 
