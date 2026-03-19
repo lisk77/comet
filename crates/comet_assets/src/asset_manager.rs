@@ -1,9 +1,10 @@
-use crate::{asset_store::*, asset_handle::*, image::Image, font::Font, texture_atlas::TextureAtlas};
+use crate::{asset_store::*, asset_handle::*, image::Image, font::Font, texture_atlas::TextureAtlas, audio_clip::AudioClip};
 
 pub struct AssetManager {
     images: AssetStore<Image>,
     fonts: AssetStore<Font>,
     texture_atlases: AssetStore<TextureAtlas>,
+    audio_clips: AssetStore<AudioClip>,
 }
 
 impl AssetManager {
@@ -12,6 +13,7 @@ impl AssetManager {
             images: AssetStore::new(),
             fonts: AssetStore::new(),
             texture_atlases: AssetStore::new(),
+            audio_clips: AssetStore::new(),
         }
     }
 
@@ -64,5 +66,21 @@ impl AssetManager {
 
     pub fn remove_texture_atlas(&mut self, handle: Asset<TextureAtlas>) -> Option<TextureAtlas> {
         self.texture_atlases.remove(handle)
+    }
+
+    pub fn add_audio_clip(&mut self, clip: AudioClip) -> Asset<AudioClip> {
+        self.audio_clips.insert(clip)
+    }
+
+    pub fn get_audio_clip(&self, handle: Asset<AudioClip>) -> Option<&AudioClip> {
+        self.audio_clips.get(handle)
+    }
+
+    pub fn get_audio_clip_mut(&mut self, handle: Asset<AudioClip>) -> Option<&mut AudioClip> {
+        self.audio_clips.get_mut(handle)
+    }
+
+    pub fn remove_audio_clip(&mut self, handle: Asset<AudioClip>) -> Option<AudioClip> {
+        self.audio_clips.remove(handle)
     }
 }

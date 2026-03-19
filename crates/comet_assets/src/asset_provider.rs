@@ -1,5 +1,5 @@
 use std::sync::{Arc, RwLock};
-use crate::{AssetManager, Asset, Image, Font, TextureAtlas};
+use crate::{AssetManager, Asset, Image, Font, TextureAtlas, AudioClip};
 
 /// Thread-safe API for accessing assets from the `AssetManager`.
 pub struct AssetProvider {
@@ -75,6 +75,27 @@ impl AssetProvider {
     /// Remove a texture atlas from the asset store.
     pub fn remove_texture_atlas(&self, handle: Asset<TextureAtlas>) -> Option<TextureAtlas> {
         self.inner.write().ok().and_then(|mut manager| manager.remove_texture_atlas(handle))
+    }
+
+    /// Access an audio clip through a callback within a read lock.
+    pub fn with_audio_clip<F, T>(&self, handle: Asset<AudioClip>, f: F) -> Option<T>
+    where
+        F: FnOnce(&AudioClip) -> T,
+    {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|manager| manager.get_audio_clip(handle).map(f))
+    }
+
+    /// Add an audio clip to the asset store.
+    pub fn add_audio_clip(&self, clip: AudioClip) -> Option<Asset<AudioClip>> {
+        self.inner.write().ok().map(|mut manager| manager.add_audio_clip(clip))
+    }
+
+    /// Remove an audio clip from the asset store.
+    pub fn remove_audio_clip(&self, handle: Asset<AudioClip>) -> Option<AudioClip> {
+        self.inner.write().ok().and_then(|mut manager| manager.remove_audio_clip(handle))
     }
 
     /// Get a clone of `AssetManager` Arc.

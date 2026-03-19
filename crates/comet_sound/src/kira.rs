@@ -3,7 +3,7 @@ use kira::{
     sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings},
     AudioManager, AudioManagerSettings, Decibels, Tween,
 };
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, io::Cursor, path::Path};
 
 pub struct KiraAudio {
     manager: AudioManager,
@@ -29,6 +29,13 @@ impl Audio for KiraAudio {
     fn load(&mut self, name: &str, path: &str) {
         if let Some(sound) = Self::load_sound(Path::new(path)) {
             self.sounds.insert(name.to_string(), sound);
+        }
+    }
+
+    fn load_asset(&mut self, name: &str, clip: &comet_assets::AudioClip) {
+        match StaticSoundData::from_cursor(Cursor::new(clip.bytes().to_vec())) {
+            Ok(sound) => { self.sounds.insert(name.to_string(), sound); }
+            Err(e) => eprintln!("Failed to load audio clip '{}': {}", name, e),
         }
     }
 

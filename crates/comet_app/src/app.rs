@@ -427,7 +427,7 @@ impl App {
     }
 
     pub fn load_audio(&mut self, name: &str, path: &str) {
-        self.audio.load(name, path);
+        self.audio.load_asset(name, &comet_assets::AudioClip::new(path));
     }
 
     pub fn play_audio(&mut self, name: &str, looped: bool) {
