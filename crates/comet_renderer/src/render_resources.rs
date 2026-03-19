@@ -1,6 +1,7 @@
 use comet_log::error;
 use std::{collections::HashMap, sync::Arc};
 use crate::gpu_texture::GpuTexture;
+use comet_assets;
 
 pub struct RenderResources {
     bind_groups: HashMap<String, Vec<Arc<wgpu::BindGroup>>>,
@@ -8,6 +9,8 @@ pub struct RenderResources {
     buffers: HashMap<String, Vec<Arc<wgpu::Buffer>>>,
     samplers: HashMap<String, wgpu::Sampler>,
     gpu_textures: HashMap<String, Arc<GpuTexture>>,
+    asset_atlas_handles: HashMap<String, comet_assets::Asset<comet_assets::TextureAtlas>>,
+    asset_font_handles: HashMap<String, comet_assets::Asset<comet_assets::Font>>,
 }
 
 impl RenderResources {
@@ -18,6 +21,8 @@ impl RenderResources {
             buffers: HashMap::new(),
             samplers: HashMap::new(),
             gpu_textures: HashMap::new(),
+            asset_atlas_handles: HashMap::new(),
+            asset_font_handles: HashMap::new(),
         }
     }
 
@@ -164,5 +169,35 @@ impl RenderResources {
     /// Remove a GPU texture from a render pass.
     pub fn remove_gpu_texture(&mut self, render_pass_label: &str) -> Option<Arc<GpuTexture>> {
         self.gpu_textures.remove(render_pass_label)
+    }
+
+    /// Get a cached asset atlas handle for metadata lookups.
+    pub fn get_asset_atlas_handle(&self, key: &str) -> Option<comet_assets::Asset<comet_assets::TextureAtlas>> {
+        self.asset_atlas_handles.get(key).copied()
+    }
+
+    /// Cache an asset atlas handle for lookups.
+    pub fn insert_asset_atlas_handle(&mut self, key: String, handle: comet_assets::Asset<comet_assets::TextureAtlas>) {
+        self.asset_atlas_handles.insert(key, handle);
+    }
+
+    /// Remove a cached asset atlas handle.
+    pub fn remove_asset_atlas_handle(&mut self, key: &str) -> Option<comet_assets::Asset<comet_assets::TextureAtlas>> {
+        self.asset_atlas_handles.remove(key)
+    }
+
+    /// Get a cached asset font handle by name.
+    pub fn get_asset_font_handle(&self, key: &str) -> Option<comet_assets::Asset<comet_assets::Font>> {
+        self.asset_font_handles.get(key).copied()
+    }
+
+    /// Cache an asset font handle by name.
+    pub fn insert_asset_font_handle(&mut self, key: String, handle: comet_assets::Asset<comet_assets::Font>) {
+        self.asset_font_handles.insert(key, handle);
+    }
+
+    /// Remove a cached asset font handle.
+    pub fn remove_asset_font_handle(&mut self, key: &str) -> Option<comet_assets::Asset<comet_assets::Font>> {
+        self.asset_font_handles.remove(key)
     }
 }

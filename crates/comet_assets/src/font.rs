@@ -11,6 +11,7 @@ pub struct GlyphData {
     pub offset_y: f32,
 }
 
+#[derive(Clone)]
 pub struct Font {
     name: String,
     size: f32,

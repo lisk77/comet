@@ -13,7 +13,7 @@ use comet_log::*;
 use comet_math::{m4, v2, v3};
 use comet_assets::{
     asset_root, AtlasRef, ImageRef,
-    font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Vertex,
+    texture_atlas::*, Vertex,
 };
 use std::{
     sync::Arc,
@@ -66,7 +66,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 pub struct Renderer2D<'a> {
     render_context: RenderContext<'a>,
     asset_provider: Arc<comet_assets::AssetProvider>,
-    resource_manager: GraphicResourceManager,
     render_passes: Vec<RenderPass>,
     last_frame_time: std::time::Instant,
     delta_time: f32,
@@ -312,7 +311,42 @@ impl<'a> Renderer2D<'a> {
     }
 
     pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
-        self.resource_manager.create_texture_atlas(paths);
+        // Load TextureAtlas from paths
+        let texture_atlas = match comet_assets::TextureAtlas::from_texture_paths(paths.clone()) {
+            atlas => {
+                info!("Loaded texture atlas from paths: {} images", paths.len());
+                atlas
+            }
+        };
+
+        // Store atlas metadata in resources for texture region lookups
+        if let Some(handle) = self.asset_provider.add_texture_atlas(texture_atlas.clone()) {
+            self.render_context.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
+        } else {
+            error!("Failed to add texture atlas to asset provider");
+            return;
+        }
+
+        // Convert to GPU texture
+        let gpu_texture = match GpuTexture::from_dynamic_image(
+            self.render_context.device(),
+            self.render_context.queue(),
+            texture_atlas.atlas(),
+            Some("Atlas"),
+            false,
+        ) {
+            Ok(tex) => tex,
+            Err(e) => {
+                error!("Failed to convert atlas to GPU texture: {}", e);
+                return;
+            }
+        };
+
+        // Wrap in Arc and cache GPU texture  
+        let gpu_texture_arc = Arc::new(gpu_texture);
+        self.render_context
+            .resources_mut()
+            .insert_gpu_texture("atlas".to_string(), gpu_texture_arc.clone());
 
         let texture_bind_group_layout =
             Arc::new(self.render_context.device().create_bind_group_layout(
@@ -373,69 +407,37 @@ impl<'a> Renderer2D<'a> {
                     }],
                 },
             ));
-
         self.new_render_pass(
             "Universal".to_string(),
             Box::new(universal_clear_execute),
             BASE_2D_SHADER_SRC,
             None,
-            &GpuTexture::from_dynamic_image(
-                self.render_context.device(),
-                self.render_context.queue(),
-                self.resource_manager.texture_atlas().atlas(),
-                Some("Universal"),
-                false,
-            )
-            .unwrap(),
+            &(*gpu_texture_arc),
             texture_bind_group_layout.clone(),
             texture_sampler,
             Vec::new(),
             &[camera_bind_group_layout],
         );
 
-        let atlas_texture = GpuTexture::from_dynamic_image(
-            self.render_context.device(),
-            self.render_context.queue(),
-            self.resource_manager.texture_atlas().atlas(),
-            Some("Universal Updated"),
-            false,
-        )
-        .unwrap();
-
-        let texture_sampler =
-            self.render_context
-                .device()
-                .create_sampler(&wgpu::SamplerDescriptor {
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Nearest,
-                    min_filter: wgpu::FilterMode::Nearest,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
-                    lod_min_clamp: 0.0,
-                    lod_max_clamp: 100.0,
-                    compare: None,
-                    anisotropy_clamp: 1,
-                    border_color: None,
-                    ..Default::default()
-                });
-
-        let new_bind_group = Arc::new(self.render_context.device().create_bind_group(
-            &wgpu::BindGroupDescriptor {
+        let new_bind_group = Arc::new({
+            let device = self.render_context.device();
+            let sampler = self.render_context.resources().get_sampler("Universal")
+                .expect("Universal sampler missing after new_render_pass");
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&atlas_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&gpu_texture_arc.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                        resource: wgpu::BindingResource::Sampler(sampler),
                     },
                 ],
                 label: Some("Universal Texture Bind Group (Updated)"),
-            },
-        ));
+            })
+        });
 
         self.render_context.resources_mut().replace_bind_group(
             "Universal".to_string(),
@@ -447,21 +449,52 @@ impl<'a> Renderer2D<'a> {
     pub fn load_font(&mut self, path: &str, size: f32) {
         info!("Loading font from {}", path);
 
-        let font = Font::new(path, size);
-        self.resource_manager.fonts_mut().push(font);
+        // Load font and store it in the asset provider for metric lookups
+        let font = comet_assets::Font::new(path, size);
+        let font_handle = match self.asset_provider.add_font(font) {
+            Some(h) => h,
+            None => {
+                error!("Failed to add font '{}' to asset provider", path);
+                return;
+            }
+        };
+        self.render_context.resources_mut().insert_asset_font_handle(path.to_string(), font_handle);
 
-        let fonts = self.resource_manager.fonts();
-        let merged_atlas = TextureAtlas::from_fonts(fonts);
-        self.resource_manager.set_font_atlas(merged_atlas.clone());
+        // Build the merged font atlas using a reference to the stored font
+        let font_atlas = self.asset_provider.with_font(font_handle, |f| {
+            comet_assets::TextureAtlas::from_fonts(std::slice::from_ref(f))
+        }).unwrap_or_else(|| {
+            error!("Font not accessible after adding to asset provider");
+            comet_assets::TextureAtlas::empty()
+        });
 
-        let font_texture = GpuTexture::from_dynamic_image(
+        // Store atlas handle in asset provider
+        if let Some(handle) = self.asset_provider.add_texture_atlas(font_atlas.clone()) {
+            self.render_context.resources_mut().insert_asset_atlas_handle("font_atlas".to_string(), handle);
+        } else {
+            error!("Failed to add font atlas to asset provider");
+            return;
+        }
+
+        let font_texture = match GpuTexture::from_dynamic_image(
             self.render_context.device(),
             self.render_context.queue(),
-            merged_atlas.atlas(),
+            font_atlas.atlas(),
             Some("FontAtlas"),
             false,
-        )
-        .expect("Failed to create GPU texture for font atlas");
+        ) {
+            Ok(tex) => tex,
+            Err(e) => {
+                error!("Failed to create GPU texture for font atlas: {}", e);
+                return;
+            }
+        };
+
+        // Wrap in Arc and cache GPU texture
+        let font_texture_arc = Arc::new(font_texture);
+        self.render_context
+            .resources_mut()
+            .insert_gpu_texture("font_atlas".to_string(), font_texture_arc.clone());
 
         let texture_bind_group_layout =
             Arc::new(self.render_context.device().create_bind_group_layout(
@@ -507,7 +540,7 @@ impl<'a> Renderer2D<'a> {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&font_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&font_texture_arc.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
@@ -540,7 +573,7 @@ impl<'a> Renderer2D<'a> {
             Box::new(universal_load_execute),
             BASE_2D_SHADER_SRC,
             None,
-            &font_texture,
+            &(*font_texture_arc),
             texture_bind_group_layout.clone(),
             texture_sampler,
             vec![],
@@ -580,7 +613,7 @@ impl<'a> Renderer2D<'a> {
             }
         }
 
-        info!("Font {} successfully loaded into renderer", path);
+        info!("Font {} successfully loaded into renderer (cached)", path);
     }
 
     pub fn new_render_pass(
@@ -592,7 +625,7 @@ impl<'a> Renderer2D<'a> {
                 + Sync,
         >,
         shader_path: &str,
-        shader_stage: Option<wgpu::naga::ShaderStage>,
+        _shader_stage: Option<wgpu::naga::ShaderStage>,
         texture: &GpuTexture,
         texture_bind_group_layout: Arc<wgpu::BindGroupLayout>,
         texture_sampler: wgpu::Sampler,
@@ -601,20 +634,10 @@ impl<'a> Renderer2D<'a> {
     ) {
         info!("Creating render pass {}", label);
 
-        if let Err(e) = self
-            .resource_manager
-            .load_shader(self.render_context.device(), shader_stage, shader_path)
-            .or_else(|_| {
-                self.resource_manager.load_shader_from_string(
-                    self.render_context.device(),
-                    format!("{} Shader", label.clone()).as_str(),
-                    shader_path,
-                )
-            })
-        {
-            error!("Aborting render pass creation: {}", e);
-            return;
-        }
+        let shader_module = self.render_context.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(&format!("{} Shader", label)),
+            source: wgpu::ShaderSource::Wgsl(shader_path.into()),
+        });
 
         let texture_bind_group = Arc::new({
             let device = self.render_context.device();
@@ -649,25 +672,17 @@ impl<'a> Renderer2D<'a> {
                 push_constant_ranges: &[],
             });
 
-            let shader_module = self
-                .resource_manager
-                .get_shader(shader_path)
-                .unwrap_or_else(|| {
-                    self.resource_manager
-                        .get_shader(format!("{} Shader", label.clone()).as_str())
-                        .unwrap()
-                });
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(&format!("{} Render Pipeline", label)),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: shader_module,
+                    module: &shader_module,
                     entry_point: "vs_main",
                     buffers: &[comet_assets::Vertex::desc()],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: shader_module,
+                    module: &shader_module,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
                         format: self.render_context.config().format,
@@ -765,29 +780,34 @@ impl<'a> Renderer2D<'a> {
         texture.region()
     }
 
-    fn get_glyph_region(&self, glyph: char, font: &str) -> &TextureRegion {
+    fn get_glyph_region(&self, glyph: char, font: &str) -> TextureRegion {
         let key = format!("{}::{}", font, glyph);
 
-        match self.resource_manager.font_atlas().textures().get(&key) {
-            Some(region) => region,
-            None => {
-                #[cfg(feature = "comet_debug")]
-                warn!(
-                    "Missing glyph for character '{}' in font '{}', using fallback.",
-                    glyph, font
-                );
-                let fallback_key = format!("{}:: ", font);
-                self.resource_manager
-                    .font_atlas()
-                    .textures()
-                    .get(&fallback_key)
-                    .unwrap_or_else(|| {
-                        fatal!(
-                            "No fallback glyph available (space also missing) for font '{}'",
-                            font
-                        )
-                    })
-            }
+        // Query font atlas from asset provider using stored handle
+        if let Some(handle) = self.render_context.resources().get_asset_atlas_handle("font_atlas") {
+            self.asset_provider.with_texture_atlas(handle, |atlas| {
+                match atlas.textures().get(&key) {
+                    Some(region) => *region,
+                    None => {
+                        #[cfg(feature = "comet_debug")]
+                        warn!(
+                            "Missing glyph for character '{}' in font '{}', using fallback.",
+                            glyph, font
+                        );
+                        let fallback_key = format!("{}:: ", font);
+                        atlas.textures().get(&fallback_key).copied().unwrap_or_else(|| {
+                            fatal!(
+                                "No fallback glyph available (space also missing) for font '{}'",
+                                font
+                            )
+                        })
+                    }
+                }
+            }).unwrap_or_else(|| {
+                fatal!("Failed to access font atlas from asset provider");
+            })
+        } else {
+            fatal!("Font atlas not loaded yet - call load_font() first");
         }
     }
 
@@ -823,12 +843,10 @@ impl<'a> Renderer2D<'a> {
             position.y() / config.height as f32,
         );
 
-        let font_data = self
-            .resource_manager
-            .fonts()
-            .iter()
-            .find(|f| f.name() == font)
-            .unwrap_or_else(|| panic!("Font '{}' not found in resource manager", font));
+        let font_handle = self.render_context.resources().get_asset_font_handle(font)
+            .unwrap_or_else(|| panic!("Font '{}' not found", font));
+        let font_data = self.asset_provider.with_font(font_handle, |f| f.clone())
+            .unwrap_or_else(|| panic!("Font '{}' not accessible via asset provider", font));
 
         let scale_factor = size / font_data.size();
         let line_height = (font_data.line_height() / config.height as f32) * scale_factor;
@@ -1189,7 +1207,6 @@ impl<'a> Renderer for Renderer2D<'a> {
         Self {
             render_context: RenderContext::new(window, clear_color),
             asset_provider,
-            resource_manager: GraphicResourceManager::new(),
             render_passes: Vec::new(),
             last_frame_time: std::time::Instant::now(),
             delta_time: 0.0,
@@ -1203,9 +1220,19 @@ impl<'a> Renderer for Renderer2D<'a> {
             Renderer2DCommand::InitAtlas => self.init_atlas(),
             Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
             Renderer2DCommand::ResolveAtlasRef(path) => {
-                let _ = self
-                    .event_sender
-                    .send(Renderer2DEvent::AtlasRef(self.resource_manager.resolve_atlas_ref(path)));
+                let atlas_ref = self.render_context
+                    .resources()
+                    .get_asset_atlas_handle("atlas")
+                    .and_then(|handle| {
+                        self.asset_provider.with_texture_atlas(handle, |atlas| {
+                            atlas.textures()
+                                .get(path)
+                                .copied()
+                                .map(|region| AtlasRef::new(region, handle))
+                        })
+                        .flatten()
+                    });
+                let _ = self.event_sender.send(Renderer2DEvent::AtlasRef(atlas_ref));
             }
             Renderer2DCommand::Size => {
                 let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));
