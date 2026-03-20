@@ -99,6 +99,7 @@ impl AssetProvider {
     }
 
     /// Get a clone of `AssetManager` Arc.
+    #[allow(unused)]
     pub(crate) fn inner_arc(&self) -> Arc<RwLock<AssetManager>> {
         Arc::clone(&self.inner)
     }

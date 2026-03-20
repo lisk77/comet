@@ -12,7 +12,6 @@ pub use texture_atlas::*;
 pub use audio_clip::*;
 
 pub mod font;
-pub mod graphic_resource_manager;
 pub mod resources;
 pub mod asset_path;
 pub mod atlas_ref;
