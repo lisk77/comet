@@ -1,5 +1,7 @@
 use std::sync::{Arc, RwLock};
+use anyhow::{anyhow, Result};
 use crate::{AssetManager, Asset, Image, Font, TextureAtlas, AudioClip};
+use crate::asset_manager::{Loadable, AnyHandle};
 
 /// Thread-safe API for accessing assets from the `AssetManager`.
 pub struct AssetProvider {
@@ -96,6 +98,25 @@ impl AssetProvider {
     /// Remove an audio clip from the asset store.
     pub fn remove_audio_clip(&self, handle: Asset<AudioClip>) -> Option<AudioClip> {
         self.inner.write().ok().and_then(|mut manager| manager.remove_audio_clip(handle))
+    }
+
+    /// Register a loader for a file extension.
+    pub fn register_loader<T: Loadable>(
+        &self,
+        ext: impl Into<String>,
+        loader: impl Fn(&[u8], &str) -> Result<T> + Send + Sync + 'static,
+    ) {
+        if let Ok(mut manager) = self.inner.write() {
+            manager.register_loader(ext, loader);
+        }
+    }
+
+    /// Load an asset from the given path, using the registered loader for its extension.
+    pub fn load(&self, path: &str) -> Result<AnyHandle> {
+        self.inner
+            .write()
+            .map_err(|_| anyhow!("AssetManager lock poisoned"))?
+            .load(path)
     }
 
     /// Get a clone of `AssetManager` Arc.

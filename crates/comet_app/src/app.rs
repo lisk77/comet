@@ -7,7 +7,8 @@ use comet_input::keyboard::Key;
 use comet_log::*;
 use comet_renderer::renderer::{Renderer, RendererHandle};
 use comet_sound::*;
-use comet_assets::{AssetManager, AssetProvider};
+use comet_assets::{AssetManager, AssetProvider, Loadable};
+use anyhow::Result;
 use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
 use std::sync::{
@@ -424,6 +425,20 @@ impl App {
     /// Checks if a prefab with the given name exists.
     pub fn has_prefab(&self, name: &str) -> bool {
         self.scene.has_prefab(name)
+    }
+
+    /// Register a custom loader for a file extension.
+    pub fn register_loader<T: Loadable>(
+        &self,
+        ext: impl Into<String>,
+        loader: impl Fn(&[u8], &str) -> Result<T> + Send + Sync + 'static,
+    ) {
+        self.asset_provider.register_loader(ext, loader);
+    }
+
+    /// Load an asset from the given path using the registered loader for its extension.
+    pub fn load(&self, path: &str) -> Result<comet_assets::AnyHandle> {
+        self.asset_provider.load(path)
     }
 
     pub fn load_audio(&mut self, name: &str, path: &str) {
