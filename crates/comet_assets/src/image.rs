@@ -43,6 +43,12 @@ impl Image {
         }
     }
 
+    pub fn to_dynamic_image(&self) -> Result<DynamicImage> {
+        let rgba = RgbaImage::from_raw(self.width, self.height, self.data.clone())
+            .ok_or_else(|| anyhow!("Failed to create image from raw data"))?;
+        Ok(DynamicImage::ImageRgba8(rgba))
+    }
+
     pub fn into_dynamic_image(self) -> Result<DynamicImage> {
         let rgba = RgbaImage::from_raw(self.width, self.height, self.data)
             .ok_or_else(|| anyhow!("Failed to create image from raw data"))?;

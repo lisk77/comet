@@ -325,11 +325,30 @@ impl<'a> Renderer2D<'a> {
     }
 
     pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
-        let texture_atlas = match comet_assets::TextureAtlas::from_texture_paths(paths.clone()) {
-            atlas => {
-                info!("Loaded texture atlas from paths: {} images", paths.len());
-                atlas
-            }
+        let mut names = Vec::new();
+        let mut dynamic_images = Vec::new();
+
+        for path in &paths {
+            let handle = match self.asset_provider.load(path) {
+                Ok(h) => h,
+                Err(e) => { error!("Failed to load texture '{}': {}", path, e); continue; }
+            };
+            let image_handle = match handle.try_as::<comet_assets::Image>() {
+                Some(h) => h,
+                None => { error!("Expected Image for '{}'", path); continue; }
+            };
+            let dynamic = match self.asset_provider.with_image(image_handle, |img| img.to_dynamic_image()) {
+                Some(Ok(d)) => d,
+                Some(Err(e)) => { error!("Failed to convert image '{}': {}", path, e); continue; }
+                None => { error!("Failed to access image '{}'", path); continue; }
+            };
+            names.push(path.clone());
+            dynamic_images.push(dynamic);
+        }
+
+        let texture_atlas = {
+            info!("Loaded texture atlas from paths: {} images", names.len());
+            comet_assets::TextureAtlas::from_textures(names, dynamic_images)
         };
 
         if let Some(handle) = self.asset_provider.add_texture_atlas(texture_atlas.clone()) {
@@ -459,13 +478,17 @@ impl<'a> Renderer2D<'a> {
     pub fn load_font(&mut self, path: &str, size: f32) {
         info!("Loading font from {}", path);
 
-        let font = comet_assets::Font::new(path, size);
-        let font_handle = match self.asset_provider.add_font(font) {
+        self.asset_provider.register_loader("ttf", move |bytes, name| {
+            Ok(comet_assets::Font::from_bytes(bytes, name, size))
+        });
+
+        let handle = match self.asset_provider.load(path) {
+            Ok(h) => h,
+            Err(e) => { error!("Failed to load font '{}': {}", path, e); return; }
+        };
+        let font_handle = match handle.try_as::<comet_assets::Font>() {
             Some(h) => h,
-            None => {
-                error!("Failed to add font '{}' to asset provider", path);
-                return;
-            }
+            None => { error!("Expected Font for '{}'", path); return; }
         };
         self.render_context.resources_mut().insert_asset_font_handle(path.to_string(), font_handle);
 

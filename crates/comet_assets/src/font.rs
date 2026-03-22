@@ -38,6 +38,23 @@ impl Font {
         }
     }
 
+    pub fn from_bytes(bytes: &[u8], name: &str, size: f32) -> Self {
+        match Self::generate_atlas_from_bytes(bytes, name, size) {
+            Some((glyphs, line_height)) => Font {
+                name: name.to_string(),
+                size,
+                line_height,
+                glyphs,
+            },
+            None => Font {
+                name: name.to_string(),
+                size,
+                line_height: 0.0,
+                glyphs: TextureAtlas::empty(),
+            },
+        }
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -66,10 +83,14 @@ impl Font {
                 return None;
             }
         };
-        let font = match FontArc::try_from_vec(font_data) {
+        Self::generate_atlas_from_bytes(&font_data, path, size)
+    }
+
+    fn generate_atlas_from_bytes(bytes: &[u8], name: &str, size: f32) -> Option<(TextureAtlas, f32)> {
+        let font = match FontArc::try_from_vec(bytes.to_vec()) {
             Ok(f) => f,
             Err(e) => {
-                error!("Failed to parse font '{}': {}", path, e);
+                error!("Failed to parse font '{}': {}", name, e);
                 return None;
             }
         };

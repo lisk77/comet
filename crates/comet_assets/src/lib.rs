@@ -23,4 +23,3 @@ pub mod asset_store;
 pub mod asset_handle;
 pub mod asset_provider;
 pub mod audio_clip;
-pub mod loader_registry;
