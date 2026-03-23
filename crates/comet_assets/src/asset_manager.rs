@@ -1,11 +1,11 @@
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use anyhow::Result;
 use crate::{asset_store::*, asset_handle::*, image::Image, font::Font, texture_atlas::TextureAtlas, audio_clip::AudioClip};
 
 /// Trait for asset types that can be inserted into the `AssetManager`.
-pub trait Loadable: Any + Send + Sync + 'static {
+pub trait Loadable: Send + Sync + 'static {
     fn insert_into(self, manager: &mut AssetManager) -> Asset<Self>
     where
         Self: Sized;
