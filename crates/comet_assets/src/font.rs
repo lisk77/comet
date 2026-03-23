@@ -1,9 +1,8 @@
-use crate::asset_path::resolve_asset_path;
-use crate::texture_atlas::{TextureAtlas, TextureRegion};
 use ab_glyph::{point, Font as AbFont, FontArc, Glyph, PxScale, ScaleFont};
 use comet_log::error;
 use image::{DynamicImage, Rgba, RgbaImage};
 
+#[derive(Clone)]
 pub struct GlyphData {
     pub name: String,
     pub render: DynamicImage,
@@ -15,149 +14,79 @@ pub struct GlyphData {
 #[derive(Clone)]
 pub struct Font {
     name: String,
-    size: f32,
-    line_height: f32,
-    glyphs: TextureAtlas,
+    data: Vec<u8>,
 }
 
 impl Font {
-    pub fn new(path: &str, size: f32) -> Self {
-        match Self::generate_atlas(path, size) {
-            Some((glyphs, line_height)) => Font {
-                name: path.to_string(),
-                size,
-                line_height,
-                glyphs,
-            },
-            None => Font {
-                name: path.to_string(),
-                size,
-                line_height: 0.0,
-                glyphs: TextureAtlas::empty(),
-            },
-        }
-    }
-
-    pub fn from_bytes(bytes: &[u8], name: &str, size: f32) -> Self {
-        match Self::generate_atlas_from_bytes(bytes, name, size) {
-            Some((glyphs, line_height)) => Font {
-                name: name.to_string(),
-                size,
-                line_height,
-                glyphs,
-            },
-            None => Font {
-                name: name.to_string(),
-                size,
-                line_height: 0.0,
-                glyphs: TextureAtlas::empty(),
-            },
-        }
+    pub fn from_raw(data: Vec<u8>, name: String) -> Self {
+        Self { name, data }
     }
 
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn size(&self) -> f32 {
-        self.size
-    }
-
-    pub fn line_height(&self) -> f32 {
-        self.line_height
-    }
-
-    pub fn glyphs(&self) -> &TextureAtlas {
-        &self.glyphs
-    }
-
-    pub fn get_glyph(&self, ch: char) -> Option<&TextureRegion> {
-        self.glyphs.textures().get(&ch.to_string())
-    }
-
-    fn generate_atlas(path: &str, size: f32) -> Option<(TextureAtlas, f32)> {
-        let font_data = match std::fs::read(resolve_asset_path(path)) {
-            Ok(d) => d,
-            Err(e) => {
-                error!("Failed to read font file '{}': {}", path, e);
-                return None;
-            }
-        };
-        Self::generate_atlas_from_bytes(&font_data, path, size)
-    }
-
-    fn generate_atlas_from_bytes(bytes: &[u8], name: &str, size: f32) -> Option<(TextureAtlas, f32)> {
-        let font = match FontArc::try_from_vec(bytes.to_vec()) {
+    pub fn rasterize(&self, size: f32) -> Option<(Vec<GlyphData>, f32)> {
+        let font = match FontArc::try_from_vec(self.data.clone()) {
             Ok(f) => f,
             Err(e) => {
-                error!("Failed to parse font '{}': {}", name, e);
+                error!("Failed to parse font '{}': {}", self.name, e);
                 return None;
             }
         };
 
         let scale = PxScale::from(size);
         let scaled_font = font.as_scaled(scale);
-
         let mut glyphs: Vec<GlyphData> = Vec::new();
 
-        for code_point in 0x0020..=0x007E {
-            if let Some(ch) = std::char::from_u32(code_point) {
-                let glyph_id = font.glyph_id(ch);
-                if glyph_id.0 == 0 {
+        for code_point in 0x0020u32..=0x007E {
+            let ch = match std::char::from_u32(code_point) {
+                Some(c) => c,
+                None => continue,
+            };
+            let glyph_id = font.glyph_id(ch);
+            if glyph_id.0 == 0 {
+                continue;
+            }
+
+            if ch == ' ' {
+                glyphs.push(GlyphData {
+                    name: ch.to_string(),
+                    render: DynamicImage::new_rgba8(0, 0),
+                    advance: scaled_font.h_advance(glyph_id),
+                    offset_x: 0.0,
+                    offset_y: 0.0,
+                });
+                continue;
+            }
+
+            let glyph = Glyph { id: glyph_id, scale, position: point(0.0, 0.0) };
+            if let Some(outline) = scaled_font.outline_glyph(glyph) {
+                let bounds = outline.px_bounds();
+                let width = bounds.width().ceil() as u32;
+                let height = bounds.height().ceil() as u32;
+                if width == 0 || height == 0 {
                     continue;
                 }
 
-                if ch == ' ' {
-                    let advance = scaled_font.h_advance(glyph_id);
-                    glyphs.push(GlyphData {
-                        name: ch.to_string(),
-                        render: DynamicImage::new_rgba8(0, 0), // no bitmap
-                        advance,
-                        offset_x: 0.0,
-                        offset_y: 0.0,
-                    });
-                    continue;
+                let mut image = RgbaImage::new(width, height);
+                for pixel in image.pixels_mut() {
+                    *pixel = Rgba([0, 0, 0, 0]);
                 }
+                outline.draw(|x, y, v| {
+                    image.put_pixel(x, y, Rgba([255, 255, 255, (v * 255.0) as u8]));
+                });
 
-                let glyph = Glyph {
-                    id: glyph_id,
-                    scale,
-                    position: point(0.0, 0.0),
-                };
-
-                if let Some(outline) = scaled_font.outline_glyph(glyph.clone()) {
-                    let bounds = outline.px_bounds();
-                    let width = bounds.width().ceil() as u32;
-                    let height = bounds.height().ceil() as u32;
-
-                    if width == 0 || height == 0 {
-                        continue;
-                    }
-
-                    let mut image = RgbaImage::new(width, height);
-                    for pixel in image.pixels_mut() {
-                        *pixel = Rgba([0, 0, 0, 0]);
-                    }
-
-                    outline.draw(|x, y, v| {
-                        let alpha = (v * 255.0) as u8;
-                        image.put_pixel(x, y, Rgba([255, 255, 255, alpha]));
-                    });
-
-                    glyphs.push(GlyphData {
-                        name: ch.to_string(),
-                        render: DynamicImage::ImageRgba8(image),
-                        advance: scaled_font.h_advance(glyph_id),
-                        offset_x: bounds.min.x,
-                        offset_y: bounds.min.y,
-                    })
-                }
+                glyphs.push(GlyphData {
+                    name: ch.to_string(),
+                    render: DynamicImage::ImageRgba8(image),
+                    advance: scaled_font.h_advance(glyph_id),
+                    offset_x: bounds.min.x,
+                    offset_y: bounds.min.y,
+                });
             }
         }
 
-        Some((
-            TextureAtlas::from_glyphs(glyphs),
-            scaled_font.ascent() - scaled_font.descent(),
-        ))
+        Some((glyphs, scaled_font.ascent() - scaled_font.descent()))
     }
 }

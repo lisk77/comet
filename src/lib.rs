@@ -69,6 +69,7 @@ pub mod prelude {
     pub use comet_input::keyboard::Key;
     pub use comet_log::*;
     pub use comet_math::*;
+    pub use comet_assets::{Asset, Font, LoadState};
     pub use comet_renderer::{
         renderer::Renderer,
         renderer2d::{RenderHandle2D, Renderer2D},

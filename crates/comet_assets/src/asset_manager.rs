@@ -1,96 +1,109 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use crate::{asset_store::*, asset_handle::*, image::Image, font::Font, texture_atlas::TextureAtlas, audio_clip::AudioClip};
-use crate::asset_path::resolve_asset_path;
-
-/// A type-erased asset handle. Can be downcast to `Asset<T>` with `try_as`.
-pub struct AnyHandle {
-    index: u32,
-    generation: u32,
-    type_id: TypeId,
-}
-
-impl AnyHandle {
-    pub fn try_as<T: 'static>(&self) -> Option<Asset<T>> {
-        if self.type_id == TypeId::of::<T>() {
-            Some(Asset::new(self.index, self.generation))
-        } else {
-            None
-        }
-    }
-}
 
 /// Trait for asset types that can be inserted into the `AssetManager`.
 pub trait Loadable: Any + Send + Sync + 'static {
     fn insert_into(self, manager: &mut AssetManager) -> Asset<Self>
     where
         Self: Sized;
+
+    fn insert_pending(manager: &mut AssetManager) -> (Asset<Self>, std::sync::mpsc::Sender<anyhow::Result<Self>>)
+    where
+        Self: Sized;
+
+    fn load_state(handle: Asset<Self>, manager: &mut AssetManager) -> LoadState
+    where
+        Self: Sized;
 }
 
 impl Loadable for Image {
-    fn insert_into(self, manager: &mut AssetManager) -> Asset<Self> {
-        manager.add_image(self)
+    fn insert_into(self, manager: &mut AssetManager) -> Asset<Self> { manager.add_image(self) }
+    fn insert_pending(manager: &mut AssetManager) -> (Asset<Self>, std::sync::mpsc::Sender<anyhow::Result<Self>>) {
+        manager.images.insert_pending()
+    }
+    fn load_state(handle: Asset<Self>, manager: &mut AssetManager) -> LoadState {
+        manager.images.load_state(handle)
     }
 }
 
 impl Loadable for Font {
-    fn insert_into(self, manager: &mut AssetManager) -> Asset<Self> {
-        manager.add_font(self)
+    fn insert_into(self, manager: &mut AssetManager) -> Asset<Self> { manager.add_font(self) }
+    fn insert_pending(manager: &mut AssetManager) -> (Asset<Self>, std::sync::mpsc::Sender<anyhow::Result<Self>>) {
+        manager.fonts.insert_pending()
+    }
+    fn load_state(handle: Asset<Self>, manager: &mut AssetManager) -> LoadState {
+        manager.fonts.load_state(handle)
     }
 }
 
 impl Loadable for TextureAtlas {
-    fn insert_into(self, manager: &mut AssetManager) -> Asset<Self> {
-        manager.add_texture_atlas(self)
+    fn insert_into(self, manager: &mut AssetManager) -> Asset<Self> { manager.add_texture_atlas(self) }
+    fn insert_pending(manager: &mut AssetManager) -> (Asset<Self>, std::sync::mpsc::Sender<anyhow::Result<Self>>) {
+        manager.texture_atlases.insert_pending()
+    }
+    fn load_state(handle: Asset<Self>, manager: &mut AssetManager) -> LoadState {
+        manager.texture_atlases.load_state(handle)
     }
 }
 
 impl Loadable for AudioClip {
-    fn insert_into(self, manager: &mut AssetManager) -> Asset<Self> {
-        manager.add_audio_clip(self)
+    fn insert_into(self, manager: &mut AssetManager) -> Asset<Self> { manager.add_audio_clip(self) }
+    fn insert_pending(manager: &mut AssetManager) -> (Asset<Self>, std::sync::mpsc::Sender<anyhow::Result<Self>>) {
+        manager.audio_clips.insert_pending()
+    }
+    fn load_state(handle: Asset<Self>, manager: &mut AssetManager) -> LoadState {
+        manager.audio_clips.load_state(handle)
     }
 }
 
-type LoaderFn = Arc<dyn Fn(&[u8], &str, &mut AssetManager) -> Result<AnyHandle> + Send + Sync>;
+pub(crate) type AllocFn = Arc<dyn Fn(&mut AssetManager) -> (u32, u32, Box<dyn FnOnce(Vec<u8>, String) + Send>) + Send + Sync>;
+
+struct LoaderEntry {
+    type_id: TypeId,
+    alloc: AllocFn,
+}
 
 struct LoaderRegistry {
-    loaders: HashMap<String, LoaderFn>,
+    loaders: HashMap<String, LoaderEntry>,
 }
 
 impl LoaderRegistry {
-    fn new() -> Self {
-        Self { loaders: HashMap::new() }
-    }
+    fn new() -> Self { Self { loaders: HashMap::new() } }
 
     fn register<T: Loadable>(
         &mut self,
         ext: impl Into<String>,
         loader: impl Fn(&[u8], &str) -> Result<T> + Send + Sync + 'static,
     ) {
-        let arc: LoaderFn = Arc::new(move |bytes, path, manager| {
-            let value = loader(bytes, path)?;
-            let handle = value.insert_into(manager);
-            Ok(AnyHandle {
-                index: handle.index(),
-                generation: handle.generation(),
-                type_id: TypeId::of::<T>(),
-            })
+        let loader = Arc::new(loader);
+
+        let alloc: AllocFn = Arc::new(move |manager: &mut AssetManager| {
+            let (handle, tx) = T::insert_pending(manager);
+            let l = loader.clone();
+            let worker: Box<dyn FnOnce(Vec<u8>, String) + Send> = Box::new(move |bytes: Vec<u8>, path: String| {
+                let _ = tx.send(l(&bytes, &path));
+            });
+            (handle.index(), handle.generation(), worker)
         });
-        self.loaders.insert(ext.into(), arc);
+
+        self.loaders.insert(ext.into(), LoaderEntry { type_id: TypeId::of::<T>(), alloc });
     }
 
-    fn get(&self, ext: &str) -> Option<LoaderFn> {
-        self.loaders.get(ext).cloned()
+    fn get_alloc_typed<T: 'static>(&self, ext: &str) -> Option<AllocFn> {
+        self.loaders.get(ext)
+            .filter(|e| e.type_id == TypeId::of::<T>())
+            .map(|e| e.alloc.clone())
     }
 }
 
 pub struct AssetManager {
-    images: AssetStore<Image>,
-    fonts: AssetStore<Font>,
-    texture_atlases: AssetStore<TextureAtlas>,
-    audio_clips: AssetStore<AudioClip>,
+    pub(crate) images: AssetStore<Image>,
+    pub(crate) fonts: AssetStore<Font>,
+    pub(crate) texture_atlases: AssetStore<TextureAtlas>,
+    pub(crate) audio_clips: AssetStore<AudioClip>,
     loader_registry: LoaderRegistry,
 }
 
@@ -101,6 +114,7 @@ impl AssetManager {
         registry.register("png", |bytes, _| Image::from_bytes(bytes, false));
         registry.register("jpg", |bytes, _| Image::from_bytes(bytes, false));
         registry.register("jpeg", |bytes, _| Image::from_bytes(bytes, false));
+        registry.register("ttf", |bytes, path| Ok(Font::from_raw(bytes.to_vec(), path.to_string())));
         registry.register("ogg", |bytes, _| Ok(AudioClip::from_bytes(bytes.to_vec())));
         registry.register("wav", |bytes, _| Ok(AudioClip::from_bytes(bytes.to_vec())));
         registry.register("mp3", |bytes, _| Ok(AudioClip::from_bytes(bytes.to_vec())));
@@ -123,27 +137,15 @@ impl AssetManager {
         self.loader_registry.register(ext, loader);
     }
 
-    /// Load an asset from `path`, dispatching to the registered loader for its extension.
-    pub fn load(&mut self, path: &str) -> Result<AnyHandle> {
-        let resolved = resolve_asset_path(path);
-        let bytes = std::fs::read(&resolved)
-            .map_err(|e| anyhow!("Failed to read '{}': {}", path, e))?;
-        let ext = resolved
-            .extension()
-            .and_then(|e| e.to_str())
-            .ok_or_else(|| anyhow!("Path '{}' has no file extension", path))?
-            .to_string();
-        // Clone Arc to end the borrow on loader_registry before passing &mut self
-        let loader = self.loader_registry.get(&ext)
-            .ok_or_else(|| anyhow!("No loader registered for extension '{}'", ext))?;
-        loader(&bytes, path, self)
+    pub(crate) fn get_alloc_loader_typed<T: Loadable>(&self, ext: &str) -> Option<AllocFn> {
+        self.loader_registry.get_alloc_typed::<T>(ext)
     }
 
     pub fn add_image(&mut self, image: Image) -> Asset<Image> {
         self.images.insert(image)
     }
 
-    pub fn get_image(&self, handle: Asset<Image>) -> Option<&Image> {
+    pub fn get_image(&mut self, handle: Asset<Image>) -> Option<&Image> {
         self.images.get(handle)
     }
 
@@ -159,7 +161,7 @@ impl AssetManager {
         self.fonts.insert(font)
     }
 
-    pub fn get_font(&self, handle: Asset<Font>) -> Option<&Font> {
+    pub fn get_font(&mut self, handle: Asset<Font>) -> Option<&Font> {
         self.fonts.get(handle)
     }
 
@@ -175,7 +177,7 @@ impl AssetManager {
         self.texture_atlases.insert(texture_atlas)
     }
 
-    pub fn get_texture_atlas(&self, handle: Asset<TextureAtlas>) -> Option<&TextureAtlas> {
+    pub fn get_texture_atlas(&mut self, handle: Asset<TextureAtlas>) -> Option<&TextureAtlas> {
         self.texture_atlases.get(handle)
     }
 
@@ -194,7 +196,7 @@ impl AssetManager {
         self.audio_clips.insert(clip)
     }
 
-    pub fn get_audio_clip(&self, handle: Asset<AudioClip>) -> Option<&AudioClip> {
+    pub fn get_audio_clip(&mut self, handle: Asset<AudioClip>) -> Option<&AudioClip> {
         self.audio_clips.get(handle)
     }
 

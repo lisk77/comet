@@ -23,7 +23,7 @@ pub struct Draw2D {
 pub struct Text2D {
     pub position: [f32; 2],
     pub content: String,
-    pub font: &'static str,
+    pub font: comet_assets::Asset<comet_assets::Font>,
     pub size: f32,
     pub color: [f32; 4],
     pub visible: bool,
@@ -36,10 +36,9 @@ pub enum Renderer2DCommand {
     ResolveAtlasRef(&'static str),
     Size,
     ScaleFactor,
-    LoadFont(String, f32),
     PrecomputedTextBounds {
         text: String,
-        font_path: String,
+        font: comet_assets::Asset<comet_assets::Font>,
         font_size: f32,
     },
     SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>),

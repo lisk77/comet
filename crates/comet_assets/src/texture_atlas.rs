@@ -1,7 +1,7 @@
 use crate::asset_path::resolve_asset_path;
-use crate::font::*;
+use crate::font::GlyphData;
 use comet_log::*;
-use image::{DynamicImage, GenericImage, GenericImageView, RgbaImage};
+use image::{DynamicImage, GenericImage, RgbaImage};
 use rect_packer::{Config, Packer, Rect};
 use std::collections::HashMap;
 
@@ -338,70 +338,6 @@ impl TextureAtlas {
                 );
 
                 regions.insert(g.name.clone(), region);
-            }
-        }
-
-        TextureAtlas {
-            atlas: DynamicImage::ImageRgba8(base),
-            textures: regions,
-        }
-    }
-
-    pub fn from_fonts(fonts: &[Font]) -> Self {
-        if fonts.is_empty() {
-            return Self::empty();
-        }
-
-        let mut all_glyphs = Vec::new();
-
-        for font in fonts {
-            let font_name = font.name();
-            let src_atlas = font.glyphs().atlas();
-            let atlas_width = src_atlas.width();
-            let atlas_height = src_atlas.height();
-
-            for (glyph_name, region) in font.glyphs().textures() {
-                let src_x = (region.u0() * atlas_width as f32) as u32;
-                let src_y = (region.v0() * atlas_height as f32) as u32;
-                let width = region.dimensions().0;
-                let height = region.dimensions().1;
-
-                let glyph_img = src_atlas.view(src_x, src_y, width, height).to_image();
-
-                let key = format!("{}::{}", font_name, glyph_name);
-                all_glyphs.push((key, DynamicImage::ImageRgba8(glyph_img), region.clone()));
-            }
-        }
-
-        let tex_refs: Vec<(&String, &DynamicImage)> =
-            all_glyphs.iter().map(|(n, i, _)| (n, i)).collect();
-        let (atlas_w, atlas_h, placements) = Self::pack_textures(&tex_refs, 2);
-        let atlas_w = Self::next_power_of_two(atlas_w);
-        let atlas_h = Self::next_power_of_two(atlas_h);
-
-        let mut base = RgbaImage::new(atlas_w, atlas_h);
-        let mut regions = HashMap::new();
-
-        for (key, img, original_region) in all_glyphs {
-            if let Some(rect) = placements.get(&key) {
-                base.copy_from(&img.to_rgba8(), rect.x as u32, rect.y as u32)
-                    .unwrap();
-
-                let (u0, v0, u1, v1) = Self::region_uvs(rect, atlas_w, atlas_h);
-
-                regions.insert(
-                    key,
-                    TextureRegion::new(
-                        u0,
-                        v0,
-                        u1,
-                        v1,
-                        (rect.width as u32, rect.height as u32),
-                        original_region.advance(),
-                        original_region.offset_x(),
-                        original_region.offset_y(),
-                    ),
-                );
             }
         }
 

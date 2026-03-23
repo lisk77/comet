@@ -436,9 +436,25 @@ impl App {
         self.asset_provider.register_loader(ext, loader);
     }
 
-    /// Load an asset from the given path using the registered loader for its extension.
-    pub fn load(&self, path: &str) -> Result<comet_assets::AnyHandle> {
-        self.asset_provider.load(path)
+    /// Loads an asset from `path` in the background. Returns a typed handle immediately.
+    /// Check progress with `load_state`. On any error the handle is in `Failed` state.
+    pub fn load<A: comet_assets::Loadable>(&self, path: &str) -> comet_assets::Asset<A> {
+        self.asset_provider.load::<A>(path)
+    }
+
+    /// Non-blocking load state for a handle.
+    pub fn load_state<T: comet_assets::Loadable>(&self, handle: comet_assets::Asset<T>) -> comet_assets::LoadState {
+        self.asset_provider.load_state(handle)
+    }
+
+    /// Returns (assets_ready, assets_queued) for building a loading screen progress bar.
+    pub fn load_progress(&self) -> (usize, usize) {
+        self.asset_provider.load_progress()
+    }
+
+    /// Returns true when all background asset loads are complete.
+    pub fn all_loaded(&self) -> bool {
+        self.asset_provider.all_loaded()
     }
 
     pub fn load_audio(&mut self, name: &str, path: &str) {

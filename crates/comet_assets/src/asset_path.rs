@@ -27,6 +27,13 @@ pub fn asset_root() -> PathBuf {
     cwd.join("res")
 }
 
+pub fn file_extension<'a>(resolved: &'a std::path::Path, original_path: &str) -> anyhow::Result<&'a str> {
+    resolved
+        .extension()
+        .and_then(|e| e.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Path '{}' has no file extension", original_path))
+}
+
 pub fn resolve_asset_path(path: impl AsRef<str>) -> PathBuf {
     let path = path.as_ref();
 

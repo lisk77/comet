@@ -61,7 +61,7 @@ pub struct Camera2D {
 #[derive(Component)]
 pub struct Text {
     content: String,
-    font: &'static str,
+    font: comet_assets::Asset<comet_assets::Font>,
     font_size: f32,
     color: Color,
     is_visible: bool,
@@ -492,7 +492,7 @@ impl Camera for Camera2D {
 impl Text {
     pub fn new(
         content: impl Into<String>,
-        font: &'static str,
+        font: comet_assets::Asset<comet_assets::Font>,
         font_size: f32,
         is_visible: bool,
         color: impl ColorTrait,
@@ -515,11 +515,11 @@ impl Text {
         self.content = content.into();
     }
 
-    pub fn font(&self) -> &'static str {
+    pub fn font(&self) -> comet_assets::Asset<comet_assets::Font> {
         self.font
     }
 
-    pub fn set_font(&mut self, font: &'static str) {
+    pub fn set_font(&mut self, font: comet_assets::Asset<comet_assets::Font>) {
         self.font = font;
     }
 

@@ -10,7 +10,6 @@ pub struct RenderResources {
     samplers: HashMap<String, wgpu::Sampler>,
     gpu_textures: HashMap<String, Arc<GpuTexture>>,
     asset_atlas_handles: HashMap<String, comet_assets::Asset<comet_assets::TextureAtlas>>,
-    asset_font_handles: HashMap<String, comet_assets::Asset<comet_assets::Font>>,
 }
 
 impl RenderResources {
@@ -22,7 +21,6 @@ impl RenderResources {
             samplers: HashMap::new(),
             gpu_textures: HashMap::new(),
             asset_atlas_handles: HashMap::new(),
-            asset_font_handles: HashMap::new(),
         }
     }
 
@@ -186,18 +184,4 @@ impl RenderResources {
         self.asset_atlas_handles.remove(key)
     }
 
-    /// Get a cached asset font handle by name.
-    pub fn get_asset_font_handle(&self, key: &str) -> Option<comet_assets::Asset<comet_assets::Font>> {
-        self.asset_font_handles.get(key).copied()
-    }
-
-    /// Cache an asset font handle by name.
-    pub fn insert_asset_font_handle(&mut self, key: String, handle: comet_assets::Asset<comet_assets::Font>) {
-        self.asset_font_handles.insert(key, handle);
-    }
-
-    /// Remove a cached asset font handle.
-    pub fn remove_asset_font_handle(&mut self, key: &str) -> Option<comet_assets::Asset<comet_assets::Font>> {
-        self.asset_font_handles.remove(key)
-    }
 }

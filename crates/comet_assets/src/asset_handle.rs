@@ -1,11 +1,25 @@
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
-#[derive(Debug)]
 pub struct Asset<T> {
     index: u32,
     generation: u32,
     _marker: PhantomData<fn() -> T>,
+}
+
+impl<T> std::fmt::Debug for Asset<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Asset")
+            .field("index", &self.index)
+            .field("generation", &self.generation)
+            .finish()
+    }
+}
+
+impl<T> Default for Asset<T> {
+    fn default() -> Self {
+        Self { index: u32::MAX, generation: u32::MAX, _marker: PhantomData }
+    }
 }
 
 impl<T> Copy for Asset<T> {}
@@ -40,11 +54,11 @@ impl<T> Asset<T> {
         }
     }
 
-    pub(crate) fn index(&self) -> u32 {
+    pub fn index(&self) -> u32 {
         self.index
     }
 
-    pub(crate) fn generation(&self) -> u32 {
+    pub fn generation(&self) -> u32 {
         self.generation
     }
 }
