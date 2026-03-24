@@ -428,12 +428,18 @@ impl App {
     }
 
     /// Register a custom loader for a file extension.
+    /// Automatically registers `T` as an asset type.
     pub fn register_loader<T: Loadable>(
         &self,
         ext: impl Into<String>,
         loader: impl Fn(&[u8], &str) -> Result<T> + Send + Sync + 'static,
     ) {
         self.asset_provider.register_loader(ext, loader);
+    }
+
+    /// Register a store for a type with no file loader.
+    pub fn register_asset_type<T: Loadable>(&self) {
+        self.asset_provider.register_asset_type::<T>();
     }
 
     /// Loads an asset from `path` in the background. Returns a typed handle immediately.

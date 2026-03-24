@@ -333,7 +333,7 @@ impl<'a> Renderer2D<'a> {
 
         for path in &paths {
             let image_handle = self.asset_provider.load::<comet_assets::Image>(path);
-            let dynamic = match self.asset_provider.with_image(image_handle, |img| img.to_dynamic_image()) {
+            let dynamic = match self.asset_provider.with(image_handle, |img| img.to_dynamic_image()) {
                 Some(Ok(d)) => d,
                 Some(Err(e)) => { error!("Failed to convert image '{}': {}", path, e); continue; }
                 None => { error!("Failed to access image '{}'", path); continue; }
@@ -347,7 +347,7 @@ impl<'a> Renderer2D<'a> {
             comet_assets::TextureAtlas::from_textures(names, dynamic_images)
         };
 
-        if let Some(handle) = self.asset_provider.add_texture_atlas(texture_atlas.clone()) {
+        if let Some(handle) = self.asset_provider.add(texture_atlas.clone()) {
             self.render_context.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
         } else {
             error!("Failed to add texture atlas to asset provider");
@@ -477,7 +477,7 @@ impl<'a> Renderer2D<'a> {
             return;
         }
 
-        let font_data = match self.asset_provider.with_font(handle, |f| f.clone()) {
+        let font_data = match self.asset_provider.with(handle, |f| f.clone()) {
             Some(f) => f,
             None => {
                 error!("Font handle {:?} not ready — skipping rasterization", handle);
@@ -517,7 +517,7 @@ impl<'a> Renderer2D<'a> {
         };
         let font_texture_arc = Arc::new(font_texture);
 
-        if let Some(atlas_handle) = self.asset_provider.add_texture_atlas(atlas) {
+        if let Some(atlas_handle) = self.asset_provider.add(atlas) {
             self.render_context.resources_mut().insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
         }
         self.render_context.resources_mut().insert_gpu_texture("font_atlas".to_string(), font_texture_arc.clone());
@@ -799,7 +799,7 @@ impl<'a> Renderer2D<'a> {
         let fallback_key = format!("{}@{}:: ", font.index(), size.to_bits());
 
         if let Some(handle) = self.render_context.resources().get_asset_atlas_handle("font_atlas") {
-            self.asset_provider.with_texture_atlas(handle, |atlas| {
+            self.asset_provider.with(handle, |atlas| {
                 atlas.textures().get(&key).copied()
                     .or_else(|| atlas.textures().get(&fallback_key).copied())
                     .unwrap_or_else(|| fatal!("No glyph or fallback for '{}' in font atlas", glyph))
@@ -1185,7 +1185,7 @@ impl<'a> Renderer for Renderer2D<'a> {
                     .resources()
                     .get_asset_atlas_handle("atlas")
                     .and_then(|handle| {
-                        self.asset_provider.with_texture_atlas(handle, |atlas| {
+                        self.asset_provider.with(handle, |atlas| {
                             atlas.textures()
                                 .get(path)
                                 .copied()

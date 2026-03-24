@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::{AssetManager, Asset, Image, Font, TextureAtlas, AudioClip};
+use crate::{AssetManager, Asset};
 use crate::asset_manager::Loadable;
 use crate::asset_path::file_extension;
 use crate::asset_store::LoadState;
@@ -20,59 +20,21 @@ impl AssetProvider {
         }
     }
 
-    pub fn with_image<F, R>(&self, handle: Asset<Image>, f: F) -> Option<R>
-    where F: FnOnce(&Image) -> R {
-        self.inner.write().ok().and_then(|mut m| m.get_image(handle).map(f))
+    pub fn with<T: Loadable, F, R>(&self, handle: Asset<T>, f: F) -> Option<R>
+    where F: FnOnce(&T) -> R {
+        self.inner.write().ok().and_then(|mut m| m.get(handle).map(f))
     }
 
-    pub fn with_font<F, R>(&self, handle: Asset<Font>, f: F) -> Option<R>
-    where F: FnOnce(&Font) -> R {
-        self.inner.write().ok().and_then(|mut m| m.get_font(handle).map(f))
+    pub fn add<T: Loadable>(&self, asset: T) -> Option<Asset<T>> {
+        self.inner.write().ok().map(|mut m| m.add(asset))
     }
 
-    pub fn with_texture_atlas<F, R>(&self, handle: Asset<TextureAtlas>, f: F) -> Option<R>
-    where F: FnOnce(&TextureAtlas) -> R {
-        self.inner.write().ok().and_then(|mut m| m.get_texture_atlas(handle).map(f))
-    }
-
-    pub fn with_audio_clip<F, R>(&self, handle: Asset<AudioClip>, f: F) -> Option<R>
-    where F: FnOnce(&AudioClip) -> R {
-        self.inner.write().ok().and_then(|mut m| m.get_audio_clip(handle).map(f))
-    }
-
-    pub fn add_image(&self, image: Image) -> Option<Asset<Image>> {
-        self.inner.write().ok().map(|mut m| m.add_image(image))
-    }
-
-    pub fn add_font(&self, font: Font) -> Option<Asset<Font>> {
-        self.inner.write().ok().map(|mut m| m.add_font(font))
-    }
-
-    pub fn add_texture_atlas(&self, atlas: TextureAtlas) -> Option<Asset<TextureAtlas>> {
-        self.inner.write().ok().map(|mut m| m.add_texture_atlas(atlas))
-    }
-
-    pub fn add_audio_clip(&self, clip: AudioClip) -> Option<Asset<AudioClip>> {
-        self.inner.write().ok().map(|mut m| m.add_audio_clip(clip))
-    }
-
-    pub fn remove_image(&self, handle: Asset<Image>) -> Option<Image> {
-        self.inner.write().ok().and_then(|mut m| m.remove_image(handle))
-    }
-
-    pub fn remove_font(&self, handle: Asset<Font>) -> Option<Font> {
-        self.inner.write().ok().and_then(|mut m| m.remove_font(handle))
-    }
-
-    pub fn remove_texture_atlas(&self, handle: Asset<TextureAtlas>) -> Option<TextureAtlas> {
-        self.inner.write().ok().and_then(|mut m| m.remove_texture_atlas(handle))
-    }
-
-    pub fn remove_audio_clip(&self, handle: Asset<AudioClip>) -> Option<AudioClip> {
-        self.inner.write().ok().and_then(|mut m| m.remove_audio_clip(handle))
+    pub fn remove<T: Loadable>(&self, handle: Asset<T>) -> Option<T> {
+        self.inner.write().ok().and_then(|mut m| m.remove(handle))
     }
 
     /// Register a loader for a file extension.
+    /// Automatically registers `T` as an asset type. 
     pub fn register_loader<T: Loadable>(
         &self,
         ext: impl Into<String>,
@@ -80,6 +42,13 @@ impl AssetProvider {
     ) {
         if let Ok(mut m) = self.inner.write() {
             m.register_loader(ext, loader);
+        }
+    }
+
+    /// Register a store for a type with no file loader.
+    pub fn register_asset_type<T: Loadable>(&self) {
+        if let Ok(mut m) = self.inner.write() {
+            m.register_asset_type::<T>();
         }
     }
 
@@ -115,7 +84,6 @@ impl AssetProvider {
                 Ok(bytes) => worker(bytes, original_path),
                 Err(e) => {
                     comet_log::error!("Failed to read asset '{}': {}", resolved.display(), e);
-                    // worker dropped here — channel closes, slot transitions to Failed on next access
                 }
             }
             ready.fetch_add(1, Ordering::Relaxed);
@@ -127,7 +95,7 @@ impl AssetProvider {
     /// Non-blocking load state for a typed handle.
     pub fn load_state<T: Loadable>(&self, handle: Asset<T>) -> LoadState {
         self.inner.write().ok()
-            .map(|mut m| T::load_state(handle, &mut m))
+            .map(|mut m| m.load_state(handle))
             .unwrap_or(LoadState::Failed)
     }
 
