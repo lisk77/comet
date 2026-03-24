@@ -85,6 +85,7 @@ pub struct RenderHandle2D {
     command_sender: flume::Sender<Renderer2DCommand>,
     event_receiver: flume::Receiver<Renderer2DEvent>,
     last_size: Option<PhysicalSize<u32>>,
+    pending_atlas_rebuild: bool,
 }
 
 impl RenderHandle2D {
@@ -98,22 +99,35 @@ impl RenderHandle2D {
             .send(Renderer2DCommand::InitAtlasFromPaths(paths));
     }
 
-    fn resolve_atlas_ref(&mut self, path: &'static str) -> Option<AtlasRef> {
+    fn resolve_atlas_ref(&mut self, path: &'static str) -> Option<(AtlasRef, Option<comet_assets::Asset<comet_assets::Image>>)> {
         let _ = self
             .command_sender
             .send(Renderer2DCommand::ResolveAtlasRef(path));
-        self.recv_matching_event(Duration::from_millis(25), |event| {
-            matches!(event, Renderer2DEvent::AtlasRef(_))
+        self.recv_matching_event(Duration::from_millis(5000), |event| {
+            matches!(event, Renderer2DEvent::AtlasRef(..))
         })
         .and_then(|event| match event {
-            Renderer2DEvent::AtlasRef(atlas_ref) => atlas_ref,
+            Renderer2DEvent::AtlasRef(Some(atlas_ref), image_handle) => Some((atlas_ref, image_handle)),
+            _ => None,
+        })
+    }
+
+    fn ensure_handle_in_atlas(&mut self, handle: comet_assets::Asset<comet_assets::Image>) -> Option<AtlasRef> {
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::EnsureHandleInAtlas(handle));
+        self.recv_matching_event(Duration::from_millis(5000), |event| {
+            matches!(event, Renderer2DEvent::AtlasRef(..))
+        })
+        .and_then(|event| match event {
+            Renderer2DEvent::AtlasRef(atlas_ref, _) => atlas_ref,
             _ => None,
         })
     }
 
     pub fn size(&mut self) -> PhysicalSize<u32> {
         let _ = self.command_sender.send(Renderer2DCommand::Size);
-        self.recv_matching_event(Duration::from_millis(25), |event| {
+        self.recv_matching_event(Duration::from_millis(5000), |event| {
             matches!(event, Renderer2DEvent::Size(_))
         })
         .and_then(|e| match e {
@@ -129,7 +143,7 @@ impl RenderHandle2D {
 
     pub fn scale_factor(&mut self) -> f64 {
         let _ = self.command_sender.send(Renderer2DCommand::ScaleFactor);
-        self.recv_matching_event(Duration::from_millis(25), |event| {
+        self.recv_matching_event(Duration::from_millis(5000), |event| {
             matches!(event, Renderer2DEvent::ScaleFactor(_))
         })
         .and_then(|e| match e {
@@ -161,8 +175,10 @@ impl RenderHandle2D {
 
     pub fn poll_events(&mut self) {
         while let Ok(event) = self.event_receiver.try_recv() {
-            if let Renderer2DEvent::Size(size) = event {
-                self.last_size = Some(size);
+            match event {
+                Renderer2DEvent::Size(size) => self.last_size = Some(size),
+                Renderer2DEvent::AtlasRebuilt => self.pending_atlas_rebuild = true,
+                _ => {}
             }
         }
     }
@@ -181,8 +197,10 @@ impl RenderHandle2D {
 
             match self.event_receiver.recv_timeout(remaining) {
                 Ok(event) => {
-                    if let Renderer2DEvent::Size(size) = event {
-                        self.last_size = Some(size);
+                    match &event {
+                        Renderer2DEvent::Size(size) => self.last_size = Some(*size),
+                        Renderer2DEvent::AtlasRebuilt => self.pending_atlas_rebuild = true,
+                        _ => {}
                     }
                     if predicate(&event) {
                         return Some(event);
@@ -195,6 +213,18 @@ impl RenderHandle2D {
     }
 
     pub fn render_scene_2d(&mut self, scene: &mut comet_ecs::Scene) {
+        if self.pending_atlas_rebuild {
+            self.pending_atlas_rebuild = false;
+            for (_, render) in scene
+                .query_mut::<(&comet_ecs::Transform2D, &mut comet_ecs::Render2D), ()>()
+                .iter()
+            {
+                if let ImageRef::ResolvedHandle(h, _) = render.texture() {
+                    render.set_image_ref(ImageRef::Handle(h));
+                }
+            }
+        }
+
         let mut selected_camera: Option<([f32; 2], f32, f32, [f32; 2], u8)> = None;
         for (transform, camera) in scene
             .query::<(&comet_ecs::Transform2D, &comet_ecs::Camera2D), ()>()
@@ -220,6 +250,7 @@ impl RenderHandle2D {
         };
 
         let mut draws = Vec::new();
+        let mut referenced_handles = Vec::new();
         for (transform, render) in scene
             .query_mut::<(&comet_ecs::Transform2D, &mut comet_ecs::Render2D), ()>()
             .iter()
@@ -227,10 +258,27 @@ impl RenderHandle2D {
             let atlas_ref = match render.texture() {
                 ImageRef::Atlas(atlas_ref) => atlas_ref,
                 ImageRef::Unresolved(path) => {
-                    let Some(atlas_ref) = self.resolve_atlas_ref(path) else {
+                    let Some((atlas_ref, image_handle)) = self.resolve_atlas_ref(path) else {
                         continue;
                     };
-                    render.set_image_ref(ImageRef::Atlas(atlas_ref));
+                    if let Some(handle) = image_handle {
+                        render.set_image_ref(ImageRef::ResolvedHandle(handle, atlas_ref));
+                        referenced_handles.push(handle);
+                    } else {
+                        render.set_image_ref(ImageRef::Atlas(atlas_ref));
+                    }
+                    atlas_ref
+                }
+                ImageRef::Handle(handle) => {
+                    let Some(atlas_ref) = self.ensure_handle_in_atlas(handle) else {
+                        continue;
+                    };
+                    render.set_image_ref(ImageRef::ResolvedHandle(handle, atlas_ref));
+                    referenced_handles.push(handle);
+                    atlas_ref
+                }
+                ImageRef::ResolvedHandle(handle, atlas_ref) => {
+                    referenced_handles.push(handle);
                     atlas_ref
                 }
             };
@@ -280,7 +328,7 @@ impl RenderHandle2D {
 
         let _ =
             self.command_sender
-                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts));
+                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts, referenced_handles));
     }
 }
 
@@ -293,6 +341,7 @@ impl RendererHandle for RenderHandle2D {
             command_sender: sender,
             event_receiver: receiver,
             last_size: None,
+            pending_atlas_rebuild: false,
         }
     }
 
@@ -344,7 +393,7 @@ impl<'a> Renderer2D<'a> {
             dynamic_images.push(dynamic);
         }
 
-        let mut texture_atlas = {
+        let texture_atlas = {
             info!("Loaded texture atlas from paths: {} images", names.len());
             comet_assets::TextureAtlas::from_textures(names, dynamic_images)
         };
@@ -353,10 +402,14 @@ impl<'a> Renderer2D<'a> {
             self.asset_provider.remove(handle);
         }
 
+        self.setup_atlas_pipeline(texture_atlas);
+    }
+
+    fn setup_atlas_pipeline(&mut self, mut atlas: comet_assets::TextureAtlas) {
         let gpu_texture = match GpuTexture::from_dynamic_image(
             self.render_context.device(),
             self.render_context.queue(),
-            texture_atlas.atlas(),
+            atlas.atlas(),
             Some("Atlas"),
             false,
         ) {
@@ -366,9 +419,9 @@ impl<'a> Renderer2D<'a> {
                 return;
             }
         };
-        texture_atlas.clear_atlas_image();
+        atlas.clear_atlas_image();
 
-        if let Some(handle) = self.asset_provider.add(texture_atlas) {
+        if let Some(handle) = self.asset_provider.add(atlas) {
             self.render_context.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
         } else {
             error!("Failed to add texture atlas to asset provider");
@@ -639,6 +692,124 @@ impl<'a> Renderer2D<'a> {
                 }
             }
         }
+    }
+
+    fn ensure_image_in_atlas(&mut self, handle: comet_assets::Asset<comet_assets::Image>) -> Option<AtlasRef> {
+        if self.render_context.resources().get_asset_atlas_handle("atlas").is_none() {
+            self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
+        }
+        let atlas_handle = self.render_context.resources().get_asset_atlas_handle("atlas")?;
+
+        // Return immediately if already in atlas
+        if let Some(region) = self.asset_provider.with(atlas_handle, |atlas| atlas.region_for_handle(handle)).flatten() {
+            return Some(AtlasRef::new(region, atlas_handle));
+        }
+
+        // Get image dimensions
+        let (w, h) = self.asset_provider.with(handle, |img| (img.width(), img.height()))?;
+
+        // Allocate space — rebuild if full
+        let alloc = self.asset_provider.with_mut(atlas_handle, |atlas| {
+            atlas.insert_image_handle(handle, w, h, 1)
+        }).flatten();
+
+        let (blit_x, blit_y, region) = match alloc {
+            Some(r) => r,
+            None => {
+                self.rebuild_atlas(atlas_handle);
+                match self.asset_provider.with_mut(atlas_handle, |atlas| {
+                    atlas.insert_image_handle(handle, w, h, 1)
+                }).flatten() {
+                    Some(r) => r,
+                    None => {
+                        error!("Failed to insert into atlas even after rebuild");
+                        return None;
+                    }
+                }
+            }
+        };
+
+        // Upload pixels to GPU
+        let gpu_texture = self.render_context.resources().get_gpu_texture("atlas")?.clone();
+        self.asset_provider.with(handle, |img| {
+            gpu_texture.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h);
+        });
+
+        Some(AtlasRef::new(region, atlas_handle))
+    }
+
+    fn rebuild_atlas(&mut self, atlas_handle: comet_assets::Asset<comet_assets::TextureAtlas>) {
+        let handles = self.asset_provider
+            .with(atlas_handle, |atlas| atlas.handle_keys())
+            .unwrap_or_default();
+        let (old_w, old_h) = self.asset_provider
+            .with(atlas_handle, |atlas| (atlas.width(), atlas.height()))
+            .unwrap_or((512, 512));
+
+        let new_size = (old_w * 2).max(old_h * 2).min(8192);
+        info!("Atlas full — rebuilding {}x{} → {}x{}", old_w, old_h, new_size, new_size);
+
+        self.asset_provider.with_mut(atlas_handle, |atlas| {
+            atlas.reset_for_rebuild(new_size, new_size);
+        });
+
+        let new_gpu = GpuTexture::create_2d_texture(
+            self.render_context.device(),
+            new_size, new_size,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            wgpu::FilterMode::Nearest,
+            Some("Atlas"),
+        );
+
+        for h in handles {
+            let dims = self.asset_provider.with(h, |img| (img.width(), img.height()));
+            let Some((w, h_px)) = dims else { continue; };
+
+            let result = self.asset_provider.with_mut(atlas_handle, |atlas| {
+                atlas.insert_image_handle(h, w, h_px, 1)
+            }).flatten();
+            let Some((blit_x, blit_y, _)) = result else {
+                error!("Failed to re-pack handle during atlas rebuild");
+                continue;
+            };
+
+            self.asset_provider.with(h, |img| {
+                new_gpu.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h_px);
+            });
+        }
+
+        // Swap GPU texture and recreate bind group
+        let new_gpu_arc = Arc::new(new_gpu);
+        self.render_context.resources_mut().insert_gpu_texture("atlas".to_string(), new_gpu_arc.clone());
+
+        let new_bind_group = Arc::new({
+            let layout = self.render_context.resources()
+                .get_bind_group_layout("Universal")
+                .and_then(|v| v.first())
+                .cloned()
+                .expect("Universal bind group layout missing during atlas rebuild");
+            let sampler = self.render_context.resources()
+                .get_sampler("Universal")
+                .expect("Universal sampler missing during atlas rebuild");
+            self.render_context.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&new_gpu_arc.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                ],
+                label: Some("Universal Texture Bind Group (Rebuilt)"),
+            })
+        });
+        self.render_context.resources_mut().replace_bind_group("Universal".to_string(), 0, new_bind_group);
+
+        let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
     }
 
     pub fn new_render_pass(
@@ -921,7 +1092,20 @@ impl<'a> Renderer2D<'a> {
         camera: CameraPacket2D,
         mut draws: Vec<Draw2D>,
         texts: Vec<Text2D>,
+        referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
     ) {
+        if self.render_context.resources().get_asset_atlas_handle("atlas").is_none() {
+            self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
+        }
+
+        if let Some(atlas_handle) = self.render_context.resources().get_asset_atlas_handle("atlas") {
+            self.asset_provider.with_mut(atlas_handle, |atlas| {
+                for handle in &referenced_handles {
+                    atlas.mark_used(*handle);
+                }
+                atlas.evict_stale(120);
+            });
+        }
         self.setup_camera_from_packet(camera);
 
         draws.sort_by_key(|draw| draw.draw_index);
@@ -1108,7 +1292,7 @@ impl<'a> Renderer2D<'a> {
         {
             Some(b) => b,
             None => {
-                error!("Camera buffer missing for 'Universal' pass. Call init_atlas first.");
+                error!("Camera buffer missing for 'Universal' pass.");
                 return;
             }
         };
@@ -1148,6 +1332,7 @@ impl<'a> Renderer for Renderer2D<'a> {
             Renderer2DCommand::InitAtlas => self.init_atlas(),
             Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
             Renderer2DCommand::ResolveAtlasRef(path) => {
+                // Check the pre-built string-keyed atlas first (populated by init_atlas_by_paths).
                 let atlas_ref = self.render_context
                     .resources()
                     .get_asset_atlas_handle("atlas")
@@ -1160,7 +1345,26 @@ impl<'a> Renderer for Renderer2D<'a> {
                         })
                         .flatten()
                     });
-                let _ = self.event_sender.send(Renderer2DEvent::AtlasRef(atlas_ref));
+
+                // Not found — load and insert dynamically, same as handle-based flow.
+                let mut dynamic_image_handle: Option<comet_assets::Asset<comet_assets::Image>> = None;
+                let atlas_ref = atlas_ref.or_else(|| {
+                    let fs_path = comet_assets::resolve_asset_path(path);
+                    let bytes = std::fs::read(&fs_path).ok()?;
+                    let image = comet_assets::Image::from_bytes(&bytes, false).ok()?;
+                    let image_handle = self.asset_provider.add(image)?;
+                    let result = self.ensure_image_in_atlas(image_handle);
+                    if result.is_some() {
+                        dynamic_image_handle = Some(image_handle);
+                    }
+                    result
+                });
+
+                let _ = self.event_sender.send(Renderer2DEvent::AtlasRef(atlas_ref, dynamic_image_handle));
+            }
+            Renderer2DCommand::EnsureHandleInAtlas(handle) => {
+                let atlas_ref = self.ensure_image_in_atlas(handle);
+                let _ = self.event_sender.send(Renderer2DEvent::AtlasRef(atlas_ref, None));
             }
             Renderer2DCommand::Size => {
                 let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));
@@ -1183,8 +1387,8 @@ impl<'a> Renderer for Renderer2D<'a> {
                         height: bounds.y(),
                     });
             }
-            Renderer2DCommand::SubmitFrame(camera, draws, texts) => {
-                self.submit_frame(camera, draws, texts)
+            Renderer2DCommand::SubmitFrame(camera, draws, texts, referenced_handles) => {
+                self.submit_frame(camera, draws, texts, referenced_handles)
             }
         }
     }

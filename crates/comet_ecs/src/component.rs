@@ -295,6 +295,15 @@ impl Render2D {
         }
     }
 
+    pub fn with_handle(handle: comet_assets::Asset<comet_assets::Image>) -> Self {
+        Self {
+            is_visible: true,
+            texture: ImageRef::Handle(handle),
+            scale: v2::new(1.0, 1.0),
+            draw_index: 0,
+        }
+    }
+
     pub fn scale(&self) -> v2 {
         self.scale
     }

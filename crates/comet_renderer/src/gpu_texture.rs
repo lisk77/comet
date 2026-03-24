@@ -187,6 +187,25 @@ impl GpuTexture {
         }
     }
 
+    /// Write a sub-region of pixel data into an existing GPU texture at offset (x, y).
+    pub fn write_region(&self, queue: &wgpu::Queue, x: u32, y: u32, data: &[u8], width: u32, height: u32) {
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                aspect: wgpu::TextureAspect::All,
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+            },
+            data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        );
+    }
+
     pub fn to_image(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Image> {
         let width = self.size.width;
         let height = self.size.height;

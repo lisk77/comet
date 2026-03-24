@@ -25,6 +25,11 @@ impl AssetProvider {
         self.inner.write().ok().and_then(|mut m| m.get(handle).map(f))
     }
 
+    pub fn with_mut<T: Loadable, F, R>(&self, handle: Asset<T>, f: F) -> Option<R>
+    where F: FnOnce(&mut T) -> R {
+        self.inner.write().ok().and_then(|mut m| m.get_mut(handle).map(f))
+    }
+
     pub fn add<T: Loadable>(&self, asset: T) -> Option<Asset<T>> {
         self.inner.write().ok().map(|mut m| m.add(asset))
     }

@@ -2,7 +2,8 @@ use comet_assets::AtlasRef;
 use winit::dpi::PhysicalSize;
 
 pub enum Renderer2DEvent {
-    AtlasRef(Option<AtlasRef>),
+    AtlasRef(Option<AtlasRef>, Option<comet_assets::Asset<comet_assets::Image>>),
+    AtlasRebuilt,
     Size(PhysicalSize<u32>),
     ScaleFactor(f64),
     PrecomputedTextBounds { width: f32, height: f32 },

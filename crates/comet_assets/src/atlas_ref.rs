@@ -1,4 +1,4 @@
-use crate::{asset_handle::Asset, texture_atlas::{TextureAtlas, TextureRegion}};
+use crate::{asset_handle::Asset, image::Image, texture_atlas::{TextureAtlas, TextureRegion}};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AtlasRef {
@@ -24,6 +24,8 @@ impl AtlasRef {
 pub enum ImageRef {
     Unresolved(&'static str),
     Atlas(AtlasRef),
+    Handle(Asset<Image>),
+    ResolvedHandle(Asset<Image>, AtlasRef),
 }
 
 impl Default for ImageRef {

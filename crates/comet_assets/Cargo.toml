@@ -10,7 +10,7 @@ anyhow = "1.0"
 bytemuck = { version = "1.16", features = [ "derive" ] }
 ab_glyph = "0.2.29"
 chrono = "0.4.40"
-rect_packer = "0.2.1"
+guillotiere = "0.6"
 
 [dependencies.image]
 version = "0.24"

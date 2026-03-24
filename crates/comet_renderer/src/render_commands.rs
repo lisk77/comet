@@ -34,6 +34,7 @@ pub enum Renderer2DCommand {
     InitAtlas,
     InitAtlasFromPaths(Vec<String>),
     ResolveAtlasRef(&'static str),
+    EnsureHandleInAtlas(comet_assets::Asset<comet_assets::Image>),
     Size,
     ScaleFactor,
     PrecomputedTextBounds {
@@ -41,5 +42,5 @@ pub enum Renderer2DCommand {
         font: comet_assets::Asset<comet_assets::Font>,
         font_size: f32,
     },
-    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>),
+    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>, Vec<comet_assets::Asset<comet_assets::Image>>),
 }
