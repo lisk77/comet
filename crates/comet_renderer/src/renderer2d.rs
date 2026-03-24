@@ -330,6 +330,7 @@ impl<'a> Renderer2D<'a> {
     pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
         let mut names = Vec::new();
         let mut dynamic_images = Vec::new();
+        let mut image_handles = Vec::new();
 
         for path in &paths {
             let image_handle = self.asset_provider.load::<comet_assets::Image>(path);
@@ -338,20 +339,18 @@ impl<'a> Renderer2D<'a> {
                 Some(Err(e)) => { error!("Failed to convert image '{}': {}", path, e); continue; }
                 None => { error!("Failed to access image '{}'", path); continue; }
             };
+            image_handles.push(image_handle);
             names.push(path.clone());
             dynamic_images.push(dynamic);
         }
 
-        let texture_atlas = {
+        let mut texture_atlas = {
             info!("Loaded texture atlas from paths: {} images", names.len());
             comet_assets::TextureAtlas::from_textures(names, dynamic_images)
         };
 
-        if let Some(handle) = self.asset_provider.add(texture_atlas.clone()) {
-            self.render_context.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
-        } else {
-            error!("Failed to add texture atlas to asset provider");
-            return;
+        for handle in image_handles {
+            self.asset_provider.remove(handle);
         }
 
         let gpu_texture = match GpuTexture::from_dynamic_image(
@@ -367,6 +366,14 @@ impl<'a> Renderer2D<'a> {
                 return;
             }
         };
+        texture_atlas.clear_atlas_image();
+
+        if let Some(handle) = self.asset_provider.add(texture_atlas) {
+            self.render_context.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
+        } else {
+            error!("Failed to add texture atlas to asset provider");
+            return;
+        }
 
         let gpu_texture_arc = Arc::new(gpu_texture);
         self.render_context
@@ -500,7 +507,7 @@ impl<'a> Renderer2D<'a> {
         self.accumulated_font_glyphs.extend(glyphs);
         self.font_cache.insert(key, line_height);
 
-        let atlas = comet_assets::TextureAtlas::from_glyphs(self.accumulated_font_glyphs.clone());
+        let mut atlas = comet_assets::TextureAtlas::from_glyphs(&self.accumulated_font_glyphs);
 
         let font_texture = match GpuTexture::from_dynamic_image(
             self.render_context.device(),
@@ -515,8 +522,12 @@ impl<'a> Renderer2D<'a> {
                 return;
             }
         };
+        atlas.clear_atlas_image();
         let font_texture_arc = Arc::new(font_texture);
 
+        if let Some(old_handle) = self.render_context.resources().get_asset_atlas_handle("font_atlas") {
+            self.asset_provider.remove(old_handle);
+        }
         if let Some(atlas_handle) = self.asset_provider.add(atlas) {
             self.render_context.resources_mut().insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
         }
@@ -1088,69 +1099,25 @@ impl<'a> Renderer2D<'a> {
         let mut camera_uniform = crate::camera::CameraUniform::new();
         camera_uniform.update_view_proj(&render_camera);
 
-        let buffer = Arc::new(self.render_context.device().create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Uniform Buffer"),
-                contents: bytemuck::cast_slice(&[camera_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        ));
-
-        let layout = match self
-            .render_context
-            .resources()
-            .get_bind_group_layout("Universal")
-            .and_then(|layouts| layouts.get(1))
+        // Write to the existing camera buffer in-place.
+        // The bind group keeps pointing to the same buffer, so no new allocations needed.
+        // The Font pass shares the Universal camera bind group, so it picks up the update too.
+        let buffer = match self.render_context.resources().get_buffer("Universal")
+            .and_then(|v| v.first())
+            .cloned()
         {
-            Some(l) => l.clone(),
+            Some(b) => b,
             None => {
-                error!(
-                    "Camera bind group layout missing for 'Universal' pass. Call init_atlas first."
-                );
+                error!("Camera buffer missing for 'Universal' pass. Call init_atlas first.");
                 return;
             }
         };
 
-        let bind_group = Arc::new(self.render_context.device().create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
-                label: Some("Camera Bind Group"),
-            },
-        ));
-
-        let resources = self.render_context.resources_mut();
-
-        match resources.get_buffer("Universal") {
-            None => resources.insert_buffer("Universal".into(), buffer.clone()),
-            Some(_) => resources.replace_buffer("Universal".into(), 0, buffer.clone()),
-        }
-
-        if let Some(groups) = resources.get_bind_groups("Universal") {
-            if groups.len() < 2 {
-                resources.insert_bind_group("Universal".into(), bind_group.clone());
-            } else {
-                resources.replace_bind_group("Universal".into(), 1, bind_group.clone());
-            }
-        } else {
-            resources.insert_bind_group("Universal".into(), bind_group.clone());
-        }
-
-        if let Some(groups) = resources.get_bind_groups("Font") {
-            if groups.len() < 2 {
-                resources.insert_bind_group("Font".into(), bind_group.clone());
-            } else {
-                resources.replace_bind_group("Font".into(), 1, bind_group.clone());
-            }
-        }
-
-        if resources.get_bind_group_layout("Font").is_none() {
-            #[cfg(feature = "comet_debug")]
-            debug!("Font pass not initialized yet; skipping Font camera bind group setup.");
-        }
+        self.render_context.queue().write_buffer(
+            &buffer,
+            0,
+            bytemuck::cast_slice(&[camera_uniform]),
+        );
     }
 }
 
@@ -1275,6 +1242,8 @@ impl<'a> Renderer for Renderer2D<'a> {
         self.render_context
             .queue()
             .submit(std::iter::once(encoder.finish()));
+
+        self.render_context.device().poll(wgpu::Maintain::Poll);
 
         output.present();
 

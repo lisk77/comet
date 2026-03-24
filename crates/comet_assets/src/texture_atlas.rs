@@ -303,14 +303,9 @@ impl TextureAtlas {
         }
     }
 
-    pub fn from_glyphs(glyphs: Vec<GlyphData>) -> Self {
-        let textures: Vec<(String, DynamicImage)> = glyphs
-            .iter()
-            .map(|g| (g.name.clone(), g.render.clone()))
-            .collect();
-
+    pub fn from_glyphs(glyphs: &[GlyphData]) -> Self {
         let tex_refs: Vec<(&String, &DynamicImage)> =
-            textures.iter().map(|(n, i)| (n, i)).collect();
+            glyphs.iter().map(|g| (&g.name, &g.render)).collect();
 
         let (atlas_w, atlas_h, placements) = Self::pack_textures(&tex_refs, 2);
         let atlas_w = Self::next_power_of_two(atlas_w);
@@ -349,6 +344,12 @@ impl TextureAtlas {
 
     pub fn atlas(&self) -> &DynamicImage {
         &self.atlas
+    }
+
+    /// Drop the CPU-side atlas image after it has been uploaded to the GPU.
+    /// Only the texture region metadata is needed after upload.
+    pub fn clear_atlas_image(&mut self) {
+        self.atlas = DynamicImage::new_rgba8(1, 1);
     }
 
     pub fn textures(&self) -> &HashMap<String, TextureRegion> {

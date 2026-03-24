@@ -700,7 +700,7 @@ impl App {
                                     renderer.apply_command(cmd);
                                 }
 
-                                if window_focused && !window_occluded {
+                                if !window_occluded {
                                     match renderer.render() {
                                         Ok(_) => {}
                                         Err(
@@ -722,19 +722,21 @@ impl App {
                             _ => {}
                         },
                         Event::AboutToWait => {
-                            while let Ok(cmd) = cmd_rx.try_recv() {
-                                renderer.apply_command(cmd);
-                            }
-
-                            if window_focused && !window_occluded {
+                            if !window_occluded {
+                                while let Ok(cmd) = cmd_rx.try_recv() {
+                                    renderer.apply_command(cmd);
+                                }
                                 renderer.window().request_redraw();
-                            }
 
-                            if update_timer.is_finite() {
-                                let next_frame = std::time::Instant::now()
-                                    + std::time::Duration::from_secs_f32(update_timer);
-                                elwt.set_control_flow(ControlFlow::WaitUntil(next_frame));
+                                if update_timer.is_finite() {
+                                    let next_frame = std::time::Instant::now()
+                                        + std::time::Duration::from_secs_f32(update_timer);
+                                    elwt.set_control_flow(ControlFlow::WaitUntil(next_frame));
+                                } else {
+                                    elwt.set_control_flow(ControlFlow::Wait);
+                                }
                             } else {
+                                while cmd_rx.try_recv().is_ok() {}
                                 elwt.set_control_flow(ControlFlow::Wait);
                             }
                         }
