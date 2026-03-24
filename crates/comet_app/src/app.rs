@@ -744,6 +744,7 @@ impl App {
                     }
                 })
                 .unwrap();
+            drop(renderer);
             logic_thread.join().ok();
         });
 
