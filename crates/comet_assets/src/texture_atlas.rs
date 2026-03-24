@@ -1,7 +1,7 @@
 use crate::asset_path::resolve_asset_path;
 use crate::font::GlyphData;
 use comet_log::*;
-use image::{DynamicImage, GenericImage, RgbaImage};
+use image::{DynamicImage, RgbaImage};
 use rect_packer::{Config, Packer, Rect};
 use std::collections::HashMap;
 
@@ -112,7 +112,7 @@ impl TextureAtlas {
         let mut atlas_size = 512;
         let max_size = 8192;
 
-        let valid_textures: Vec<(String, DynamicImage)> = textures
+        let valid_textures: Vec<(String, u32, u32)> = textures
             .iter()
             .map(|(name, tex)| {
                 let (w, h) = (tex.width(), tex.height());
@@ -121,11 +121,9 @@ impl TextureAtlas {
                         "Texture '{}' has invalid size {}x{}, replacing with 1x1 transparent dummy.",
                         name, w, h
                     );
-                    let mut img = RgbaImage::new(1, 1);
-                    img.put_pixel(0, 0, image::Rgba([0, 0, 0, 0]));
-                    (name.to_string(), DynamicImage::ImageRgba8(img))
+                    (name.to_string(), 1u32, 1u32)
                 } else {
-                    ((*name).clone(), (*tex).clone())
+                    ((*name).clone(), w, h)
                 }
             })
             .collect();
@@ -149,9 +147,9 @@ impl TextureAtlas {
             let mut max_y = 0i32;
             let mut failed = false;
 
-            for (name, tex) in &valid_textures {
-                let width = tex.width() as i32;
-                let height = tex.height() as i32;
+            for (name, w, h) in &valid_textures {
+                let width = *w as i32;
+                let height = *h as i32;
 
                 if width > atlas_size as i32 || height > atlas_size as i32 {
                     warn!(
@@ -205,11 +203,18 @@ impl TextureAtlas {
         let mut regions = HashMap::new();
 
         for (name, tex) in textures {
+            if tex.width() == 0 || tex.height() == 0 {
+                continue;
+            }
             if let Some(rect) = placements.get(*name) {
-                if let Err(e) = base.copy_from(&tex.to_rgba8(), rect.x as u32, rect.y as u32) {
-                    error!("Failed to blit texture '{}' into atlas at ({}, {}): {}", name, rect.x, rect.y, e);
-                    continue;
-                }
+                let rgba_owned;
+                let rgba: &RgbaImage = if let Some(r) = tex.as_rgba8() {
+                    r
+                } else {
+                    rgba_owned = tex.to_rgba8();
+                    &rgba_owned
+                };
+                Self::blit(&mut base, rgba, rect.x as u32, rect.y as u32);
 
                 let (u0, v0, u1, v1) = Self::region_uvs(rect, atlas_width, atlas_height);
 
@@ -232,6 +237,19 @@ impl TextureAtlas {
         (base, regions)
     }
 
+    fn blit(dst: &mut RgbaImage, src: &RgbaImage, x: u32, y: u32) {
+        let src_stride = src.width() as usize * 4;
+        let dst_stride = dst.width() as usize * 4;
+        let dst_raw = dst.as_mut();
+        let src_raw = src.as_raw();
+        for row in 0..src.height() as usize {
+            let src_off = row * src_stride;
+            let dst_off = ((y as usize + row) * (dst_stride / 4) + x as usize) * 4;
+            dst_raw[dst_off..dst_off + src_stride]
+                .copy_from_slice(&src_raw[src_off..src_off + src_stride]);
+        }
+    }
+
     fn region_uvs(rect: &Rect, atlas_width: u32, atlas_height: u32) -> (f32, f32, f32, f32) {
         let aw = atlas_width as f32;
         let ah = atlas_height as f32;
@@ -249,7 +267,7 @@ impl TextureAtlas {
         info!("Loading textures...");
         for path in &paths {
             let img = match image::open(resolve_asset_path(path)) {
-                Ok(i) => i,
+                Ok(i) => DynamicImage::ImageRgba8(i.into_rgba8()),
                 Err(e) => {
                     error!("Failed to load texture '{}': {}", path, e);
                     continue;
@@ -283,12 +301,16 @@ impl TextureAtlas {
     }
 
     pub fn from_textures(names: Vec<String>, textures: Vec<DynamicImage>) -> Self {
+        debug!("start");
         assert_eq!(
             names.len(),
             textures.len(),
             "Names and textures must have the same length."
         );
 
+        let textures: Vec<DynamicImage> = textures.into_iter()
+            .map(|t| if t.as_rgba8().is_some() { t } else { DynamicImage::ImageRgba8(t.into_rgba8()) })
+            .collect();
         let tex_refs: Vec<(&String, &DynamicImage)> = names.iter().zip(textures.iter()).collect();
 
         let (atlas_w, atlas_h, placements) = Self::pack_textures(&tex_refs, 2);
@@ -296,6 +318,8 @@ impl TextureAtlas {
         let atlas_h = Self::next_power_of_two(atlas_h);
 
         let (base, regions) = Self::build_atlas(&tex_refs, &placements, atlas_w, atlas_h);
+
+        debug!("end");
 
         TextureAtlas {
             atlas: DynamicImage::ImageRgba8(base),
@@ -316,8 +340,14 @@ impl TextureAtlas {
 
         for g in glyphs.iter() {
             if let Some(rect) = placements.get(&g.name) {
-                base.copy_from(&g.render.to_rgba8(), rect.x as u32, rect.y as u32)
-                    .unwrap();
+                let rgba_owned;
+                let rgba: &RgbaImage = if let Some(r) = g.render.as_rgba8() {
+                    r
+                } else {
+                    rgba_owned = g.render.to_rgba8();
+                    &rgba_owned
+                };
+                Self::blit(&mut base, rgba, rect.x as u32, rect.y as u32);
 
                 let (u0, v0, u1, v1) = Self::region_uvs(rect, atlas_w, atlas_h);
 
