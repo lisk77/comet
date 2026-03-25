@@ -529,6 +529,27 @@ impl<'a> Renderer2D<'a> {
             0,
             new_bind_group,
         );
+
+        let camera_group = self.render_context.resources()
+            .get_bind_groups("Universal")
+            .and_then(|groups| groups.get(1))
+            .cloned();
+        if let Some(cg) = camera_group {
+            let resources = self.render_context.resources_mut();
+            if resources.get_bind_groups("Font").is_some() {
+                let font_groups = resources.get_bind_groups("Font").map(|v| v.len()).unwrap_or(0);
+                if font_groups > 1 {
+                    resources.replace_bind_group("Font".into(), 1, cg);
+                } else {
+                    resources.insert_bind_group("Font".into(), cg);
+                }
+
+                if let Some(pos) = self.render_passes.iter().position(|p| p.label == "Font") {
+                    let font_pass = self.render_passes.remove(pos);
+                    self.render_passes.push(font_pass);
+                }
+            }
+        }
     }
 
     fn ensure_font_initialized(&mut self, handle: comet_assets::Asset<comet_assets::Font>, size: f32) {
