@@ -279,6 +279,14 @@ impl AssetStore {
         result
     }
 
+    pub fn for_each_ready_mut<T: 'static>(&mut self, mut f: impl FnMut(&mut T)) {
+        for slot in &mut self.slots {
+            if let Some(SlotState::Ready(data)) = &mut slot.value {
+                f(unsafe { data.as_mut::<T>() });
+            }
+        }
+    }
+
     pub(crate) fn record_path(&mut self, index: u32, generation: u32, path: &str) {
         self.paths.insert(path.to_string(), (index, generation));
         self.index_to_path.insert(index, path.to_string());

@@ -320,6 +320,13 @@ impl TextureAtlas {
         Some((blit_x, blit_y, region))
     }
 
+    /// Immediately remove a handle from the atlas, freeing its allocated space.
+    pub fn evict_handle(&mut self, handle: Asset<Image>) {
+        if let Some((alloc_id, _, _)) = self.handle_textures.remove(&handle) {
+            self.allocator.deallocate(alloc_id);
+        }
+    }
+
     /// Look up the UV region for a previously inserted handle.
     pub fn region_for_handle(&self, handle: Asset<Image>) -> Option<TextureRegion> {
         self.handle_textures.get(&handle).map(|(_, r, _)| *r)

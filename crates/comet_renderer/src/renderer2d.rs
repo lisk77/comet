@@ -213,6 +213,7 @@ impl RenderHandle2D {
     }
 
     pub fn render_scene_2d(&mut self, scene: &mut comet_ecs::Scene) {
+        self.poll_events();
         if self.pending_atlas_rebuild {
             self.pending_atlas_rebuild = false;
             for (_, render) in scene
@@ -1120,12 +1121,21 @@ impl<'a> Renderer2D<'a> {
         }
 
         if let Some(atlas_handle) = self.render_context.resources().get_asset_atlas_handle("atlas") {
-            self.asset_provider.with_mut(atlas_handle, |atlas| {
+            let any_evicted = self.asset_provider.with_mut(atlas_handle, |atlas| {
+                let mut evicted = false;
                 for handle in &referenced_handles {
-                    atlas.mark_used(*handle);
+                    if atlas.region_for_handle(*handle).is_some() {
+                        atlas.mark_used(*handle);
+                    } else {
+                        evicted = true;
+                    }
                 }
                 atlas.evict_stale(120);
-            });
+                evicted
+            }).unwrap_or(false);
+            if any_evicted {
+                let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
+            }
         }
         self.setup_camera_from_packet(camera);
 
@@ -1374,6 +1384,7 @@ impl<'a> Renderer for Renderer2D<'a> {
                     let bytes = std::fs::read(&fs_path).ok()?;
                     let image = comet_assets::Image::from_bytes(&bytes, false).ok()?;
                     let image_handle = self.asset_provider.add(image)?;
+                    self.asset_provider.track_for_reload::<comet_assets::Image>(image_handle, path);
                     let result = self.ensure_image_in_atlas(image_handle);
                     if result.is_some() {
                         dynamic_image_handle = Some(image_handle);

@@ -89,6 +89,10 @@ impl StoreMap {
     fn get<T: Loadable>(&self) -> Option<&AssetStore> {
         self.map.get(&TypeId::of::<T>())
     }
+
+    fn get_mut_opt<T: Loadable>(&mut self) -> Option<&mut AssetStore> {
+        self.map.get_mut(&TypeId::of::<T>())
+    }
 }
 
 pub struct AssetManager {
@@ -160,6 +164,12 @@ impl AssetManager {
 
     pub(crate) fn record_path<T: Loadable>(&mut self, index: u32, generation: u32, path: &str) {
         self.stores.get_mut::<T>().record_path(index, generation, path);
+    }
+
+    pub fn for_each_ready_mut<T: Loadable>(&mut self, f: impl FnMut(&mut T)) {
+        if let Some(store) = self.stores.get_mut_opt::<T>() {
+            store.for_each_ready_mut::<T>(f);
+        }
     }
 
     pub fn find_by_path<T: Loadable>(&self, path: &str) -> Option<Asset<T>> {

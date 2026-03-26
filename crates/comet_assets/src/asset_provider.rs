@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use notify::{EventKind, RecursiveMode, Watcher};
 use crate::{AssetManager, Asset};
 use crate::asset_manager::Loadable;
+use crate::image::Image;
+use crate::texture_atlas::TextureAtlas;
 use crate::asset_path::file_extension;
 use crate::asset_store::LoadState;
 
@@ -15,6 +17,7 @@ struct ReloadEntry {
     ext: String,
     type_id: TypeId,
     index: u32,
+    generation: u32,
 }
 
 pub struct AssetProvider {
@@ -80,6 +83,12 @@ impl AssetProvider {
 
                     let worker = {
                         let Ok(mut manager) = inner.write() else { continue; };
+                        if entry.type_id == TypeId::of::<Image>() {
+                            let image_handle = Asset::<Image>::new(entry.index, entry.generation);
+                            manager.for_each_ready_mut::<TextureAtlas>(|atlas| {
+                                atlas.evict_handle(image_handle);
+                            });
+                        }
                         manager.begin_reload(&entry.ext, entry.type_id, entry.index)
                     };
                     let Some(worker) = worker else { continue; };
@@ -166,6 +175,7 @@ impl AssetProvider {
                 ext: ext.to_string(),
                 type_id: TypeId::of::<T>(),
                 index,
+                generation,
             });
         }
 
@@ -183,6 +193,24 @@ impl AssetProvider {
         });
 
         handle
+    }
+
+    /// Registers a handle (created via `add`) for hot reload watching.
+    pub fn track_for_reload<T: Loadable>(&self, handle: Asset<T>, path: &str) {
+        let resolved = crate::asset_path::resolve_asset_path(path);
+        let ext = match file_extension(&resolved, path) {
+            Ok(e) => e,
+            Err(e) => { comet_log::error!("{}", e); return; }
+        };
+        if let Ok(mut map) = self.reload_map.write() {
+            map.insert(resolved.clone(), ReloadEntry {
+                original_path: path.to_string(),
+                ext: ext.to_string(),
+                type_id: TypeId::of::<T>(),
+                index: handle.index(),
+                generation: handle.generation(),
+            });
+        }
     }
 
     /// Finds a previously loaded asset by its original load path.
