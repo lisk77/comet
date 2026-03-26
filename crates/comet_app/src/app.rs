@@ -6,7 +6,7 @@ use comet_ecs::{
 use comet_input::keyboard::Key;
 use comet_log::*;
 use comet_renderer::renderer::{Renderer, RendererHandle};
-use comet_sound::*;
+use comet_audio::*;
 use comet_assets::{AssetManager, AssetProvider, Loadable};
 use anyhow::Result;
 use std::any::{type_name, Any, TypeId};
@@ -123,7 +123,8 @@ impl App {
         self
     }
 
-    pub fn with_audio(mut self, audio_system: Box<dyn Audio>) -> Self {
+    pub fn with_audio(mut self, mut audio_system: Box<dyn Audio>) -> Self {
+        audio_system.set_asset_provider(self.asset_provider.clone());
         self.audio = audio_system;
         self
     }
@@ -461,10 +462,6 @@ impl App {
     /// Returns true when all background asset loads are complete.
     pub fn all_loaded(&self) -> bool {
         self.asset_provider.all_loaded()
-    }
-
-    pub fn load_audio(&mut self, name: &str, path: &str) {
-        self.audio.load_asset(name, &comet_assets::AudioClip::new(path));
     }
 
     pub fn play_audio(&mut self, name: &str, looped: bool) {

@@ -1,5 +1,5 @@
 [package]
-name = "comet_sound"
+name = "comet_audio"
 version = "0.1.0"
 edition = "2021"
 

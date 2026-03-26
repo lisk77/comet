@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::mpsc;
 use crate::asset_handle::Asset;
 use anyhow::Result;
@@ -135,6 +136,7 @@ struct Slot {
 pub struct AssetStore {
     slots: Vec<Slot>,
     free_list: Vec<u32>,
+    paths: HashMap<String, (u32, u32)>,
 }
 
 unsafe impl Send for AssetStore {}
@@ -142,7 +144,7 @@ unsafe impl Sync for AssetStore {}
 
 impl AssetStore {
     pub fn new() -> Self {
-        Self { slots: Vec::new(), free_list: Vec::new() }
+        Self { slots: Vec::new(), free_list: Vec::new(), paths: HashMap::new() }
     }
 
     fn alloc_slot(&mut self, state: SlotState) -> (u32, u32) {
@@ -266,6 +268,14 @@ impl AssetStore {
                 None
             }
         }
+    }
+
+    pub(crate) fn record_path(&mut self, index: u32, generation: u32, stem: &str) {
+        self.paths.insert(stem.to_string(), (index, generation));
+    }
+
+    pub fn find_by_stem<T: 'static>(&self, stem: &str) -> Option<Asset<T>> {
+        self.paths.get(stem).map(|&(index, gen)| Asset::new(index, gen))
     }
 
     pub fn contains<T: 'static>(&self, handle: Asset<T>) -> bool {

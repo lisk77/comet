@@ -67,6 +67,10 @@ impl StoreMap {
         self.map.get_mut(&TypeId::of::<T>())
             .expect("asset store not registered")
     }
+
+    fn get<T: Loadable>(&self) -> Option<&AssetStore> {
+        self.map.get(&TypeId::of::<T>())
+    }
 }
 
 pub struct AssetManager {
@@ -131,5 +135,13 @@ impl AssetManager {
 
     pub fn load_state<T: Loadable>(&mut self, handle: Asset<T>) -> LoadState {
         self.stores.get_mut::<T>().load_state(handle)
+    }
+
+    pub(crate) fn record_path<T: Loadable>(&mut self, index: u32, generation: u32, stem: &str) {
+        self.stores.get_mut::<T>().record_path(index, generation, stem);
+    }
+
+    pub fn find_by_stem<T: Loadable>(&self, stem: &str) -> Option<Asset<T>> {
+        self.stores.get::<T>()?.find_by_stem::<T>(stem)
     }
 }

@@ -16,7 +16,7 @@ comet_ecs = { workspace = true }
 comet_input = { workspace = true }
 comet_log = { workspace = true }
 comet_structs = { workspace = true }
-comet_sound = { workspace = true }
+comet_audio = { workspace = true }
 
 cfg-if = "1"
 anyhow = "1.0"
@@ -50,7 +50,7 @@ members = [
     "./crates/comet_input",
     "./crates/comet_log",
     "./crates/comet_ui",
-    "./crates/comet_sound",
+    "./crates/comet_audio",
     "./crates/comet_structs"
 ]
 
@@ -64,4 +64,4 @@ comet_ecs = { path = "./crates/comet_ecs" }
 comet_input = { path = "./crates/comet_input" }
 comet_log = { path = "./crates/comet_log" }
 comet_structs = { path = "./crates/comet_structs" }
-comet_sound = { path = "./crates/comet_sound" }
+comet_audio = { path = "./crates/comet_audio" }

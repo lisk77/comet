@@ -56,12 +56,12 @@ pub use comet_input as input;
 pub use comet_log as log;
 pub use comet_math as math;
 pub use comet_renderer as renderer;
-pub use comet_assets as resources;
+pub use comet_assets as assets;
 
 /// Everything you normally need to get started with Comet.
 pub mod prelude {
-    pub use comet_app::App;
-    pub use comet_app::ApplicationType::App2D;
+    pub use comet_app::{App, ApplicationType::App2D};
+    pub use comet_assets::*;
     pub use comet_colors::{
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
@@ -69,10 +69,10 @@ pub mod prelude {
     pub use comet_input::keyboard::Key;
     pub use comet_log::*;
     pub use comet_math::*;
-    pub use comet_assets::{Asset, Font, LoadState};
     pub use comet_renderer::{
         renderer::Renderer,
         renderer2d::{RenderHandle2D, Renderer2D},
     };
+    pub use comet_audio::*;
     pub use winit_input_helper::WinitInputHelper as InputManager;
 }

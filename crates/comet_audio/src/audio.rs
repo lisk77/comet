@@ -1,9 +1,10 @@
+use std::sync::Arc;
+
 pub trait Audio: Send {
     fn new() -> Self
     where
         Self: Sized;
-    fn load(&mut self, name: &str, path: &str);
-    fn load_asset(&mut self, name: &str, clip: &comet_assets::AudioClip);
+    fn set_asset_provider(&mut self, provider: Arc<comet_assets::AssetProvider>);
     fn play(&mut self, name: &str, looped: bool);
     fn pause(&mut self, name: &str);
     fn stop(&mut self, name: &str);
