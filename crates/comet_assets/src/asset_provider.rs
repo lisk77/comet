@@ -158,6 +158,16 @@ impl AssetProvider {
         }
     }
 
+    /// Loads multiple assets of the same type in the background. Returns handles immediately.
+    pub fn load_assets<T: Loadable>(&self, paths: &[&str]) -> Vec<Asset<T>> {
+        paths.iter().map(|p| self.load(p)).collect()
+    }
+
+    /// Unloads a batch of handles returned by `load_assets`.
+    pub fn unload_assets<T: Loadable>(&self, handles: Vec<Asset<T>>) -> Vec<Option<T>> {
+        handles.into_iter().map(|h| self.unload(h)).collect()
+    }
+
     /// Loads an asset from `path` in the background. Returns a typed handle immediately.
     pub fn load<T: Loadable>(&self, path: &str) -> Asset<T> {
         let resolved = crate::asset_path::resolve_asset_path(path);

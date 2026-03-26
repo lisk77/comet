@@ -7,7 +7,7 @@ use comet_input::keyboard::Key;
 use comet_log::*;
 use comet_renderer::renderer::{Renderer, RendererHandle};
 use comet_audio::*;
-use comet_assets::{AssetManager, AssetProvider, Loadable};
+use comet_assets::{Asset, AssetManager, AssetProvider, Loadable};
 use anyhow::Result;
 use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
@@ -445,8 +445,20 @@ impl App {
 
     /// Loads an asset from `path` in the background. Returns a typed handle immediately.
     /// Check progress with `load_state`. On any error the handle is in `Failed` state.
-    pub fn load<A: comet_assets::Loadable>(&self, path: &str) -> comet_assets::Asset<A> {
+    pub fn load<A: comet_assets::Loadable>(&self, path: &str) -> Asset<A> {
         self.asset_provider.load::<A>(path)
+    }
+
+    pub fn load_assets<A: Loadable>(&self, paths: Vec<&str>) -> Vec<Asset<A>> {
+        paths.into_iter().map(|p| self.load::<A>(p)).collect()
+    }
+
+    pub fn unload<A: comet_assets::Loadable>(&self, handle: comet_assets::Asset<A>) -> Option<A> {
+        self.asset_provider.unload(handle)
+    }
+
+    pub fn unload_assets<A: Loadable>(&self, handles: Vec<Asset<A>>) -> Vec<Option<A>> {
+        self.asset_provider.unload_assets(handles)
     }
 
     /// Non-blocking load state for a handle.
