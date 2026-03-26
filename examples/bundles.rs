@@ -15,9 +15,7 @@ bundle!(Comet {
     render: Render2D
 });
 
-fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
-    renderer.init_atlas();
-
+fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     app.register_component::<Player>();
 
     app.spawn_bundle(Camera {

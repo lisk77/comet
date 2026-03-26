@@ -4,9 +4,7 @@ use comet::prelude::*;
 #[derive(Component)]
 struct Player;
 
-fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
-    renderer.init_atlas();
-
+fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     app.register_component::<Player>();
 
     register_prefab!(
