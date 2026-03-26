@@ -1,9 +1,6 @@
 use comet::prelude::*;
 
-fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
-    // Creating a texture atlas from the provided textures in the vector
-    renderer.init_atlas_by_paths(vec!["res://textures/comet_icon.png".to_string()]);
-
+fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     // Creating a camera entity
     app.spawn((Transform2D::new(), Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)));
 
