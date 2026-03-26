@@ -178,6 +178,13 @@ impl AssetStore {
         Asset::new(index, generation)
     }
 
+    pub(crate) fn set_reload_pending<T: Send + 'static>(&mut self, index: u32) -> Option<mpsc::Sender<Result<T>>> {
+        let slot = self.slots.get_mut(index as usize)?;
+        let (tx, rx) = mpsc::channel::<Result<T>>();
+        slot.value = Some(SlotState::Pending(PendingData::new::<T>(rx)));
+        Some(tx)
+    }
+
     pub(crate) fn insert_pending<T: Send + 'static>(&mut self) -> (Asset<T>, mpsc::Sender<Result<T>>) {
         let (tx, rx) = mpsc::channel::<Result<T>>();
         let (index, generation) = self.alloc_slot(SlotState::Pending(PendingData::new(rx)));
@@ -266,8 +273,8 @@ impl AssetStore {
         };
         slot.generation = slot.generation.wrapping_add(1);
         self.free_list.push(handle.index());
-        if let Some(stem) = self.index_to_stem.remove(&handle.index()) {
-            self.paths.remove(&stem);
+        if let Some(path) = self.index_to_path.remove(&handle.index()) {
+            self.paths.remove(&path);
         }
         result
     }
