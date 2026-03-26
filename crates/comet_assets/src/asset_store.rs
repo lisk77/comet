@@ -137,6 +137,7 @@ pub struct AssetStore {
     slots: Vec<Slot>,
     free_list: Vec<u32>,
     paths: HashMap<String, (u32, u32)>,
+    index_to_path: HashMap<u32, String>,
 }
 
 unsafe impl Send for AssetStore {}
@@ -144,7 +145,7 @@ unsafe impl Sync for AssetStore {}
 
 impl AssetStore {
     pub fn new() -> Self {
-        Self { slots: Vec::new(), free_list: Vec::new(), paths: HashMap::new() }
+        Self { slots: Vec::new(), free_list: Vec::new(), paths: HashMap::new(), index_to_path: HashMap::new() }
     }
 
     fn alloc_slot(&mut self, state: SlotState) -> (u32, u32) {
@@ -250,32 +251,51 @@ impl AssetStore {
                     RecvResult::Failed => {
                         slot.generation = slot.generation.wrapping_add(1);
                         self.free_list.push(handle.index());
+                        if let Some(path) = self.index_to_path.remove(&handle.index()) {
+                            self.paths.remove(&path);
+                        }
                         return None;
                     }
                 }
             }
         }
 
-        match slot.value.take()? {
-            SlotState::Ready(data) => {
-                slot.generation = slot.generation.wrapping_add(1);
-                self.free_list.push(handle.index());
-                Some(unsafe { data.take::<T>() })
-            }
-            _ => {
-                slot.generation = slot.generation.wrapping_add(1);
-                self.free_list.push(handle.index());
-                None
-            }
+        let result = match slot.value.take()? {
+            SlotState::Ready(data) => Some(unsafe { data.take::<T>() }),
+            _ => None,
+        };
+        slot.generation = slot.generation.wrapping_add(1);
+        self.free_list.push(handle.index());
+        if let Some(stem) = self.index_to_stem.remove(&handle.index()) {
+            self.paths.remove(&stem);
         }
+        result
     }
 
-    pub(crate) fn record_path(&mut self, index: u32, generation: u32, stem: &str) {
-        self.paths.insert(stem.to_string(), (index, generation));
+    pub(crate) fn record_path(&mut self, index: u32, generation: u32, path: &str) {
+        self.paths.insert(path.to_string(), (index, generation));
+        self.index_to_path.insert(index, path.to_string());
+    }
+
+    pub fn find_by_path<T: 'static>(&self, path: &str) -> Option<Asset<T>> {
+        self.paths.get(path).map(|&(index, gen)| Asset::new(index, gen))
     }
 
     pub fn find_by_stem<T: 'static>(&self, stem: &str) -> Option<Asset<T>> {
-        self.paths.get(stem).map(|&(index, gen)| Asset::new(index, gen))
+        let matches: Vec<_> = self.paths.iter().filter_map(|(path, &(index, gen))| {
+            let s = std::path::Path::new(path).file_stem()?.to_str()?;
+            if s == stem { Some((path.as_str(), index, gen)) } else { None }
+        }).collect();
+
+        match matches.len() {
+            0 => None,
+            1 => Some(Asset::new(matches[0].1, matches[0].2)),
+            _ => {
+                let paths: Vec<_> = matches.iter().map(|(p, _, _)| *p).collect();
+                error!("Ambiguous stem '{}' matches multiple assets: {:?} — name your files better", stem, paths);
+                None
+            }
+        }
     }
 
     pub fn contains<T: 'static>(&self, handle: Asset<T>) -> bool {

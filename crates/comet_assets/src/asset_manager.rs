@@ -141,6 +141,10 @@ impl AssetManager {
         self.stores.get_mut::<T>().record_path(index, generation, stem);
     }
 
+    pub fn find_by_path<T: Loadable>(&self, path: &str) -> Option<Asset<T>> {
+        self.stores.get::<T>()?.find_by_path::<T>(path)
+    }
+
     pub fn find_by_stem<T: Loadable>(&self, stem: &str) -> Option<Asset<T>> {
         self.stores.get::<T>()?.find_by_stem::<T>(stem)
     }

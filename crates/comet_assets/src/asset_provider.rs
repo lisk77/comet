@@ -67,17 +67,11 @@ impl AssetProvider {
             Err(e) => { comet_log::error!("{}", e); return Asset::default(); }
         };
 
-        let stem = std::path::Path::new(path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(path)
-            .to_string();
-
         let (index, generation, worker) = match self.inner.write() {
             Ok(mut manager) => match manager.get_alloc_loader_typed::<T>(ext) {
                 Some(alloc) => {
                     let result = alloc(&mut *manager);
-                    manager.record_path::<T>(result.0, result.1, &stem);
+                    manager.record_path::<T>(result.0, result.1, path);
                     result
                 }
                 None => {
@@ -105,6 +99,11 @@ impl AssetProvider {
         });
 
         handle
+    }
+
+    /// Finds a previously loaded asset by its original load path.
+    pub fn find_by_path<T: Loadable>(&self, path: &str) -> Option<Asset<T>> {
+        self.inner.read().ok().and_then(|m| m.find_by_path::<T>(path))
     }
 
     /// Finds a previously loaded asset by the stem of its original path (e.g. `"hit"` for `"res://sounds/hit.ogg"`).
