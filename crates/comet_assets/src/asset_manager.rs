@@ -194,8 +194,8 @@ impl AssetManager {
         self.stores.get_mut::<T>().get_mut(handle)
     }
 
-    pub fn remove<T: Loadable>(&mut self, handle: Asset<T>) -> Option<T> {
-        self.stores.get_mut::<T>().remove(handle)
+    pub fn unload<T: Loadable>(&mut self, handle: Asset<T>) -> Option<T> {
+        self.stores.get_mut::<T>().unload(handle)
     }
 
     pub fn load_state<T: Loadable>(&mut self, handle: Asset<T>) -> LoadState {
@@ -210,6 +210,10 @@ impl AssetManager {
         if let Some(store) = self.stores.get_mut_opt::<T>() {
             store.for_each_ready_mut::<T>(f);
         }
+    }
+
+    pub fn path_for<T: Loadable>(&self, handle: Asset<T>) -> Option<String> {
+        self.stores.get::<T>()?.path_for_index(handle.index()).map(|s| s.to_string())
     }
 
     pub fn find_by_path<T: Loadable>(&self, path: &str) -> Option<Asset<T>> {

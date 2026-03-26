@@ -59,6 +59,16 @@ impl Image {
         &self.data
     }
 
+    /// Drops the CPU-side pixel data after it has been uploaded to the GPU.
+    /// Width and height are preserved so atlas layout remains valid.
+    pub fn evict_pixels(&mut self) {
+        self.data = Vec::new();
+    }
+
+    pub fn is_evicted(&self) -> bool {
+        self.data.is_empty()
+    }
+
     pub fn width(&self) -> u32 {
         self.width
     }

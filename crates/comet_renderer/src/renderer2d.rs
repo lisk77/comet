@@ -400,7 +400,7 @@ impl<'a> Renderer2D<'a> {
         };
 
         for handle in image_handles {
-            self.asset_provider.remove(handle);
+            self.asset_provider.unload(handle);
         }
 
         self.setup_atlas_pipeline(texture_atlas);
@@ -601,7 +601,7 @@ impl<'a> Renderer2D<'a> {
         let font_texture_arc = Arc::new(font_texture);
 
         if let Some(old_handle) = self.render_context.resources().get_asset_atlas_handle("font_atlas") {
-            self.asset_provider.remove(old_handle);
+            self.asset_provider.unload(old_handle);
         }
         if let Some(atlas_handle) = self.asset_provider.add(atlas) {
             self.render_context.resources_mut().insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
@@ -751,11 +751,12 @@ impl<'a> Renderer2D<'a> {
             }
         };
 
-        // Upload pixels to GPU
+        // Upload pixels to GPU then evict the CPU copy
         let gpu_texture = self.render_context.resources().get_gpu_texture("atlas")?.clone();
         self.asset_provider.with(handle, |img| {
             gpu_texture.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h);
         });
+        self.asset_provider.with_mut(handle, |img| img.evict_pixels());
 
         Some(AtlasRef::new(region, atlas_handle))
     }
@@ -796,9 +797,26 @@ impl<'a> Renderer2D<'a> {
                 continue;
             };
 
-            self.asset_provider.with(h, |img| {
-                new_gpu.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h_px);
-            });
+            let uploaded = self.asset_provider.with(h, |img| {
+                if !img.is_evicted() {
+                    new_gpu.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h_px);
+                    true
+                } else {
+                    false
+                }
+            }).unwrap_or(false);
+
+            if !uploaded {
+                let path = self.asset_provider.path_for::<comet_assets::Image>(h);
+                if let Some(path) = path {
+                    let fs_path = comet_assets::resolve_asset_path(&path);
+                    if let Ok(bytes) = std::fs::read(&fs_path) {
+                        if let Ok(img) = comet_assets::Image::from_bytes(&bytes, false) {
+                            new_gpu.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h_px);
+                        }
+                    }
+                }
+            }
         }
 
         // Swap GPU texture and recreate bind group

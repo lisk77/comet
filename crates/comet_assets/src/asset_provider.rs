@@ -135,8 +135,8 @@ impl AssetProvider {
         self.inner.write().ok().map(|mut m| m.add(asset))
     }
 
-    pub fn remove<T: Loadable>(&self, handle: Asset<T>) -> Option<T> {
-        self.inner.write().ok().and_then(|mut m| m.remove(handle))
+    pub fn unload<T: Loadable>(&self, handle: Asset<T>) -> Option<T> {
+        self.inner.write().ok().and_then(|mut m| m.unload(handle))
     }
 
     /// Register a loader for a file extension.
@@ -320,6 +320,11 @@ impl AssetProvider {
                 );
             }
         });
+    }
+
+    /// Returns the original load path for a handle, if it was loaded from a file.
+    pub fn path_for<T: Loadable>(&self, handle: Asset<T>) -> Option<String> {
+        self.inner.read().ok().and_then(|m| m.path_for::<T>(handle))
     }
 
     /// Finds a previously loaded asset by its original load path.

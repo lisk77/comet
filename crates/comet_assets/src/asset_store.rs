@@ -246,7 +246,7 @@ impl AssetStore {
         }
     }
 
-    pub fn remove<T: 'static>(&mut self, handle: Asset<T>) -> Option<T> {
+    pub fn unload<T: 'static>(&mut self, handle: Asset<T>) -> Option<T> {
         let index = handle.index() as usize;
         let slot = self.slots.get_mut(index)?;
         if slot.generation != handle.generation() { return None; }
@@ -290,6 +290,10 @@ impl AssetStore {
     pub(crate) fn record_path(&mut self, index: u32, generation: u32, path: &str) {
         self.paths.insert(path.to_string(), (index, generation));
         self.index_to_path.insert(index, path.to_string());
+    }
+
+    pub fn path_for_index(&self, index: u32) -> Option<&str> {
+        self.index_to_path.get(&index).map(|s| s.as_str())
     }
 
     pub fn find_by_path<T: 'static>(&self, path: &str) -> Option<Asset<T>> {
