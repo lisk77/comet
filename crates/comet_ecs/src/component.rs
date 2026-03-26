@@ -8,6 +8,7 @@ use crate::{Entity, Scene};
 use comet_colors::Color as ColorTrait;
 use comet_log::*;
 use comet_math::m4;
+use comet_assets::ImageRef;
 use component_derive::Component;
 
 // ##################################################
@@ -45,7 +46,7 @@ pub struct Rectangle2D {
 #[derive(Component)]
 pub struct Render2D {
     is_visible: bool,
-    texture_name: &'static str,
+    texture: ImageRef,
     scale: v2,
     draw_index: u32,
 }
@@ -60,7 +61,7 @@ pub struct Camera2D {
 #[derive(Component)]
 pub struct Text {
     content: String,
-    font: &'static str,
+    font: comet_assets::Asset<comet_assets::Font>,
     font_size: f32,
     color: Color,
     is_visible: bool,
@@ -135,7 +136,7 @@ pub trait Collider {
 pub trait Render {
     fn is_visible(&self) -> bool;
     fn set_visibility(&mut self, is_visible: bool);
-    fn get_texture(&self) -> &'static str;
+    fn texture(&self) -> ImageRef;
     fn set_texture(&mut self, texture: &'static str);
 }
 
@@ -279,7 +280,7 @@ impl Render2D {
     pub fn new(texture: &'static str, is_visible: bool, scale: v2, draw_index: u32) -> Self {
         Self {
             is_visible,
-            texture_name: texture,
+            texture: ImageRef::Unresolved(texture),
             scale,
             draw_index,
         }
@@ -288,7 +289,16 @@ impl Render2D {
     pub fn with_texture(texture: &'static str) -> Self {
         Self {
             is_visible: true,
-            texture_name: texture,
+            texture: ImageRef::Unresolved(texture),
+            scale: v2::new(1.0, 1.0),
+            draw_index: 0,
+        }
+    }
+
+    pub fn with_handle(handle: comet_assets::Asset<comet_assets::Image>) -> Self {
+        Self {
+            is_visible: true,
+            texture: ImageRef::Handle(handle),
             scale: v2::new(1.0, 1.0),
             draw_index: 0,
         }
@@ -309,6 +319,10 @@ impl Render2D {
     pub fn set_draw_index(&mut self, index: u32) {
         self.draw_index = index
     }
+
+    pub fn set_image_ref(&mut self, image_ref: ImageRef) {
+        self.texture = image_ref;
+    }
 }
 
 impl Render for Render2D {
@@ -320,16 +334,12 @@ impl Render for Render2D {
         self.is_visible = is_visible;
     }
 
-    fn get_texture(&self) -> &'static str {
-        self.texture_name
+    fn texture(&self) -> ImageRef {
+        self.texture
     }
 
-    /// Use the actual file name of the texture instead of the path
-    /// e.g. "comet_icon.png" instead of "resources/textures/comet_icon.png"
-    /// The resource manager will already look in the resources/textures directory
-    /// This behavior will later be expanded so that it can be used with other project structures
     fn set_texture(&mut self, texture: &'static str) {
-        self.texture_name = texture;
+        self.texture = ImageRef::Unresolved(texture);
     }
 }
 
@@ -491,7 +501,7 @@ impl Camera for Camera2D {
 impl Text {
     pub fn new(
         content: impl Into<String>,
-        font: &'static str,
+        font: comet_assets::Asset<comet_assets::Font>,
         font_size: f32,
         is_visible: bool,
         color: impl ColorTrait,
@@ -514,11 +524,11 @@ impl Text {
         self.content = content.into();
     }
 
-    pub fn font(&self) -> &'static str {
+    pub fn font(&self) -> comet_assets::Asset<comet_assets::Font> {
         self.font
     }
 
-    pub fn set_font(&mut self, font: &'static str) {
+    pub fn set_font(&mut self, font: comet_assets::Asset<comet_assets::Font>) {
         self.font = font;
     }
 

@@ -47,7 +47,7 @@
 //! | `comet_log` | Provides logging functionality for debugging and error reporting. |
 //! | `comet_math` | Includes mathematical utilities and data structures like vectors, matrices, and quaternions. |
 //! | `comet_renderer` | (right now) implements a simple 2D renderer for drawing graphics and text. |
-//! | `comet_resources` | Manages resources such as textures, shaders and fonts. |
+//! | `comet_assets` | Manages resources such as textures, shaders and fonts. |
 //!
 pub use comet_app as app;
 pub use comet_colors as colors;
@@ -56,12 +56,12 @@ pub use comet_input as input;
 pub use comet_log as log;
 pub use comet_math as math;
 pub use comet_renderer as renderer;
-pub use comet_resources as resources;
+pub use comet_assets as assets;
 
 /// Everything you normally need to get started with Comet.
 pub mod prelude {
-    pub use comet_app::App;
-    pub use comet_app::ApplicationType::App2D;
+    pub use comet_app::{App, ApplicationType::App2D};
+    pub use comet_assets::*;
     pub use comet_colors::{
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
@@ -73,5 +73,6 @@ pub mod prelude {
         renderer::Renderer,
         renderer2d::{RenderHandle2D, Renderer2D},
     };
+    pub use comet_audio::*;
     pub use winit_input_helper::WinitInputHelper as InputManager;
 }

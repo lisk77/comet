@@ -10,7 +10,7 @@ comet_debug = []
 [dependencies]
 comet_ecs = { path = "../comet_ecs" }
 comet_math = { path = "../comet_math" }
-comet_resources = { path = "../comet_resources" }
+comet_assets = { path = "../comet_assets" }
 comet_colors = { path = "../comet_colors" }
 comet_log = { path = "../comet_log" }
 comet_structs = { path = "../comet_structs" }
@@ -22,3 +22,4 @@ chrono = "0.4.40"
 pollster = "0.3"
 image = "0.24"
 flume = "0.12.0"
+anyhow = "1.0"

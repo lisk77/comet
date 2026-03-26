@@ -4,10 +4,7 @@ use comet::prelude::*;
 #[derive(Component)]
 struct Player;
 
-fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
-    // Takes all the textures from res/textures and puts them into a texture atlas
-    renderer.init_atlas();
-
+fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     app.register_component::<Player>();
 
     app.spawn((Transform2D::new(), Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)));
@@ -15,7 +12,7 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     app.spawn((
         Player,
         Transform2D::new(),
-        Render2D::with_texture("res/textures/comet_icon.png"),
+        Render2D::with_texture("res://textures/comet_icon.png"),
     ));
 }
 

@@ -1,4 +1,5 @@
 use crate::{math::v4, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
+use comet_log::error;
 
 /// sRGB representation of color
 /// There are two variants: `sRgba<u8>` and `sRgba<f32>`
@@ -43,40 +44,22 @@ impl sRgba<u8> {
         let hex = hex.trim_start_matches("#");
 
         if hex.len() != 8 {
-            panic!("The length of the hex string is not equal to 8!");
+            error!("Invalid hex color '{}': expected 8 hex digits (RRGGBBAA), got {}", hex, hex.len());
+            return Self { red: 255, green: 0, blue: 255, alpha: 255 };
         }
 
-        let red =
-            match u8::from_str_radix(&hex[0..2], 16).map_err(|_| "Red part is not a hex value!") {
-                Ok(v) => v,
-                Err(err) => panic!("{}", err),
-            };
-
-        let green = match u8::from_str_radix(&hex[2..4], 16)
-            .map_err(|_| "Green part is not a hex value!")
-        {
-            Ok(v) => v,
-            Err(err) => panic!("{}", err),
-        };
-
-        let blue =
-            match u8::from_str_radix(&hex[4..6], 16).map_err(|_| "Blue part is not a hex value!") {
-                Ok(v) => v,
-                Err(err) => panic!("{}", err),
-            };
-
-        let alpha = match u8::from_str_radix(&hex[6..8], 16)
-            .map_err(|_| "Alpha part is not a hex value!")
-        {
-            Ok(v) => v,
-            Err(err) => panic!("{}", err),
+        let parse = |s: &str, channel: &str| {
+            u8::from_str_radix(s, 16).unwrap_or_else(|_| {
+                error!("Invalid hex color '{}': {} channel is not valid hex", hex, channel);
+                0
+            })
         };
 
         Self {
-            red,
-            green,
-            blue,
-            alpha,
+            red:   parse(&hex[0..2], "red"),
+            green: parse(&hex[2..4], "green"),
+            blue:  parse(&hex[4..6], "blue"),
+            alpha: parse(&hex[6..8], "alpha"),
         }
     }
 
@@ -186,34 +169,22 @@ impl sRgba<f32> {
         let hex = hex.trim_start_matches("#");
 
         if hex.len() != 8 {
-            panic!("The length of the hex string is not equal to 6!");
+            error!("Invalid hex color '{}': expected 8 hex digits (RRGGBBAA), got {}", hex, hex.len());
+            return Self { red: 1.0, green: 0.0, blue: 1.0, alpha: 1.0 };
         }
 
-        let r = match u8::from_str_radix(&hex[0..2], 16).map_err(|_| "Red is not a hex value!") {
-            Ok(v) => v,
-            Err(err) => panic!("{}", err),
-        };
-
-        let g = match u8::from_str_radix(&hex[2..4], 16).map_err(|_| "Green is not a hex value!") {
-            Ok(v) => v,
-            Err(err) => panic!("{}", err),
-        };
-
-        let b = match u8::from_str_radix(&hex[4..6], 16).map_err(|_| "Blue is not a hex value!") {
-            Ok(v) => v,
-            Err(err) => panic!("{}", err),
-        };
-
-        let a = match u8::from_str_radix(&hex[6..8], 16).map_err(|_| "Alpha is not a hex value!") {
-            Ok(v) => v,
-            Err(err) => panic!("{}", err),
+        let parse = |s: &str, channel: &str| {
+            u8::from_str_radix(s, 16).unwrap_or_else(|_| {
+                error!("Invalid hex color '{}': {} channel is not valid hex", hex, channel);
+                0
+            }) as f32 / 255.0
         };
 
         Self {
-            red: r as f32 / 255.0,
-            green: g as f32 / 255.0,
-            blue: b as f32 / 255.0,
-            alpha: a as f32 / 255.0,
+            red:   parse(&hex[0..2], "red"),
+            green: parse(&hex[2..4], "green"),
+            blue:  parse(&hex[4..6], "blue"),
+            alpha: parse(&hex[6..8], "alpha"),
         }
     }
 

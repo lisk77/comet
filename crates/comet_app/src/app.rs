@@ -6,7 +6,9 @@ use comet_ecs::{
 use comet_input::keyboard::Key;
 use comet_log::*;
 use comet_renderer::renderer::{Renderer, RendererHandle};
-use comet_sound::*;
+use comet_audio::*;
+use comet_assets::{Asset, AssetManager, AssetProvider, Loadable};
+use anyhow::Result;
 use std::any::{type_name, Any, TypeId};
 use std::sync::Arc;
 use std::sync::{
@@ -44,6 +46,7 @@ pub struct App {
     tick_systems: Vec<fn(&mut App, f32)>,
     pending_tick_add: Vec<fn(&mut App, f32)>,
     pending_tick_remove: Vec<fn(&mut App, f32)>,
+    asset_provider: Arc<AssetProvider>,
 }
 
 impl App {
@@ -64,6 +67,7 @@ impl App {
             tick_systems: Vec::new(),
             pending_tick_add: Vec::new(),
             pending_tick_remove: Vec::new(),
+            asset_provider: Arc::new(AssetProvider::new(AssetManager::new()))
         }
     }
 
@@ -119,7 +123,8 @@ impl App {
         self
     }
 
-    pub fn with_audio(mut self, audio_system: Box<dyn Audio>) -> Self {
+    pub fn with_audio(mut self, mut audio_system: Box<dyn Audio>) -> Self {
+        audio_system.set_asset_provider(self.asset_provider.clone());
         self.audio = audio_system;
         self
     }
@@ -194,16 +199,18 @@ impl App {
         &mut self.scene
     }
 
+    /// Retrieves a reference to the `AssetProvider` for accessing assets.
+    pub fn asset_provider(&self) -> &Arc<AssetProvider> {
+        &self.asset_provider
+    }
+
     /// Spawns a new entity from an inline tuple of component values.
     pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
         self.scene.spawn(components)
     }
 
     /// Spawns a batch of entities from tuples of component values.
-    pub fn spawn_batch<V: ComponentValueTuple + 'static>(
-        &mut self,
-        components_batch: Vec<V>,
-    ) -> Vec<Entity> {
+    pub fn spawn_batch<V: ComponentValueTuple + 'static>(&mut self, components_batch: Vec<V>) -> Vec<Entity> {
         self.scene.spawn_batch(components_batch)
     }
 
@@ -306,9 +313,7 @@ impl App {
     }
 
     /// Creates a query against the current scene.
-    pub fn query<'a, Data, Filters>(
-        &'a mut self,
-    ) -> <comet_ecs::QueryParam<Data, Filters> as comet_ecs::QuerySpecMut<'a>>::Builder
+    pub fn query<'a, Data, Filters>(&'a mut self) -> <comet_ecs::QueryParam<Data, Filters> as comet_ecs::QuerySpecMut<'a>>::Builder
     where
         comet_ecs::QueryParam<Data, Filters>: comet_ecs::QuerySpecMut<'a>,
     {
@@ -423,8 +428,52 @@ impl App {
         self.scene.has_prefab(name)
     }
 
-    pub fn load_audio(&mut self, name: &str, path: &str) {
-        self.audio.load(name, path);
+    /// Register a custom loader for a file extension.
+    /// Automatically registers `T` as an asset type.
+    pub fn register_loader<T: Loadable>(
+        &self,
+        ext: impl Into<String>,
+        loader: impl Fn(&[u8], &str) -> Result<T> + Send + Sync + 'static,
+    ) {
+        self.asset_provider.register_loader(ext, loader);
+    }
+
+    /// Register a store for a type with no file loader.
+    pub fn register_asset_type<T: Loadable>(&self) {
+        self.asset_provider.register_asset_type::<T>();
+    }
+
+    /// Loads an asset from `path` in the background. Returns a typed handle immediately.
+    /// Check progress with `load_state`. On any error the handle is in `Failed` state.
+    pub fn load<A: comet_assets::Loadable>(&self, path: &str) -> Asset<A> {
+        self.asset_provider.load::<A>(path)
+    }
+
+    pub fn load_assets<A: Loadable>(&self, paths: Vec<&str>) -> Vec<Asset<A>> {
+        paths.into_iter().map(|p| self.load::<A>(p)).collect()
+    }
+
+    pub fn unload<A: comet_assets::Loadable>(&self, handle: comet_assets::Asset<A>) -> Option<A> {
+        self.asset_provider.unload(handle)
+    }
+
+    pub fn unload_assets<A: Loadable>(&self, handles: Vec<Asset<A>>) -> Vec<Option<A>> {
+        self.asset_provider.unload_assets(handles)
+    }
+
+    /// Non-blocking load state for a handle.
+    pub fn load_state<T: comet_assets::Loadable>(&self, handle: comet_assets::Asset<T>) -> comet_assets::LoadState {
+        self.asset_provider.load_state(handle)
+    }
+
+    /// Returns (assets_ready, assets_queued) for building a loading screen progress bar.
+    pub fn load_progress(&self) -> (usize, usize) {
+        self.asset_provider.load_progress()
+    }
+
+    /// Returns true when all background asset loads are complete.
+    pub fn all_loaded(&self) -> bool {
+        self.asset_provider.all_loaded()
     }
 
     pub fn play_audio(&mut self, name: &str, looped: bool) {
@@ -530,6 +579,7 @@ impl App {
             let icon = self.icon.clone();
             let size = self.size.clone();
             let clear_color = self.clear_color.clone();
+            let asset_provider = self.asset_provider.clone();
 
             let (cmd_tx, cmd_rx) = flume::unbounded::<
                 <R::Handle as comet_renderer::renderer::RendererHandle>::Command,
@@ -548,6 +598,7 @@ impl App {
                 )),
                 clear_color,
                 evt_tx,
+                asset_provider,
             );
             let quit_flag = Arc::new(AtomicBool::new(false));
             let logic_quit = quit_flag.clone();
@@ -658,7 +709,7 @@ impl App {
                                     renderer.apply_command(cmd);
                                 }
 
-                                if window_focused && !window_occluded {
+                                if !window_occluded {
                                     match renderer.render() {
                                         Ok(_) => {}
                                         Err(
@@ -680,19 +731,21 @@ impl App {
                             _ => {}
                         },
                         Event::AboutToWait => {
-                            while let Ok(cmd) = cmd_rx.try_recv() {
-                                renderer.apply_command(cmd);
-                            }
-
-                            if window_focused && !window_occluded {
+                            if !window_occluded {
+                                while let Ok(cmd) = cmd_rx.try_recv() {
+                                    renderer.apply_command(cmd);
+                                }
                                 renderer.window().request_redraw();
-                            }
 
-                            if update_timer.is_finite() {
-                                let next_frame = std::time::Instant::now()
-                                    + std::time::Duration::from_secs_f32(update_timer);
-                                elwt.set_control_flow(ControlFlow::WaitUntil(next_frame));
+                                if update_timer.is_finite() {
+                                    let next_frame = std::time::Instant::now()
+                                        + std::time::Duration::from_secs_f32(update_timer);
+                                    elwt.set_control_flow(ControlFlow::WaitUntil(next_frame));
+                                } else {
+                                    elwt.set_control_flow(ControlFlow::Wait);
+                                }
                             } else {
+                                while cmd_rx.try_recv().is_ok() {}
                                 elwt.set_control_flow(ControlFlow::Wait);
                             }
                         }
@@ -700,6 +753,7 @@ impl App {
                     }
                 })
                 .unwrap();
+            drop(renderer);
             logic_thread.join().ok();
         });
 

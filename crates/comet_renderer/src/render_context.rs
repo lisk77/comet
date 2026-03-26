@@ -1,6 +1,6 @@
 use crate::{batch::Batch, render_resources::RenderResources};
 use comet_colors::Color;
-use comet_resources::Vertex;
+use comet_assets::Vertex;
 use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 

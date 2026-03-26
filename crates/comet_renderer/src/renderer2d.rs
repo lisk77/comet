@@ -1,5 +1,6 @@
 use crate::{
     camera::RenderCamera,
+    gpu_texture::GpuTexture,
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
     render_events::Renderer2DEvent,
@@ -10,13 +11,21 @@ use comet_colors::Color;
 use comet_ecs::Render;
 use comet_log::*;
 use comet_math::{m4, v2, v3};
-use comet_resources::{
-    font::Font, graphic_resource_manager::GraphicResourceManager, texture_atlas::*, Texture, Vertex,
+use comet_assets::{
+    asset_root, AtlasRef, ImageRef,
+    texture_atlas::*, Vertex,
 };
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+
+#[derive(Hash, PartialEq, Eq)]
+struct FontKey {
+    index: u32,
+    generation: u32,
+    size_bits: u32,
+}
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -63,17 +72,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 pub struct Renderer2D<'a> {
     render_context: RenderContext<'a>,
-    resource_manager: GraphicResourceManager,
+    asset_provider: Arc<comet_assets::AssetProvider>,
     render_passes: Vec<RenderPass>,
     last_frame_time: std::time::Instant,
     delta_time: f32,
     event_sender: flume::Sender<Renderer2DEvent>,
+    font_cache: std::collections::HashMap<FontKey, f32>,
+    accumulated_font_glyphs: Vec<comet_assets::GlyphData>,
 }
 
 pub struct RenderHandle2D {
     command_sender: flume::Sender<Renderer2DCommand>,
     event_receiver: flume::Receiver<Renderer2DEvent>,
     last_size: Option<PhysicalSize<u32>>,
+    pending_atlas_rebuild: bool,
 }
 
 impl RenderHandle2D {
@@ -87,15 +99,35 @@ impl RenderHandle2D {
             .send(Renderer2DCommand::InitAtlasFromPaths(paths));
     }
 
-    pub fn load_font(&mut self, path: &str, size: f32) {
+    fn resolve_atlas_ref(&mut self, path: &'static str) -> Option<(AtlasRef, Option<comet_assets::Asset<comet_assets::Image>>)> {
         let _ = self
             .command_sender
-            .send(Renderer2DCommand::LoadFont(path.to_string(), size));
+            .send(Renderer2DCommand::ResolveAtlasRef(path));
+        self.recv_matching_event(Duration::from_millis(5000), |event| {
+            matches!(event, Renderer2DEvent::AtlasRef(..))
+        })
+        .and_then(|event| match event {
+            Renderer2DEvent::AtlasRef(Some(atlas_ref), image_handle) => Some((atlas_ref, image_handle)),
+            _ => None,
+        })
+    }
+
+    fn ensure_handle_in_atlas(&mut self, handle: comet_assets::Asset<comet_assets::Image>) -> Option<AtlasRef> {
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::EnsureHandleInAtlas(handle));
+        self.recv_matching_event(Duration::from_millis(5000), |event| {
+            matches!(event, Renderer2DEvent::AtlasRef(..))
+        })
+        .and_then(|event| match event {
+            Renderer2DEvent::AtlasRef(atlas_ref, _) => atlas_ref,
+            _ => None,
+        })
     }
 
     pub fn size(&mut self) -> PhysicalSize<u32> {
         let _ = self.command_sender.send(Renderer2DCommand::Size);
-        self.recv_matching_event(Duration::from_millis(25), |event| {
+        self.recv_matching_event(Duration::from_millis(5000), |event| {
             matches!(event, Renderer2DEvent::Size(_))
         })
         .and_then(|e| match e {
@@ -111,7 +143,7 @@ impl RenderHandle2D {
 
     pub fn scale_factor(&mut self) -> f64 {
         let _ = self.command_sender.send(Renderer2DCommand::ScaleFactor);
-        self.recv_matching_event(Duration::from_millis(25), |event| {
+        self.recv_matching_event(Duration::from_millis(5000), |event| {
             matches!(event, Renderer2DEvent::ScaleFactor(_))
         })
         .and_then(|e| match e {
@@ -121,12 +153,12 @@ impl RenderHandle2D {
         .unwrap_or(1.0)
     }
 
-    pub fn precompute_text_bounds(&mut self, text: &str, font_path: &str, font_size: f32) -> v2 {
+    pub fn precompute_text_bounds(&mut self, text: &str, font: comet_assets::Asset<comet_assets::Font>, font_size: f32) -> v2 {
         let _ = self
             .command_sender
             .send(Renderer2DCommand::PrecomputedTextBounds {
                 text: text.to_string(),
-                font_path: font_path.to_string(),
+                font,
                 font_size,
             });
         self.recv_matching_event(Duration::from_secs(5), |event| {
@@ -143,8 +175,10 @@ impl RenderHandle2D {
 
     pub fn poll_events(&mut self) {
         while let Ok(event) = self.event_receiver.try_recv() {
-            if let Renderer2DEvent::Size(size) = event {
-                self.last_size = Some(size);
+            match event {
+                Renderer2DEvent::Size(size) => self.last_size = Some(size),
+                Renderer2DEvent::AtlasRebuilt => self.pending_atlas_rebuild = true,
+                _ => {}
             }
         }
     }
@@ -163,8 +197,10 @@ impl RenderHandle2D {
 
             match self.event_receiver.recv_timeout(remaining) {
                 Ok(event) => {
-                    if let Renderer2DEvent::Size(size) = event {
-                        self.last_size = Some(size);
+                    match &event {
+                        Renderer2DEvent::Size(size) => self.last_size = Some(*size),
+                        Renderer2DEvent::AtlasRebuilt => self.pending_atlas_rebuild = true,
+                        _ => {}
                     }
                     if predicate(&event) {
                         return Some(event);
@@ -176,7 +212,20 @@ impl RenderHandle2D {
         }
     }
 
-    pub fn render_scene_2d(&mut self, scene: &comet_ecs::Scene) {
+    pub fn render_scene_2d(&mut self, scene: &mut comet_ecs::Scene) {
+        self.poll_events();
+        if self.pending_atlas_rebuild {
+            self.pending_atlas_rebuild = false;
+            for (_, render) in scene
+                .query_mut::<(&comet_ecs::Transform2D, &mut comet_ecs::Render2D), ()>()
+                .iter()
+            {
+                if let ImageRef::ResolvedHandle(h, _) = render.texture() {
+                    render.set_image_ref(ImageRef::Handle(h));
+                }
+            }
+        }
+
         let mut selected_camera: Option<([f32; 2], f32, f32, [f32; 2], u8)> = None;
         for (transform, camera) in scene
             .query::<(&comet_ecs::Transform2D, &comet_ecs::Camera2D), ()>()
@@ -202,15 +251,44 @@ impl RenderHandle2D {
         };
 
         let mut draws = Vec::new();
+        let mut referenced_handles = Vec::new();
         for (transform, render) in scene
-            .query::<(&comet_ecs::Transform2D, &comet_ecs::Render2D), ()>()
+            .query_mut::<(&comet_ecs::Transform2D, &mut comet_ecs::Render2D), ()>()
             .iter()
         {
+            let atlas_ref = match render.texture() {
+                ImageRef::Atlas(atlas_ref) => atlas_ref,
+                ImageRef::Unresolved(path) => {
+                    let Some((atlas_ref, image_handle)) = self.resolve_atlas_ref(path) else {
+                        continue;
+                    };
+                    if let Some(handle) = image_handle {
+                        render.set_image_ref(ImageRef::ResolvedHandle(handle, atlas_ref));
+                        referenced_handles.push(handle);
+                    } else {
+                        render.set_image_ref(ImageRef::Atlas(atlas_ref));
+                    }
+                    atlas_ref
+                }
+                ImageRef::Handle(handle) => {
+                    let Some(atlas_ref) = self.ensure_handle_in_atlas(handle) else {
+                        continue;
+                    };
+                    render.set_image_ref(ImageRef::ResolvedHandle(handle, atlas_ref));
+                    referenced_handles.push(handle);
+                    atlas_ref
+                }
+                ImageRef::ResolvedHandle(handle, atlas_ref) => {
+                    referenced_handles.push(handle);
+                    atlas_ref
+                }
+            };
+
             draws.push(Draw2D {
                 position: [transform.position().x(), transform.position().y()],
                 rotation_deg: transform.rotation().to_degrees(),
                 scale: [1.0, 1.0],
-                texture: render.get_texture(),
+                texture: atlas_ref,
                 draw_index: render.draw_index(),
                 visible: render.is_visible(),
             });
@@ -251,7 +329,7 @@ impl RenderHandle2D {
 
         let _ =
             self.command_sender
-                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts));
+                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts, referenced_handles));
     }
 }
 
@@ -264,6 +342,7 @@ impl RendererHandle for RenderHandle2D {
             command_sender: sender,
             event_receiver: receiver,
             last_size: None,
+            pending_atlas_rebuild: false,
         }
     }
 
@@ -274,28 +353,86 @@ impl RendererHandle for RenderHandle2D {
 
 impl<'a> Renderer2D<'a> {
     pub fn init_atlas(&mut self) {
-        let texture_path = "res/textures/".to_string();
+        let texture_path = "res://textures/".to_string();
         let mut paths: Vec<String> = Vec::new();
 
-        for path in std::fs::read_dir(
-            Self::get_project_root()
-                .unwrap()
-                .as_os_str()
-                .to_str()
-                .unwrap()
-                .to_string()
-                + "/res/textures",
-        )
-        .unwrap()
-        {
-            paths.push(texture_path.clone() + path.unwrap().file_name().to_str().unwrap());
+        let dir = match std::fs::read_dir(asset_root().join("textures")) {
+            Ok(d) => d,
+            Err(e) => {
+                error!("Failed to read textures directory: {}", e);
+                return;
+            }
+        };
+        for entry in dir {
+            match entry {
+                Ok(e) => {
+                    if let Some(name) = e.file_name().to_str() {
+                        paths.push(texture_path.clone() + name);
+                    }
+                }
+                Err(e) => error!("Failed to read directory entry: {}", e),
+            }
         }
 
         self.init_atlas_by_paths(paths);
     }
 
     pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
-        self.resource_manager.create_texture_atlas(paths);
+        let mut names = Vec::new();
+        let mut dynamic_images = Vec::new();
+        let mut image_handles = Vec::new();
+
+        for path in &paths {
+            let image_handle = self.asset_provider.load::<comet_assets::Image>(path);
+            let dynamic = match self.asset_provider.with(image_handle, |img| img.to_dynamic_image()) {
+                Some(Ok(d)) => d,
+                Some(Err(e)) => { error!("Failed to convert image '{}': {}", path, e); continue; }
+                None => { error!("Failed to access image '{}'", path); continue; }
+            };
+            image_handles.push(image_handle);
+            names.push(path.clone());
+            dynamic_images.push(dynamic);
+        }
+
+        let texture_atlas = {
+            info!("Loaded texture atlas from paths: {} images", names.len());
+            comet_assets::TextureAtlas::from_textures(names, dynamic_images)
+        };
+
+        for handle in image_handles {
+            self.asset_provider.unload(handle);
+        }
+
+        self.setup_atlas_pipeline(texture_atlas);
+    }
+
+    fn setup_atlas_pipeline(&mut self, mut atlas: comet_assets::TextureAtlas) {
+        let gpu_texture = match GpuTexture::from_dynamic_image(
+            self.render_context.device(),
+            self.render_context.queue(),
+            atlas.atlas(),
+            Some("Atlas"),
+            false,
+        ) {
+            Ok(tex) => tex,
+            Err(e) => {
+                error!("Failed to convert atlas to GPU texture: {}", e);
+                return;
+            }
+        };
+        atlas.clear_atlas_image();
+
+        if let Some(handle) = self.asset_provider.add(atlas) {
+            self.render_context.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
+        } else {
+            error!("Failed to add texture atlas to asset provider");
+            return;
+        }
+
+        let gpu_texture_arc = Arc::new(gpu_texture);
+        self.render_context
+            .resources_mut()
+            .insert_gpu_texture("atlas".to_string(), gpu_texture_arc.clone());
 
         let texture_bind_group_layout =
             Arc::new(self.render_context.device().create_bind_group_layout(
@@ -356,214 +493,363 @@ impl<'a> Renderer2D<'a> {
                     }],
                 },
             ));
-
         self.new_render_pass(
             "Universal".to_string(),
             Box::new(universal_clear_execute),
             BASE_2D_SHADER_SRC,
             None,
-            &Texture::from_image(
-                self.render_context.device(),
-                self.render_context.queue(),
-                self.resource_manager.texture_atlas().atlas(),
-                Some("Universal"),
-                false,
-            )
-            .unwrap(),
+            &(*gpu_texture_arc),
             texture_bind_group_layout.clone(),
             texture_sampler,
             Vec::new(),
             &[camera_bind_group_layout],
         );
 
-        let atlas_texture = Texture::from_image(
-            self.render_context.device(),
-            self.render_context.queue(),
-            self.resource_manager.texture_atlas().atlas(),
-            Some("Universal Updated"),
-            false,
-        )
-        .unwrap();
-
-        let texture_sampler =
-            self.render_context
-                .device()
-                .create_sampler(&wgpu::SamplerDescriptor {
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Nearest,
-                    min_filter: wgpu::FilterMode::Nearest,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
-                    lod_min_clamp: 0.0,
-                    lod_max_clamp: 100.0,
-                    compare: None,
-                    anisotropy_clamp: 1,
-                    border_color: None,
-                    ..Default::default()
-                });
-
-        let new_bind_group = Arc::new(self.render_context.device().create_bind_group(
-            &wgpu::BindGroupDescriptor {
+        let new_bind_group = Arc::new({
+            let device = self.render_context.device();
+            let sampler = self.render_context.resources().get_sampler("Universal")
+                .expect("Universal sampler missing after new_render_pass");
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&atlas_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&gpu_texture_arc.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                        resource: wgpu::BindingResource::Sampler(sampler),
                     },
                 ],
                 label: Some("Universal Texture Bind Group (Updated)"),
-            },
-        ));
+            })
+        });
 
         self.render_context.resources_mut().replace_bind_group(
             "Universal".to_string(),
             0,
             new_bind_group,
         );
+
+        let camera_group = self.render_context.resources()
+            .get_bind_groups("Universal")
+            .and_then(|groups| groups.get(1))
+            .cloned();
+        if let Some(cg) = camera_group {
+            let resources = self.render_context.resources_mut();
+            if resources.get_bind_groups("Font").is_some() {
+                let font_groups = resources.get_bind_groups("Font").map(|v| v.len()).unwrap_or(0);
+                if font_groups > 1 {
+                    resources.replace_bind_group("Font".into(), 1, cg);
+                } else {
+                    resources.insert_bind_group("Font".into(), cg);
+                }
+
+                if let Some(pos) = self.render_passes.iter().position(|p| p.label == "Font") {
+                    let font_pass = self.render_passes.remove(pos);
+                    self.render_passes.push(font_pass);
+                }
+            }
+        }
     }
 
-    pub fn load_font(&mut self, path: &str, size: f32) {
-        info!("Loading font from {}", path);
+    fn ensure_font_initialized(&mut self, handle: comet_assets::Asset<comet_assets::Font>, size: f32) {
+        let key = FontKey { index: handle.index(), generation: handle.generation(), size_bits: size.to_bits() };
+        if self.font_cache.contains_key(&key) {
+            return;
+        }
 
-        let font = Font::new(path, size);
-        self.resource_manager.fonts_mut().push(font);
+        let font_data = match self.asset_provider.with(handle, |f| f.clone()) {
+            Some(f) => f,
+            None => {
+                error!("Font handle {:?} not ready — skipping rasterization", handle);
+                return;
+            }
+        };
 
-        let fonts = self.resource_manager.fonts();
-        let merged_atlas = TextureAtlas::from_fonts(fonts);
-        self.resource_manager.set_font_atlas(merged_atlas.clone());
+        let (mut glyphs, line_height) = match font_data.rasterize(size) {
+            Some(r) => r,
+            None => {
+                error!("Failed to rasterize font '{}'", font_data.name());
+                return;
+            }
+        };
 
-        let font_texture = Texture::from_image(
+        let prefix = format!("{}@{}::", handle.index(), size.to_bits());
+        for g in &mut glyphs {
+            g.name = format!("{}{}", prefix, g.name);
+        }
+        self.accumulated_font_glyphs.extend(glyphs);
+        self.font_cache.insert(key, line_height);
+
+        let mut atlas = comet_assets::TextureAtlas::from_glyphs(&self.accumulated_font_glyphs);
+
+        let font_texture = match GpuTexture::from_dynamic_image(
             self.render_context.device(),
             self.render_context.queue(),
-            merged_atlas.atlas(),
+            atlas.atlas(),
             Some("FontAtlas"),
             false,
-        )
-        .expect("Failed to create GPU texture for font atlas");
+        ) {
+            Ok(tex) => tex,
+            Err(e) => {
+                error!("Failed to create GPU texture for font atlas: {}", e);
+                return;
+            }
+        };
+        atlas.clear_atlas_image();
+        let font_texture_arc = Arc::new(font_texture);
 
-        let texture_bind_group_layout =
-            Arc::new(self.render_context.device().create_bind_group_layout(
-                &wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Font Texture Bind Group Layout"),
+        if let Some(old_handle) = self.render_context.resources().get_asset_atlas_handle("font_atlas") {
+            self.asset_provider.unload(old_handle);
+        }
+        if let Some(atlas_handle) = self.asset_provider.add(atlas) {
+            self.render_context.resources_mut().insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
+        }
+        self.render_context.resources_mut().insert_gpu_texture("font_atlas".to_string(), font_texture_arc.clone());
+
+        let font_pass_exists = self.render_context.resources().get_bind_group_layout("Font").is_some();
+
+        if font_pass_exists {
+            let texture_bind_group_layout = self.render_context.resources()
+                .get_bind_group_layout("Font")
+                .and_then(|v| v.first())
+                .cloned()
+                .expect("Font bind group layout missing");
+
+            let sampler = self.render_context.resources().get_sampler("Font")
+                .expect("Font sampler missing");
+            let new_bind_group = Arc::new(self.render_context.device().create_bind_group(
+                &wgpu::BindGroupDescriptor {
+                    layout: &texture_bind_group_layout,
                     entries: &[
-                        wgpu::BindGroupLayoutEntry {
+                        wgpu::BindGroupEntry {
                             binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
+                            resource: wgpu::BindingResource::TextureView(&font_texture_arc.view),
                         },
-                        wgpu::BindGroupLayoutEntry {
+                        wgpu::BindGroupEntry {
                             binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
+                            resource: wgpu::BindingResource::Sampler(sampler),
                         },
                     ],
+                    label: Some("Font Texture Bind Group (Updated)"),
                 },
             ));
+            self.render_context.resources_mut().replace_bind_group("Font".into(), 0, new_bind_group);
+        } else {
+            let texture_bind_group_layout =
+                Arc::new(self.render_context.device().create_bind_group_layout(
+                    &wgpu::BindGroupLayoutDescriptor {
+                        label: Some("Font Texture Bind Group Layout"),
+                        entries: &[
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Texture {
+                                    multisampled: false,
+                                    view_dimension: wgpu::TextureViewDimension::D2,
+                                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                },
+                                count: None,
+                            },
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                                count: None,
+                            },
+                        ],
+                    },
+                ));
 
-        let texture_sampler =
-            self.render_context
-                .device()
-                .create_sampler(&wgpu::SamplerDescriptor {
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Nearest,
-                    min_filter: wgpu::FilterMode::Nearest,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
-                    ..Default::default()
-                });
+            let texture_sampler = self.render_context.device().create_sampler(&wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
 
-        let font_bind_group = Arc::new(self.render_context.device().create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &texture_bind_group_layout,
+            let camera_bind_group_layout =
+                Arc::new(self.render_context.device().create_bind_group_layout(
+                    &wgpu::BindGroupLayoutDescriptor {
+                        label: Some("Font Camera Bind Group Layout"),
+                        entries: &[wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        }],
+                    },
+                ));
+
+            self.new_render_pass(
+                "Font".to_string(),
+                Box::new(universal_load_execute),
+                BASE_2D_SHADER_SRC,
+                None,
+                &(*font_texture_arc),
+                texture_bind_group_layout,
+                texture_sampler,
+                vec![],
+                &[camera_bind_group_layout],
+            );
+
+            let camera_group = self.render_context.resources()
+                .get_bind_groups("Universal")
+                .and_then(|groups| groups.get(1))
+                .cloned();
+            if let Some(cg) = camera_group {
+                let resources = self.render_context.resources_mut();
+                if resources.get_bind_groups("Font").map(|v| v.len() > 1).unwrap_or(false) {
+                    resources.replace_bind_group("Font".into(), 1, cg);
+                } else {
+                    resources.insert_bind_group("Font".into(), cg);
+                }
+            }
+        }
+    }
+
+    fn ensure_image_in_atlas(&mut self, handle: comet_assets::Asset<comet_assets::Image>) -> Option<AtlasRef> {
+        if self.render_context.resources().get_asset_atlas_handle("atlas").is_none() {
+            self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
+        }
+        let atlas_handle = self.render_context.resources().get_asset_atlas_handle("atlas")?;
+
+        // Return immediately if already in atlas
+        if let Some(region) = self.asset_provider.with(atlas_handle, |atlas| atlas.region_for_handle(handle)).flatten() {
+            return Some(AtlasRef::new(region, atlas_handle));
+        }
+
+        // Get image dimensions
+        let (w, h) = self.asset_provider.with(handle, |img| (img.width(), img.height()))?;
+
+        // Allocate space — rebuild if full
+        let alloc = self.asset_provider.with_mut(atlas_handle, |atlas| {
+            atlas.insert_image_handle(handle, w, h, 1)
+        }).flatten();
+
+        let (blit_x, blit_y, region) = match alloc {
+            Some(r) => r,
+            None => {
+                self.rebuild_atlas(atlas_handle);
+                match self.asset_provider.with_mut(atlas_handle, |atlas| {
+                    atlas.insert_image_handle(handle, w, h, 1)
+                }).flatten() {
+                    Some(r) => r,
+                    None => {
+                        error!("Failed to insert into atlas even after rebuild");
+                        return None;
+                    }
+                }
+            }
+        };
+
+        // Upload pixels to GPU then evict the CPU copy
+        let gpu_texture = self.render_context.resources().get_gpu_texture("atlas")?.clone();
+        self.asset_provider.with(handle, |img| {
+            gpu_texture.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h);
+        });
+        self.asset_provider.with_mut(handle, |img| img.evict_pixels());
+
+        Some(AtlasRef::new(region, atlas_handle))
+    }
+
+    fn rebuild_atlas(&mut self, atlas_handle: comet_assets::Asset<comet_assets::TextureAtlas>) {
+        let handles = self.asset_provider
+            .with(atlas_handle, |atlas| atlas.handle_keys())
+            .unwrap_or_default();
+        let (old_w, old_h) = self.asset_provider
+            .with(atlas_handle, |atlas| (atlas.width(), atlas.height()))
+            .unwrap_or((512, 512));
+
+        let new_size = (old_w * 2).max(old_h * 2).min(8192);
+        info!("Atlas full — rebuilding {}x{} → {}x{}", old_w, old_h, new_size, new_size);
+
+        self.asset_provider.with_mut(atlas_handle, |atlas| {
+            atlas.reset_for_rebuild(new_size, new_size);
+        });
+
+        let new_gpu = GpuTexture::create_2d_texture(
+            self.render_context.device(),
+            new_size, new_size,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            wgpu::FilterMode::Nearest,
+            Some("Atlas"),
+        );
+
+        for h in handles {
+            let dims = self.asset_provider.with(h, |img| (img.width(), img.height()));
+            let Some((w, h_px)) = dims else { continue; };
+
+            let result = self.asset_provider.with_mut(atlas_handle, |atlas| {
+                atlas.insert_image_handle(h, w, h_px, 1)
+            }).flatten();
+            let Some((blit_x, blit_y, _)) = result else {
+                error!("Failed to re-pack handle during atlas rebuild");
+                continue;
+            };
+
+            let uploaded = self.asset_provider.with(h, |img| {
+                if !img.is_evicted() {
+                    new_gpu.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h_px);
+                    true
+                } else {
+                    false
+                }
+            }).unwrap_or(false);
+
+            if !uploaded {
+                let path = self.asset_provider.path_for::<comet_assets::Image>(h);
+                if let Some(path) = path {
+                    let fs_path = comet_assets::resolve_asset_path(&path);
+                    if let Ok(bytes) = std::fs::read(&fs_path) {
+                        if let Ok(img) = comet_assets::Image::from_bytes(&bytes, false) {
+                            new_gpu.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h_px);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Swap GPU texture and recreate bind group
+        let new_gpu_arc = Arc::new(new_gpu);
+        self.render_context.resources_mut().insert_gpu_texture("atlas".to_string(), new_gpu_arc.clone());
+
+        let new_bind_group = Arc::new({
+            let layout = self.render_context.resources()
+                .get_bind_group_layout("Universal")
+                .and_then(|v| v.first())
+                .cloned()
+                .expect("Universal bind group layout missing during atlas rebuild");
+            let sampler = self.render_context.resources()
+                .get_sampler("Universal")
+                .expect("Universal sampler missing during atlas rebuild");
+            self.render_context.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&font_texture.view),
+                        resource: wgpu::BindingResource::TextureView(&new_gpu_arc.view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                        resource: wgpu::BindingResource::Sampler(sampler),
                     },
                 ],
-                label: Some("Font Bind Group"),
-            },
-        ));
+                label: Some("Universal Texture Bind Group (Rebuilt)"),
+            })
+        });
+        self.render_context.resources_mut().replace_bind_group("Universal".to_string(), 0, new_bind_group);
 
-        let camera_bind_group_layout =
-            Arc::new(self.render_context.device().create_bind_group_layout(
-                &wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Font Camera Bind Group Layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
-                },
-            ));
-
-        self.new_render_pass(
-            "Font".to_string(),
-            Box::new(universal_load_execute),
-            BASE_2D_SHADER_SRC,
-            None,
-            &font_texture,
-            texture_bind_group_layout.clone(),
-            texture_sampler,
-            vec![],
-            &[camera_bind_group_layout],
-        );
-
-        let camera_group_clone = {
-            self.render_context
-                .resources()
-                .get_bind_groups("Universal")
-                .and_then(|groups| groups.get(1))
-                .cloned()
-        };
-
-        let resources = self.render_context.resources_mut();
-
-        if let Some(groups) = resources.get_bind_groups("Font") {
-            if groups.is_empty() {
-                resources.insert_bind_group("Font".into(), font_bind_group.clone());
-            } else {
-                resources.replace_bind_group("Font".into(), 0, font_bind_group.clone());
-            }
-        } else {
-            resources.insert_bind_group("Font".into(), font_bind_group.clone());
-        }
-
-        if let Some(camera_group) = camera_group_clone {
-            let has_camera = resources
-                .get_bind_groups("Font")
-                .map(|v| v.len() > 1)
-                .unwrap_or(false);
-
-            if has_camera {
-                resources.replace_bind_group("Font".into(), 1, camera_group);
-            } else {
-                resources.insert_bind_group("Font".into(), camera_group);
-            }
-        }
-
-        info!("Font {} successfully loaded into renderer", path);
+        let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
     }
 
     pub fn new_render_pass(
@@ -575,8 +861,8 @@ impl<'a> Renderer2D<'a> {
                 + Sync,
         >,
         shader_path: &str,
-        shader_stage: Option<wgpu::naga::ShaderStage>,
-        texture: &Texture,
+        _shader_stage: Option<wgpu::naga::ShaderStage>,
+        texture: &GpuTexture,
         texture_bind_group_layout: Arc<wgpu::BindGroupLayout>,
         texture_sampler: wgpu::Sampler,
         bind_groups: Vec<Arc<wgpu::BindGroup>>,
@@ -584,20 +870,10 @@ impl<'a> Renderer2D<'a> {
     ) {
         info!("Creating render pass {}", label);
 
-        if let Err(e) = self
-            .resource_manager
-            .load_shader(self.render_context.device(), shader_stage, shader_path)
-            .or_else(|_| {
-                self.resource_manager.load_shader_from_string(
-                    self.render_context.device(),
-                    format!("{} Shader", label.clone()).as_str(),
-                    shader_path,
-                )
-            })
-        {
-            error!("Aborting render pass creation: {}", e);
-            return;
-        }
+        let shader_module = self.render_context.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(&format!("{} Shader", label)),
+            source: wgpu::ShaderSource::Wgsl(shader_path.into()),
+        });
 
         let texture_bind_group = Arc::new({
             let device = self.render_context.device();
@@ -632,25 +908,17 @@ impl<'a> Renderer2D<'a> {
                 push_constant_ranges: &[],
             });
 
-            let shader_module = self
-                .resource_manager
-                .get_shader(shader_path)
-                .unwrap_or_else(|| {
-                    self.resource_manager
-                        .get_shader(format!("{} Shader", label.clone()).as_str())
-                        .unwrap()
-                });
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(&format!("{} Render Pipeline", label)),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: shader_module,
+                    module: &shader_module,
                     entry_point: "vs_main",
-                    buffers: &[comet_resources::Vertex::desc()],
+                    buffers: &[comet_assets::Vertex::desc()],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: shader_module,
+                    module: &shader_module,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
                         format: self.render_context.config().format,
@@ -744,84 +1012,47 @@ impl<'a> Renderer2D<'a> {
         info!("Created render pass {}!", label)
     }
 
-    fn get_project_root() -> std::io::Result<std::path::PathBuf> {
-        let path = std::env::current_dir()?;
-        let mut path_ancestors = path.as_path().ancestors();
-
-        while let Some(p) = path_ancestors.next() {
-            let has_cargo = std::fs::read_dir(p)?
-                .into_iter()
-                .any(|p| p.unwrap().file_name() == std::ffi::OsString::from("Cargo.lock"));
-            if has_cargo {
-                return Ok(std::path::PathBuf::from(p));
-            }
-        }
-        Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Ran out of places to find Cargo.toml",
-        ))
+    fn get_texture_region(&self, texture: AtlasRef) -> TextureRegion {
+        texture.region()
     }
 
-    fn get_texture_region(&self, texture_path: &str) -> Option<&TextureRegion> {
-        if !self
-            .resource_manager
-            .texture_atlas()
-            .textures()
-            .contains_key(texture_path)
-        {
-            #[cfg(feature = "comet_debug")]
-            error!("Texture {} not found in atlas", texture_path);
-        }
-        self.resource_manager
-            .texture_atlas()
-            .textures()
-            .get(texture_path)
-    }
+    fn get_glyph_region(&self, glyph: char, font: comet_assets::Asset<comet_assets::Font>, size: f32) -> TextureRegion {
+        let key = format!("{}@{}::{}", font.index(), size.to_bits(), glyph);
+        let fallback_key = format!("{}@{}:: ", font.index(), size.to_bits());
 
-    fn get_glyph_region(&self, glyph: char, font: &str) -> &TextureRegion {
-        let key = format!("{}::{}", font, glyph);
-
-        match self.resource_manager.font_atlas().textures().get(&key) {
-            Some(region) => region,
-            None => {
-                #[cfg(feature = "comet_debug")]
-                warn!(
-                    "Missing glyph for character '{}' in font '{}', using fallback.",
-                    glyph, font
-                );
-                let fallback_key = format!("{}:: ", font);
-                self.resource_manager
-                    .font_atlas()
-                    .textures()
-                    .get(&fallback_key)
-                    .unwrap_or_else(|| {
-                        fatal!(
-                            "No fallback glyph available (space also missing) for font '{}'",
-                            font
-                        )
-                    })
-            }
+        if let Some(handle) = self.render_context.resources().get_asset_atlas_handle("font_atlas") {
+            self.asset_provider.with(handle, |atlas| {
+                atlas.textures().get(&key).copied()
+                    .or_else(|| atlas.textures().get(&fallback_key).copied())
+                    .unwrap_or_else(|| fatal!("No glyph or fallback for '{}' in font atlas", glyph))
+            }).unwrap_or_else(|| {
+                fatal!("Failed to access font atlas from asset provider");
+            })
+        } else {
+            fatal!("Font atlas not initialized yet");
         }
     }
 
-    pub fn precompute_text_bounds(&self, text: &str, font: &str, size: f32) -> v2 {
+    pub fn precompute_text_bounds(&mut self, text: &str, font: comet_assets::Asset<comet_assets::Font>, size: f32) -> v2 {
         let mut bounds = v2::ZERO;
-
-        let _ =
-            self.add_text_to_buffers(text, font, size, v2::ZERO, wgpu::Color::WHITE, &mut bounds);
-
+        let _ = self.add_text_to_buffers(text, font, size, v2::ZERO, wgpu::Color::WHITE, &mut bounds);
         bounds
     }
 
     pub fn add_text_to_buffers(
-        &self,
+        &mut self,
         text: &str,
-        font: &str,
+        font: comet_assets::Asset<comet_assets::Font>,
         size: f32,
         position: comet_math::v2,
         color: wgpu::Color,
         bounds: &mut comet_math::v2,
     ) -> (Vec<Vertex>, Vec<u16>) {
+        self.ensure_font_initialized(font, size);
+
+        let cache_key = FontKey { index: font.index(), generation: font.generation(), size_bits: size.to_bits() };
+        let line_height_px = self.font_cache.get(&cache_key).copied().unwrap_or(size);
+
         let vert_color = [
             color.r as f32,
             color.g as f32,
@@ -830,108 +1061,63 @@ impl<'a> Renderer2D<'a> {
         ];
 
         let config = self.render_context.config();
+        let line_height = line_height_px / config.height as f32;
 
         let screen_position = comet_math::v2::new(
             position.x() / config.width as f32,
             position.y() / config.height as f32,
         );
 
-        let font_data = self
-            .resource_manager
-            .fonts()
-            .iter()
-            .find(|f| f.name() == font)
-            .unwrap_or_else(|| panic!("Font '{}' not found in resource manager", font));
-
-        let scale_factor = size / font_data.size();
-        let line_height = (font_data.line_height() / config.height as f32) * scale_factor;
-
-        let lines = text
+        let lines: Vec<String> = text
             .split('\n')
-            .map(|s| {
-                s.chars()
-                    .map(|c| if c == '\t' { ' ' } else { c })
-                    .collect::<String>()
-            })
-            .collect::<Vec<String>>();
+            .map(|s| s.chars().map(|c| if c == '\t' { ' ' } else { c }).collect())
+            .collect();
 
-        let mut max_line_width_px = 0.0;
-        let mut total_height_px = 0.0;
-
+        let mut max_line_width = 0.0f32;
         for line in &lines {
-            let mut line_width_px = 0.0;
-            for c in line.chars() {
-                if let Some(region) = font_data.get_glyph(c) {
-                    line_width_px += region.advance();
-                }
+            let line_width: f32 = line.chars()
+                .map(|c| self.get_glyph_region(c, font, size).advance())
+                .sum();
+            if line_width > max_line_width {
+                max_line_width = line_width;
             }
-            if line_width_px > max_line_width_px {
-                max_line_width_px = line_width_px;
-            }
-            total_height_px += font_data.line_height();
         }
+        bounds.set_x(max_line_width);
+        bounds.set_y(lines.len() as f32 * line_height_px);
 
-        bounds.set_x(max_line_width_px * scale_factor);
-        bounds.set_y(total_height_px * scale_factor);
-
-        let mut x_offset = 0.0;
-        let mut y_offset = 0.0;
+        let mut x_offset = 0.0f32;
+        let mut y_offset = 0.0f32;
         let mut vertex_data = Vec::new();
         let mut index_data = Vec::new();
 
         for line in lines {
             for c in line.chars() {
-                let region = self.get_glyph_region(c, font);
+                let region = self.get_glyph_region(c, font, size);
 
                 let (dim_x, dim_y) = region.dimensions();
-                let w = (dim_x as f32 / config.width as f32) * scale_factor;
-                let h = (dim_y as f32 / config.height as f32) * scale_factor;
+                let w = dim_x as f32 / config.width as f32;
+                let h = dim_y as f32 / config.height as f32;
+                let offset_x = region.offset_x() / config.width as f32;
+                let offset_y = region.offset_y() / config.height as f32;
 
-                let offset_x_px = (region.offset_x() / config.width as f32) * scale_factor;
-                let offset_y_px = (region.offset_y() / config.height as f32) * scale_factor;
-
-                let glyph_left = screen_position.x() + x_offset + offset_x_px;
-                let glyph_top = screen_position.y() - offset_y_px - y_offset;
+                let glyph_left = screen_position.x() + x_offset + offset_x;
+                let glyph_top = screen_position.y() - offset_y - y_offset;
                 let glyph_right = glyph_left + w;
                 let glyph_bottom = glyph_top - h;
 
-                let vertices = vec![
-                    Vertex::new(
-                        [glyph_left, glyph_top, 0.0],
-                        [region.u0(), region.v0()],
-                        vert_color,
-                    ),
-                    Vertex::new(
-                        [glyph_left, glyph_bottom, 0.0],
-                        [region.u0(), region.v1()],
-                        vert_color,
-                    ),
-                    Vertex::new(
-                        [glyph_right, glyph_bottom, 0.0],
-                        [region.u1(), region.v1()],
-                        vert_color,
-                    ),
-                    Vertex::new(
-                        [glyph_right, glyph_top, 0.0],
-                        [region.u1(), region.v0()],
-                        vert_color,
-                    ),
-                ];
-
                 let buffer_size = vertex_data.len() as u16;
-                let indices = vec![
-                    buffer_size,
-                    buffer_size + 1,
-                    buffer_size + 3,
-                    buffer_size + 1,
-                    buffer_size + 2,
-                    buffer_size + 3,
-                ];
+                vertex_data.extend_from_slice(&[
+                    Vertex::new([glyph_left,  glyph_top,    0.0], [region.u0(), region.v0()], vert_color),
+                    Vertex::new([glyph_left,  glyph_bottom, 0.0], [region.u0(), region.v1()], vert_color),
+                    Vertex::new([glyph_right, glyph_bottom, 0.0], [region.u1(), region.v1()], vert_color),
+                    Vertex::new([glyph_right, glyph_top,    0.0], [region.u1(), region.v0()], vert_color),
+                ]);
+                index_data.extend_from_slice(&[
+                    buffer_size, buffer_size + 1, buffer_size + 3,
+                    buffer_size + 1, buffer_size + 2, buffer_size + 3,
+                ]);
 
-                x_offset += (region.advance() / config.width as f32) * scale_factor;
-
-                vertex_data.extend(vertices);
-                index_data.extend(indices);
+                x_offset += region.advance() / config.width as f32;
             }
 
             y_offset += line_height;
@@ -946,7 +1132,29 @@ impl<'a> Renderer2D<'a> {
         camera: CameraPacket2D,
         mut draws: Vec<Draw2D>,
         texts: Vec<Text2D>,
+        referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
     ) {
+        if self.render_context.resources().get_asset_atlas_handle("atlas").is_none() {
+            self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
+        }
+
+        if let Some(atlas_handle) = self.render_context.resources().get_asset_atlas_handle("atlas") {
+            let any_evicted = self.asset_provider.with_mut(atlas_handle, |atlas| {
+                let mut evicted = false;
+                for handle in &referenced_handles {
+                    if atlas.region_for_handle(*handle).is_some() {
+                        atlas.mark_used(*handle);
+                    } else {
+                        evicted = true;
+                    }
+                }
+                atlas.evict_stale(120);
+                evicted
+            }).unwrap_or(false);
+            if any_evicted {
+                let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
+            }
+        }
         self.setup_camera_from_packet(camera);
 
         draws.sort_by_key(|draw| draw.draw_index);
@@ -959,10 +1167,7 @@ impl<'a> Renderer2D<'a> {
                 continue;
             }
 
-            let region = match self.get_texture_region(draw.texture) {
-                Some(r) => r,
-                None => continue,
-            };
+            let region = self.get_texture_region(draw.texture);
 
             let (dim_x, dim_y) = region.dimensions();
             let half_width = dim_x as f32 * 0.5 * draw.scale[0];
@@ -1127,69 +1332,25 @@ impl<'a> Renderer2D<'a> {
         let mut camera_uniform = crate::camera::CameraUniform::new();
         camera_uniform.update_view_proj(&render_camera);
 
-        let buffer = Arc::new(self.render_context.device().create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Uniform Buffer"),
-                contents: bytemuck::cast_slice(&[camera_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        ));
-
-        let layout = match self
-            .render_context
-            .resources()
-            .get_bind_group_layout("Universal")
-            .and_then(|layouts| layouts.get(1))
+        // Write to the existing camera buffer in-place.
+        // The bind group keeps pointing to the same buffer, so no new allocations needed.
+        // The Font pass shares the Universal camera bind group, so it picks up the update too.
+        let buffer = match self.render_context.resources().get_buffer("Universal")
+            .and_then(|v| v.first())
+            .cloned()
         {
-            Some(l) => l.clone(),
+            Some(b) => b,
             None => {
-                error!(
-                    "Camera bind group layout missing for 'Universal' pass. Call init_atlas first."
-                );
+                error!("Camera buffer missing for 'Universal' pass.");
                 return;
             }
         };
 
-        let bind_group = Arc::new(self.render_context.device().create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
-                label: Some("Camera Bind Group"),
-            },
-        ));
-
-        let resources = self.render_context.resources_mut();
-
-        match resources.get_buffer("Universal") {
-            None => resources.insert_buffer("Universal".into(), buffer.clone()),
-            Some(_) => resources.replace_buffer("Universal".into(), 0, buffer.clone()),
-        }
-
-        if let Some(groups) = resources.get_bind_groups("Universal") {
-            if groups.len() < 2 {
-                resources.insert_bind_group("Universal".into(), bind_group.clone());
-            } else {
-                resources.replace_bind_group("Universal".into(), 1, bind_group.clone());
-            }
-        } else {
-            resources.insert_bind_group("Universal".into(), bind_group.clone());
-        }
-
-        if let Some(groups) = resources.get_bind_groups("Font") {
-            if groups.len() < 2 {
-                resources.insert_bind_group("Font".into(), bind_group.clone());
-            } else {
-                resources.replace_bind_group("Font".into(), 1, bind_group.clone());
-            }
-        }
-
-        if resources.get_bind_group_layout("Font").is_none() {
-            #[cfg(feature = "comet_debug")]
-            debug!("Font pass not initialized yet; skipping Font camera bind group setup.");
-        }
+        self.render_context.queue().write_buffer(
+            &buffer,
+            0,
+            bytemuck::cast_slice(&[camera_uniform]),
+        );
     }
 }
 
@@ -1200,14 +1361,17 @@ impl<'a> Renderer for Renderer2D<'a> {
         window: Arc<Window>,
         clear_color: Option<impl Color>,
         event_sender: flume::Sender<Renderer2DEvent>,
+        asset_provider: Arc<comet_assets::AssetProvider>,
     ) -> Self {
         Self {
             render_context: RenderContext::new(window, clear_color),
-            resource_manager: GraphicResourceManager::new(),
+            asset_provider,
             render_passes: Vec::new(),
             last_frame_time: std::time::Instant::now(),
             delta_time: 0.0,
             event_sender,
+            font_cache: std::collections::HashMap::new(),
+            accumulated_font_glyphs: Vec::new(),
         }
     }
 
@@ -1216,6 +1380,42 @@ impl<'a> Renderer for Renderer2D<'a> {
             Renderer2DCommand::Clear => {}
             Renderer2DCommand::InitAtlas => self.init_atlas(),
             Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
+            Renderer2DCommand::ResolveAtlasRef(path) => {
+                // Check the pre-built string-keyed atlas first (populated by init_atlas_by_paths).
+                let atlas_ref = self.render_context
+                    .resources()
+                    .get_asset_atlas_handle("atlas")
+                    .and_then(|handle| {
+                        self.asset_provider.with(handle, |atlas| {
+                            atlas.textures()
+                                .get(path)
+                                .copied()
+                                .map(|region| AtlasRef::new(region, handle))
+                        })
+                        .flatten()
+                    });
+
+                // Not found — load and insert dynamically, same as handle-based flow.
+                let mut dynamic_image_handle: Option<comet_assets::Asset<comet_assets::Image>> = None;
+                let atlas_ref = atlas_ref.or_else(|| {
+                    let fs_path = comet_assets::resolve_asset_path(path);
+                    let bytes = std::fs::read(&fs_path).ok()?;
+                    let image = comet_assets::Image::from_bytes(&bytes, false).ok()?;
+                    let image_handle = self.asset_provider.add(image)?;
+                    self.asset_provider.track_for_reload::<comet_assets::Image>(image_handle, path);
+                    let result = self.ensure_image_in_atlas(image_handle);
+                    if result.is_some() {
+                        dynamic_image_handle = Some(image_handle);
+                    }
+                    result
+                });
+
+                let _ = self.event_sender.send(Renderer2DEvent::AtlasRef(atlas_ref, dynamic_image_handle));
+            }
+            Renderer2DCommand::EnsureHandleInAtlas(handle) => {
+                let atlas_ref = self.ensure_image_in_atlas(handle);
+                let _ = self.event_sender.send(Renderer2DEvent::AtlasRef(atlas_ref, None));
+            }
             Renderer2DCommand::Size => {
                 let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));
             }
@@ -1224,15 +1424,12 @@ impl<'a> Renderer for Renderer2D<'a> {
                     .event_sender
                     .send(Renderer2DEvent::ScaleFactor(self.scale_factor()));
             }
-            Renderer2DCommand::LoadFont(font_path, font_size) => {
-                self.load_font(font_path.as_str(), font_size)
-            }
             Renderer2DCommand::PrecomputedTextBounds {
                 text,
-                font_path,
+                font,
                 font_size,
             } => {
-                let bounds = self.precompute_text_bounds(&text, font_path.as_str(), font_size);
+                let bounds = self.precompute_text_bounds(&text, font, font_size);
                 let _ = self
                     .event_sender
                     .send(Renderer2DEvent::PrecomputedTextBounds {
@@ -1240,8 +1437,8 @@ impl<'a> Renderer for Renderer2D<'a> {
                         height: bounds.y(),
                     });
             }
-            Renderer2DCommand::SubmitFrame(camera, draws, texts) => {
-                self.submit_frame(camera, draws, texts)
+            Renderer2DCommand::SubmitFrame(camera, draws, texts, referenced_handles) => {
+                self.submit_frame(camera, draws, texts, referenced_handles)
             }
         }
     }
@@ -1299,6 +1496,8 @@ impl<'a> Renderer for Renderer2D<'a> {
         self.render_context
             .queue()
             .submit(std::iter::once(encoder.finish()));
+
+        self.render_context.device().poll(wgpu::Maintain::Poll);
 
         output.present();
 

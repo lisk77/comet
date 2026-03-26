@@ -15,9 +15,7 @@ bundle!(Comet {
     render: Render2D
 });
 
-fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
-    renderer.init_atlas();
-
+fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     app.register_component::<Player>();
 
     app.spawn_bundle(Camera {
@@ -28,7 +26,7 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
     app.spawn_bundle(Comet {
         player: Player,
         transform: Transform2D::new(),
-        render: Render2D::with_texture("res/textures/comet_icon.png"),
+        render: Render2D::with_texture("res://textures/comet_icon.png"),
     });
 }
 

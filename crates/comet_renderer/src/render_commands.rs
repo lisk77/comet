@@ -1,3 +1,5 @@
+use comet_assets::AtlasRef;
+
 #[derive(Clone, Copy, Debug)]
 pub struct CameraPacket2D {
     pub position: [f32; 2],
@@ -12,7 +14,7 @@ pub struct Draw2D {
     pub position: [f32; 2],
     pub rotation_deg: f32,
     pub scale: [f32; 2],
-    pub texture: &'static str,
+    pub texture: AtlasRef,
     pub draw_index: u32,
     pub visible: bool,
 }
@@ -21,7 +23,7 @@ pub struct Draw2D {
 pub struct Text2D {
     pub position: [f32; 2],
     pub content: String,
-    pub font: &'static str,
+    pub font: comet_assets::Asset<comet_assets::Font>,
     pub size: f32,
     pub color: [f32; 4],
     pub visible: bool,
@@ -31,13 +33,14 @@ pub enum Renderer2DCommand {
     Clear,
     InitAtlas,
     InitAtlasFromPaths(Vec<String>),
+    ResolveAtlasRef(&'static str),
+    EnsureHandleInAtlas(comet_assets::Asset<comet_assets::Image>),
     Size,
     ScaleFactor,
-    LoadFont(String, f32),
     PrecomputedTextBounds {
         text: String,
-        font_path: String,
+        font: comet_assets::Asset<comet_assets::Font>,
         font_size: f32,
     },
-    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>),
+    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>, Vec<comet_assets::Asset<comet_assets::Image>>),
 }

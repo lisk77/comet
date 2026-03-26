@@ -4,9 +4,7 @@ use comet::prelude::*;
 #[derive(Component)]
 struct Player;
 
-fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
-    renderer.init_atlas();
-
+fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     app.register_component::<Player>();
 
     register_prefab!(
@@ -21,7 +19,7 @@ fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
         "player",
         Player,
         Transform2D::new(),
-        Render2D::with_texture("res/textures/comet_icon.png")
+        Render2D::with_texture("res://textures/comet_icon.png")
     );
 
     app.spawn_prefab("camera");
