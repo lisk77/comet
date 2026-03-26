@@ -4,15 +4,17 @@ use std::sync::Arc;
 use anyhow::Result;
 use crate::{asset_store::*, asset_handle::*, image::Image, font::Font, texture_atlas::TextureAtlas, audio_clip::AudioClip};
 
-pub trait Loadable: Send + Sync + 'static {}
+pub trait Loadable: Send + Sync + 'static {
+    fn dependencies(&self) -> Vec<String> { vec![] }
+}
 
 impl Loadable for Image {}
 impl Loadable for Font {}
 impl Loadable for TextureAtlas {}
 impl Loadable for AudioClip {}
 
-pub(crate) type AllocFn = Arc<dyn Fn(&mut AssetManager) -> (u32, u32, Box<dyn FnOnce(Vec<u8>, String) + Send>) + Send + Sync>;
-pub(crate) type ReloadFn = Arc<dyn Fn(&mut AssetManager, u32) -> Option<Box<dyn FnOnce(Vec<u8>, String) + Send>> + Send + Sync>;
+pub(crate) type AllocFn = Arc<dyn Fn(&mut AssetManager) -> (u32, u32, Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>) + Send + Sync>;
+pub(crate) type ReloadFn = Arc<dyn Fn(&mut AssetManager, u32) -> Option<Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>> + Send + Sync>;
 
 struct LoaderEntry {
     type_id: TypeId,
@@ -38,8 +40,18 @@ impl LoaderRegistry {
         let alloc: AllocFn = Arc::new(move |manager: &mut AssetManager| {
             let (handle, tx) = manager.stores.get_mut::<T>().insert_pending::<T>();
             let l = Arc::clone(&alloc_loader);
-            let worker: Box<dyn FnOnce(Vec<u8>, String) + Send> = Box::new(move |bytes: Vec<u8>, path: String| {
-                let _ = tx.send(l(&bytes, &path));
+            let worker: Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send> = Box::new(move |bytes: Vec<u8>, path: String| {
+                match l(&bytes, &path) {
+                    Ok(asset) => {
+                        let deps = asset.dependencies();
+                        let _ = tx.send(Ok(asset));
+                        deps
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(e));
+                        vec![]
+                    }
+                }
             });
             (handle.index(), handle.generation(), worker)
         });
@@ -48,9 +60,19 @@ impl LoaderRegistry {
         let reload: ReloadFn = Arc::new(move |manager: &mut AssetManager, index: u32| {
             let tx = manager.stores.get_mut::<T>().set_reload_pending::<T>(index)?;
             let l = Arc::clone(&reload_loader);
-            Some(Box::new(move |bytes: Vec<u8>, path: String| {
-                let _ = tx.send(l(&bytes, &path));
-            }) as Box<dyn FnOnce(Vec<u8>, String) + Send>)
+            Some(Box::new(move |bytes: Vec<u8>, path: String| -> Vec<String> {
+                match l(&bytes, &path) {
+                    Ok(asset) => {
+                        let deps = asset.dependencies();
+                        let _ = tx.send(Ok(asset));
+                        deps
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(e));
+                        vec![]
+                    }
+                }
+            }) as Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>)
         });
 
         self.loaders.insert(ext.into(), LoaderEntry { type_id: TypeId::of::<T>(), alloc, reload });
@@ -60,6 +82,10 @@ impl LoaderRegistry {
         self.loaders.get(ext)
             .filter(|e| e.type_id == TypeId::of::<T>())
             .map(|e| e.alloc.clone())
+    }
+
+    fn get_alloc_untyped(&self, ext: &str) -> Option<(TypeId, AllocFn)> {
+        self.loaders.get(ext).map(|e| (e.type_id, e.alloc.clone()))
     }
 
     fn get_reload(&self, ext: &str, type_id: TypeId) -> Option<ReloadFn> {
@@ -92,6 +118,12 @@ impl StoreMap {
 
     fn get_mut_opt<T: Loadable>(&mut self) -> Option<&mut AssetStore> {
         self.map.get_mut(&TypeId::of::<T>())
+    }
+
+    fn record_path_by_type_id(&mut self, type_id: TypeId, index: u32, gen: u32, path: &str) {
+        if let Some(store) = self.map.get_mut(&type_id) {
+            store.record_path(index, gen, path);
+        }
     }
 }
 
@@ -137,7 +169,15 @@ impl AssetManager {
         self.loader_registry.get_alloc_typed::<T>(ext)
     }
 
-    pub(crate) fn begin_reload(&mut self, ext: &str, type_id: TypeId, index: u32) -> Option<Box<dyn FnOnce(Vec<u8>, String) + Send>> {
+    pub(crate) fn get_alloc_loader_untyped(&self, ext: &str) -> Option<(TypeId, AllocFn)> {
+        self.loader_registry.get_alloc_untyped(ext)
+    }
+
+    pub(crate) fn record_path_untyped(&mut self, type_id: TypeId, index: u32, gen: u32, path: &str) {
+        self.stores.record_path_by_type_id(type_id, index, gen, path);
+    }
+
+    pub(crate) fn begin_reload(&mut self, ext: &str, type_id: TypeId, index: u32) -> Option<Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>> {
         let reload = self.loader_registry.get_reload(ext, type_id)?;
         reload(self, index)
     }

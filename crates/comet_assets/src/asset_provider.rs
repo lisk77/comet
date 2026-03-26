@@ -95,11 +95,24 @@ impl AssetProvider {
 
                     comet_log::info!("Hot reloading '{}'", entry.original_path);
                     queued.fetch_add(1, Ordering::Relaxed);
-                    let ready = Arc::clone(&ready);
+                    let ready_primary = Arc::clone(&ready);
                     let original_path = entry.original_path.clone();
+                    let inner_for_dep = Arc::clone(&inner);
+                    let queued_for_dep = Arc::clone(&queued);
+                    let ready_for_dep = Arc::clone(&ready);
+                    let reload_map_for_dep = Arc::clone(&reload_map);
                     std::thread::spawn(move || {
-                        worker(bytes, original_path);
-                        ready.fetch_add(1, Ordering::Relaxed);
+                        let dep_paths = worker(bytes, original_path);
+                        ready_primary.fetch_add(1, Ordering::Relaxed);
+                        for dep_path in dep_paths {
+                            Self::load_dep_path(
+                                Arc::clone(&inner_for_dep),
+                                Arc::clone(&queued_for_dep),
+                                Arc::clone(&ready_for_dep),
+                                Arc::clone(&reload_map_for_dep),
+                                &dep_path,
+                            );
+                        }
                     });
                 }
             }
@@ -183,19 +196,36 @@ impl AssetProvider {
         self.queued.fetch_add(1, Ordering::Relaxed);
         let ready = Arc::clone(&self.ready);
         let original_path = path.to_string();
+        let inner_for_dep = Arc::clone(&self.inner);
+        let queued_for_dep = Arc::clone(&self.queued);
+        let ready_for_dep = Arc::clone(&self.ready);
+        let reload_map_for_dep = Arc::clone(&self.reload_map);
 
         std::thread::spawn(move || {
-            match std::fs::read(&resolved) {
+            let dep_paths = match std::fs::read(&resolved) {
                 Ok(bytes) => worker(bytes, original_path),
-                Err(e) => comet_log::error!("Failed to read asset '{}': {}", resolved.display(), e),
-            }
+                Err(e) => {
+                    comet_log::error!("Failed to read asset '{}': {}", resolved.display(), e);
+                    vec![]
+                }
+            };
             ready.fetch_add(1, Ordering::Relaxed);
+            for dep_path in dep_paths {
+                Self::load_dep_path(
+                    Arc::clone(&inner_for_dep),
+                    Arc::clone(&queued_for_dep),
+                    Arc::clone(&ready_for_dep),
+                    Arc::clone(&reload_map_for_dep),
+                    &dep_path,
+                );
+            }
         });
 
         handle
     }
 
     /// Registers a handle (created via `add`) for hot reload watching.
+    /// Call this after `add` when you have a known file path for the asset.
     pub fn track_for_reload<T: Loadable>(&self, handle: Asset<T>, path: &str) {
         let resolved = crate::asset_path::resolve_asset_path(path);
         let ext = match file_extension(&resolved, path) {
@@ -211,6 +241,85 @@ impl AssetProvider {
                 generation: handle.generation(),
             });
         }
+    }
+
+    /// Loads a dependency asset by path without knowing its type at compile time.
+    /// Skips if the path is already tracked. Used internally for automatic dep loading.
+    fn load_dep_path(
+        inner: Arc<RwLock<AssetManager>>,
+        queued: Arc<AtomicUsize>,
+        ready: Arc<AtomicUsize>,
+        reload_map: Arc<RwLock<HashMap<PathBuf, ReloadEntry>>>,
+        path: &str,
+    ) {
+        let resolved = crate::asset_path::resolve_asset_path(path);
+
+        {
+            let Ok(map) = reload_map.read() else { return; };
+            if map.contains_key(&resolved) { return; }
+        }
+
+        let ext_owned;
+        let alloc_result = {
+            let ext = match file_extension(&resolved, path) {
+                Ok(e) => e,
+                Err(e) => { comet_log::error!("{}", e); return; }
+            };
+            ext_owned = ext.to_string();
+            match inner.write() {
+                Ok(mut manager) => match manager.get_alloc_loader_untyped(&ext_owned) {
+                    Some((type_id, alloc)) => {
+                        let (index, gen, worker) = alloc(&mut *manager);
+                        manager.record_path_untyped(type_id, index, gen, path);
+                        Some((type_id, index, gen, worker))
+                    }
+                    None => {
+                        comet_log::error!("No loader registered for dependency '{}' (ext: {})", path, &ext_owned);
+                        None
+                    }
+                },
+                Err(_) => { comet_log::error!("AssetManager lock poisoned loading dep '{}'", path); None }
+            }
+        };
+
+        let Some((type_id, index, gen, worker)) = alloc_result else { return; };
+
+        if let Ok(mut map) = reload_map.write() {
+            map.insert(resolved.clone(), ReloadEntry {
+                original_path: path.to_string(),
+                ext: ext_owned,
+                type_id,
+                index,
+                generation: gen,
+            });
+        }
+
+        queued.fetch_add(1, Ordering::Relaxed);
+        let original_path = path.to_string();
+        let inner2 = Arc::clone(&inner);
+        let queued2 = Arc::clone(&queued);
+        let ready2 = Arc::clone(&ready);
+        let reload_map2 = Arc::clone(&reload_map);
+
+        std::thread::spawn(move || {
+            let dep_paths = match std::fs::read(&resolved) {
+                Ok(bytes) => worker(bytes, original_path),
+                Err(e) => {
+                    comet_log::error!("Failed to read dep asset '{}': {}", resolved.display(), e);
+                    vec![]
+                }
+            };
+            ready2.fetch_add(1, Ordering::Relaxed);
+            for dep_path in dep_paths {
+                Self::load_dep_path(
+                    Arc::clone(&inner2),
+                    Arc::clone(&queued2),
+                    Arc::clone(&ready2),
+                    Arc::clone(&reload_map2),
+                    &dep_path,
+                );
+            }
+        });
     }
 
     /// Finds a previously loaded asset by its original load path.
