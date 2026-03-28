@@ -55,8 +55,7 @@ fn handle_input(app: &mut App, dt: f32) {
 }
 
 fn main() {
-    App::new()
-        .with_preset(App2D)
+    App::with_preset(App2D)
         .with_title("Prefabs Example")
         .run::<Renderer2D>(setup, update);
 }

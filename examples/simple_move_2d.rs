@@ -45,8 +45,7 @@ fn handle_input(app: &mut App, dt: f32) {
 }
 
 fn main() {
-    App::new()
+    App::with_preset(App2D)
         .with_title("Simple Move 2D")
-        .with_preset(App2D)
         .run::<Renderer2D>(setup, update);
 }

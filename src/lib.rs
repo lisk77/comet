@@ -67,20 +67,17 @@ pub enum Preset {
 }
 
 pub trait AppPresets {
-    fn with_preset(self, preset: Preset) -> Self;
+    fn with_preset(preset: Preset) -> Self;
 }
 
 impl AppPresets for App {
-    fn with_preset(self, preset: Preset) -> Self {
+    fn with_preset(preset: Preset) -> Self {
+        let app = App::new();
         match preset {
-            Preset::App2D => self
-                .with_module(AssetModule::new())
-                .with_module(EcsModule::preset_2d())
-                .with_module(Renderer2DModule::new()),
-            Preset::App3D => self
-                .with_module(AssetModule::new())
-                .with_module(EcsModule::preset_3d())
-                .with_module(Renderer2DModule::new()),
+            Preset::App2D => app
+                .with_modules((AssetModule::new(), EcsModule::preset_2d(), Renderer2DModule::new())),
+            Preset::App3D => app
+                .with_modules((AssetModule::new(), EcsModule::preset_3d(), Renderer2DModule::new())),
         }
     }
 }

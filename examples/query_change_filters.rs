@@ -42,7 +42,7 @@ fn counter(app: &mut App) {
 }
 
 fn main() {
-    App::new()
+    App::with_preset(App2D)
         .with_title("Query Change Filters")
         .run::<Renderer2D>(setup, update);
 }

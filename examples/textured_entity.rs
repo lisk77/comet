@@ -16,8 +16,7 @@ fn update(app: &mut App, renderer: &mut RenderHandle2D, _dt: f32) {
 }
 
 fn main() {
-    App::new()
+    App::with_preset(App2D) 
         .with_title("Textured Entity")
-        .with_preset(App2D)
         .run::<Renderer2D>(setup, update);
 }

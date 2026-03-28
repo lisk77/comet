@@ -33,8 +33,7 @@ fn text_update(app: &mut App, size: v2) {
 }
 
 fn main() {
-    App::new()
-        .with_preset(App2D)
+    App::with_preset(App2D)
         .with_title("Simple Text")
         .run::<Renderer2D>(setup, update);
 }
