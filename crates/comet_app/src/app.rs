@@ -30,7 +30,6 @@ pub struct App {
     input_manager: Arc<Mutex<InputManager>>,
     delta_time: f32,
     update_timer: f32,
-    game_state: Option<Box<dyn Any + Send>>,
     modules: HashMap<TypeId, Box<dyn Any + Send>>,
     contexts: HashMap<TypeId, Box<dyn Any + Send>>,
     should_quit: bool,
@@ -52,7 +51,6 @@ impl App {
             input_manager: Arc::new(Mutex::new(InputManager::new())),
             delta_time: 0.0,
             update_timer: 0.0166667,
-            game_state: None,
             modules: HashMap::new(),
             contexts: HashMap::new(),
             should_quit: false,
@@ -85,12 +83,6 @@ impl App {
     /// Allows to set the clear color of the `App` instance.
     pub fn with_clear_color(mut self, clear_color: impl ColorTrait) -> Self {
         self.clear_color = Some(clear_color.to_linear());
-        self
-    }
-
-    /// Allows to set a custom game state struct for the `App` instance.
-    pub fn with_game_state(mut self, game_state: impl Any + Send + 'static) -> Self {
-        self.game_state = Some(Box::new(game_state));
         self
     }
 
@@ -229,16 +221,6 @@ impl App {
         let rgba_image = image.to_rgba8();
         let (width, height) = rgba_image.dimensions();
         Some(Icon::from_rgba(rgba_image.into_raw(), width, height).unwrap())
-    }
-
-    /// Retrieves a reference to the registered `game_state` struct in the `App`.
-    pub fn game_state<T: 'static>(&self) -> Option<&T> {
-        self.game_state.as_ref()?.downcast_ref::<T>()
-    }
-
-    /// Retrieves a mutable reference to the registered `game_state` struct in the `App`.
-    pub fn game_state_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        self.game_state.as_mut()?.downcast_mut::<T>()
     }
 
     /// Stops the event loop and with that quits the `App`.
