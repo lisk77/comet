@@ -11,6 +11,7 @@ pub use query::{
 };
 pub use scene::*;
 pub use scene_commands::{SceneCommand, SceneCommands};
+pub use ecs_module::{EcsModule, EcsModuleExt};
 pub use sparse_set::SparseSet;
 
 pub type Tick = u32;
@@ -27,4 +28,5 @@ mod query_plan_cache;
 mod scene;
 mod scene_commands;
 mod scene_internals;
+mod ecs_module;
 mod sparse_set;

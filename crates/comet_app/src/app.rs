@@ -1,15 +1,12 @@
 use comet_colors::{Color as ColorTrait, LinearRgba};
-use comet_ecs::{
-    Camera2D, Component, ComponentTuple, ComponentValueTuple, Entity, Render2D, Scene, Text,
-    Transform2D, Transform3D,
-};
 use comet_input::keyboard::Key;
 use comet_log::*;
-use comet_renderer::renderer::{Renderer, RendererHandle};
-use comet_audio::*;
-use comet_assets::{Asset, AssetManager, AssetProvider, Loadable};
-use anyhow::Result;
+use crate::{
+    module::Module,
+    renderer::{Renderer, RendererHandle},
+};
 use std::any::{type_name, Any, TypeId};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -23,14 +20,8 @@ use winit::{
 };
 use winit_input_helper::WinitInputHelper as InputManager;
 
-/// Represents the presets of an `App` instance.
-pub enum ApplicationType {
-    App2D,
-    App3D,
-}
-
 /// The `App` struct represents the common interface for many different components of the game engine.
-/// It provides a unified interface for managing the application's state, input, and ECS.
+/// It provides a unified interface for managing the application's state, input, and modules.
 pub struct App {
     title: String,
     icon: Option<Icon>,
@@ -40,13 +31,13 @@ pub struct App {
     delta_time: f32,
     update_timer: f32,
     game_state: Option<Box<dyn Any + Send>>,
-    audio: Box<dyn Audio>,
-    scene: Scene,
+    modules: HashMap<TypeId, Box<dyn Any + Send>>,
     should_quit: bool,
     tick_systems: Vec<fn(&mut App, f32)>,
     pending_tick_add: Vec<fn(&mut App, f32)>,
     pending_tick_remove: Vec<fn(&mut App, f32)>,
-    asset_provider: Arc<AssetProvider>,
+    pre_tick_hooks: Vec<fn(&mut App)>,
+    post_tick_hooks: Vec<fn(&mut App)>,
 }
 
 impl App {
@@ -61,13 +52,13 @@ impl App {
             delta_time: 0.0,
             update_timer: 0.0166667,
             game_state: None,
-            audio: Box::new(KiraAudio::new()),
-            scene: Scene::new(),
+            modules: HashMap::new(),
             should_quit: false,
             tick_systems: Vec::new(),
             pending_tick_add: Vec::new(),
             pending_tick_remove: Vec::new(),
-            asset_provider: Arc::new(AssetProvider::new(AssetManager::new()))
+            pre_tick_hooks: Vec::new(),
+            post_tick_hooks: Vec::new(),
         }
     }
 
@@ -96,37 +87,50 @@ impl App {
     }
 
     /// Allows to set a custom game state struct for the `App` instance.
-    /// This allows for additional state management and control additionally to the core functionality of the engine.
     pub fn with_game_state(mut self, game_state: impl Any + Send + 'static) -> Self {
         self.game_state = Some(Box::new(game_state));
         self
     }
 
-    /// Allows to set the preset of the `App` instance.
-    /// Presets are used to quickly set up the application with a predefined configuration.
-    /// Currently there are two presets available: App2D and App3D.
-    /// `App2D` registers the components `Transform2D`, `Render2D`, `Camera2D`, and `Text`.
-    /// `App3D` registers the components `Transform3D` and `Text`.
-    /// A working out of the box 3D renderer has not been implemented yet.
-    pub fn with_preset(mut self, preset: ApplicationType) -> Self {
-        match preset {
-            ApplicationType::App2D => {
-                info!("Creating 2D app!");
-                self.scene
-                    .register_components::<(Transform2D, Render2D, Camera2D, Text)>();
-            }
-            ApplicationType::App3D => {
-                info!("Creating 3D app!");
-                self.scene.register_components::<(Transform3D, Text)>();
-            }
-        };
+    /// Adds multiple modules at once.
+    pub fn with_modules<T: crate::module_tuple::ModuleTuple>(self, modules: T) -> Self {
+        modules.add_to(self)
+    }
+
+    /// Adds a module, calling its `build` method to register systems/components.
+    pub fn with_module<M: Module>(mut self, mut module: M) -> Self {
+        M::dependencies(&mut self);
+        module.build(&mut self);
+        self.modules.insert(TypeId::of::<M>(), Box::new(module));
         self
     }
 
-    pub fn with_audio(mut self, mut audio_system: Box<dyn Audio>) -> Self {
-        audio_system.set_asset_provider(self.asset_provider.clone());
-        self.audio = audio_system;
-        self
+    /// Adds a module at runtime (e.g. inside setup/update).
+    pub fn add_module<M: Module>(&mut self, mut module: M) {
+        M::dependencies(self);
+        module.build(self);
+        self.modules.insert(TypeId::of::<M>(), Box::new(module));
+    }
+
+    /// Returns a reference to the module of type `M`. Panics if not loaded.
+    pub fn get_module<M: 'static>(&self) -> &M {
+        self.modules
+            .get(&TypeId::of::<M>())
+            .and_then(|m| (m.as_ref() as &dyn Any).downcast_ref::<M>())
+            .unwrap_or_else(|| panic!("module `{}` is not loaded", type_name::<M>()))
+    }
+
+    /// Returns a mutable reference to the module of type `M`. Panics if not loaded.
+    pub fn get_module_mut<M: 'static>(&mut self) -> &mut M {
+        self.modules
+            .get_mut(&TypeId::of::<M>())
+            .and_then(|m| (m.as_mut() as &mut dyn Any).downcast_mut::<M>())
+            .unwrap_or_else(|| panic!("module `{}` is not loaded", type_name::<M>()))
+    }
+
+    /// Returns whether a module of type `M` has been added.
+    pub fn has_module<M: 'static>(&self) -> bool {
+        self.modules.contains_key(&TypeId::of::<M>())
     }
 
     /// Registers a system that runs every tick in deterministic order.
@@ -138,6 +142,16 @@ impl App {
     pub fn remove_tick_system(&mut self, system: fn(&mut App, f32)) -> bool {
         self.pending_tick_remove.push(system);
         true
+    }
+
+    /// Registers a hook that runs before tick systems each tick.
+    pub fn add_pre_tick_hook(&mut self, hook: fn(&mut App)) {
+        self.pre_tick_hooks.push(hook);
+    }
+
+    /// Registers a hook that runs after tick systems and update each tick.
+    pub fn add_post_tick_hook(&mut self, hook: fn(&mut App)) {
+        self.post_tick_hooks.push(hook);
     }
 
     fn apply_tick_system_changes(&mut self) {
@@ -189,135 +203,46 @@ impl App {
         self.game_state.as_mut()?.downcast_mut::<T>()
     }
 
-    /// Retrieves a reference to the current `Scene` in the `App`.
-    pub fn scene(&self) -> &Scene {
-        &self.scene
+    /// Stops the event loop and with that quits the `App`.
+    pub fn quit(&mut self) {
+        self.should_quit = true;
     }
 
-    /// Retrieves a mutable reference to the current `Scene` in the `App`
-    pub fn scene_mut(&mut self) -> &mut Scene {
-        &mut self.scene
+    /// Returns the fixed delta time set by the `App`.
+    pub fn dt(&self) -> f32 {
+        self.update_timer
     }
 
-    /// Retrieves a reference to the `AssetProvider` for accessing assets.
-    pub fn asset_provider(&self) -> &Arc<AssetProvider> {
-        &self.asset_provider
+    /// Returns the last frame time as computed by the renderer.
+    pub fn frame_dt(&self) -> f32 {
+        self.delta_time
     }
 
-    /// Spawns a new entity from an inline tuple of component values.
-    pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
-        self.scene.spawn(components)
+    /// Sets the amount of times the `App` game logic is updated per second.
+    pub fn set_update_rate(&mut self, update_rate: u32) {
+        if update_rate == 0 {
+            self.update_timer = f32::INFINITY;
+            return;
+        }
+        self.update_timer = 1.0 / update_rate as f32;
     }
 
-    /// Spawns a batch of entities from tuples of component values.
-    pub fn spawn_batch<V: ComponentValueTuple + 'static>(&mut self, components_batch: Vec<V>) -> Vec<Entity> {
-        self.scene.spawn_batch(components_batch)
+    fn run_pre_tick_hooks(&mut self) {
+        let mut i = 0;
+        while i < self.pre_tick_hooks.len() {
+            let hook = self.pre_tick_hooks[i];
+            hook(self);
+            i += 1;
+        }
     }
 
-    /// Spawns a new entity using a bundle of components.
-    pub fn spawn_bundle<B: comet_ecs::Bundle>(&mut self, bundle: B) -> Entity {
-        self.scene.spawn_bundle(bundle)
-    }
-
-    /// Queues spawning an empty entity.
-    pub fn deferred_spawn_empty(&mut self) {
-        self.scene.deferred_spawn_empty();
-    }
-
-    /// Queues deleting an entity.
-    pub fn deferred_delete_entity(&mut self, entity: Entity) {
-        self.scene.deferred_delete_entity(entity);
-    }
-
-    /// Queues registration of a single component type.
-    pub fn deferred_register_component<C: Component>(&mut self) {
-        self.scene.deferred_register_component::<C>();
-    }
-
-    /// Queues registration of a tuple of component types.
-    pub fn deferred_register_components<T: comet_ecs::ComponentTuple>(&mut self) {
-        self.scene.deferred_register_components::<T>();
-    }
-
-    /// Queues deregistration of a single component type.
-    pub fn deferred_deregister_component<C: Component>(&mut self) {
-        self.scene.deferred_deregister_component::<C>();
-    }
-
-    /// Queues adding or setting a component on an entity.
-    pub fn deferred_add_component<C: Component>(&mut self, entity: Entity, component: C) {
-        self.scene.deferred_add_component::<C>(entity, component);
-    }
-
-    /// Queues adding or setting multiple components on an entity.
-    pub fn deferred_add_components<V: ComponentValueTuple>(
-        &mut self,
-        entity: Entity,
-        components: V,
-    ) {
-        self.scene.deferred_add_components(entity, components);
-    }
-
-    /// Queues removing a single component from an entity.
-    pub fn deferred_remove_component<C: Component>(&mut self, entity: Entity) {
-        self.scene.deferred_remove_component::<C>(entity);
-    }
-
-    /// Queues removing multiple components from an entity.
-    pub fn deferred_remove_components<T: comet_ecs::ComponentTuple>(&mut self, entity: Entity) {
-        self.scene.deferred_remove_components::<T>(entity);
-    }
-
-    /// Queues deleting all entities matching the given component type IDs.
-    pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {
-        self.scene.deferred_delete_entities_with(components);
-    }
-
-    /// Queues prefab registration.
-    pub fn deferred_register_prefab(
-        &mut self,
-        name: impl Into<String>,
-        factory: comet_ecs::PrefabFactory,
-    ) {
-        self.scene.deferred_register_prefab(name, factory);
-    }
-
-    /// Queues prefab spawning by name.
-    pub fn deferred_spawn_prefab(&mut self, name: impl Into<String>) {
-        self.scene.deferred_spawn_prefab(name);
-    }
-
-    /// Queues spawning a single bundle.
-    pub fn deferred_spawn_bundle<B: comet_ecs::Bundle>(&mut self, bundle: B) {
-        self.scene.deferred_spawn_bundle(bundle);
-    }
-
-    /// Queues batch spawning of bundles.
-    pub fn deferred_spawn_bundle_batch<B: comet_ecs::Bundle>(&mut self, bundles: Vec<B>) {
-        self.scene.deferred_spawn_bundle_batch(bundles);
-    }
-
-    /// Queues adding a bundle to an existing entity.
-    pub fn deferred_add_bundle<B: comet_ecs::Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.scene.deferred_add_bundle(entity, bundle);
-    }
-
-    /// Applies all queued deferred scene commands immediately.
-    pub fn apply_deferred_commands(&mut self) {
-        self.scene.apply_commands();
-    }
-
-    /// Returns the number of queued deferred scene commands.
-    pub fn queued_deferred_command_count(&self) -> usize {
-        self.scene.queued_command_count()
-    }
-
-    /// Creates a query against the current scene.
-    pub fn query<'a, Data, Filters>(&'a mut self) -> <comet_ecs::QueryParam<Data, Filters> as comet_ecs::QuerySpecMut<'a>>::Builder
-    where
-        comet_ecs::QueryParam<Data, Filters>: comet_ecs::QuerySpecMut<'a>,
-    {
-        self.scene.query_mut::<Data, Filters>()
+    fn run_post_tick_hooks(&mut self) {
+        let mut i = 0;
+        while i < self.post_tick_hooks.len() {
+            let hook = self.post_tick_hooks[i];
+            hook(self);
+            i += 1;
+        }
     }
 
     /// Retrieves a reference to the `InputManager`.
@@ -338,205 +263,6 @@ impl App {
     /// Checks if a key was released this frame.
     pub fn key_released(&self, key: Key) -> bool {
         self.input_manager.lock().unwrap().key_released(key)
-    }
-
-    /// Creates a new entity and returns its ID.
-    pub fn new_entity(&mut self) -> Entity {
-        self.scene.new_entity()
-    }
-
-    /// Deletes an entity by its ID.
-    pub fn delete_entity(&mut self, entity_id: Entity) {
-        self.scene.delete_entity(entity_id)
-    }
-
-    /// Gets an immutable reference to an entity by its ID.
-    pub fn get_entity(&self, entity_id: Entity) -> Option<&Entity> {
-        self.scene.get_entity(entity_id)
-    }
-
-    /// Registers a new component in the `Scene`.
-    pub fn register_component<C: Component>(&mut self) {
-        self.scene.register_component::<C>()
-    }
-
-    /// Registers a tuple of component types in the `Scene`.
-    pub fn register_components<T: comet_ecs::ComponentTuple>(&mut self) {
-        self.scene.register_components::<T>()
-    }
-
-    /// Deregisters a component from the `Scene`.
-    pub fn deregister_component<C: Component>(&mut self) {
-        self.scene.deregister_component::<C>()
-    }
-
-    /// Adds a component to an entity by its ID and an instance of the component.
-    /// Overwrites the previous component if another component of the same type is added.
-    pub fn add_component<C: Component>(&mut self, entity_id: Entity, component: C) {
-        self.scene.add_component(entity_id, component)
-    }
-
-    /// Adds or sets multiple components on an entity.
-    pub fn add_components<V: ComponentValueTuple>(&mut self, entity_id: Entity, components: V) {
-        self.scene.add_components(entity_id, components);
-    }
-
-    /// Removes a component from an entity by its ID.
-    pub fn remove_component<C: Component>(&mut self, entity_id: Entity) {
-        self.scene.remove_component::<C>(entity_id)
-    }
-
-    /// Removes multiple components from an entity.
-    pub fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity) {
-        self.scene.remove_components::<T>(entity_id);
-    }
-
-    /// Returns a reference to a component of an entity by its ID.
-    pub fn get_component<C: Component>(&self, entity_id: Entity) -> Option<&C> {
-        self.scene.get_component::<C>(entity_id)
-    }
-
-    /// Returns a mutable reference to a component of an entity by its ID.
-    pub fn get_component_mut<C: Component>(&mut self, entity_id: Entity) -> Option<&mut C> {
-        self.scene.get_component_mut::<C>(entity_id)
-    }
-
-    /// Deletes all entities that have the given components.
-    /// The amount of queriable components is limited to 3 such that the `Archetype` creation is more efficient.
-    /// Otherwise it would be a factorial complexity chaos.
-    pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
-        self.scene.delete_entities_with(components)
-    }
-
-    /// Returns whether an entity has the given component.
-    pub fn has<C: Component>(&self, entity_id: Entity) -> bool {
-        self.scene.has::<C>(entity_id)
-    }
-
-    /// Registers a prefab with the given name and factory function.
-    pub fn register_prefab(&mut self, name: &str, factory: comet_ecs::PrefabFactory) {
-        self.scene.register_prefab(name, factory)
-    }
-
-    /// Spawns a prefab with the given name.
-    pub fn spawn_prefab(&mut self, name: &str) -> Option<Entity> {
-        self.scene.spawn_prefab(name)
-    }
-
-    /// Checks if a prefab with the given name exists.
-    pub fn has_prefab(&self, name: &str) -> bool {
-        self.scene.has_prefab(name)
-    }
-
-    /// Register a custom loader for a file extension.
-    /// Automatically registers `T` as an asset type.
-    pub fn register_loader<T: Loadable>(
-        &self,
-        ext: impl Into<String>,
-        loader: impl Fn(&[u8], &str) -> Result<T> + Send + Sync + 'static,
-    ) {
-        self.asset_provider.register_loader(ext, loader);
-    }
-
-    /// Register a store for a type with no file loader.
-    pub fn register_asset_type<T: Loadable>(&self) {
-        self.asset_provider.register_asset_type::<T>();
-    }
-
-    /// Loads an asset from `path` in the background. Returns a typed handle immediately.
-    /// Check progress with `load_state`. On any error the handle is in `Failed` state.
-    pub fn load<A: comet_assets::Loadable>(&self, path: &str) -> Asset<A> {
-        self.asset_provider.load::<A>(path)
-    }
-
-    pub fn load_assets<A: Loadable>(&self, paths: Vec<&str>) -> Vec<Asset<A>> {
-        paths.into_iter().map(|p| self.load::<A>(p)).collect()
-    }
-
-    pub fn unload<A: comet_assets::Loadable>(&self, handle: comet_assets::Asset<A>) -> Option<A> {
-        self.asset_provider.unload(handle)
-    }
-
-    pub fn unload_assets<A: Loadable>(&self, handles: Vec<Asset<A>>) -> Vec<Option<A>> {
-        self.asset_provider.unload_assets(handles)
-    }
-
-    /// Non-blocking load state for a handle.
-    pub fn load_state<T: comet_assets::Loadable>(&self, handle: comet_assets::Asset<T>) -> comet_assets::LoadState {
-        self.asset_provider.load_state(handle)
-    }
-
-    /// Returns (assets_ready, assets_queued) for building a loading screen progress bar.
-    pub fn load_progress(&self) -> (usize, usize) {
-        self.asset_provider.load_progress()
-    }
-
-    /// Returns true when all background asset loads are complete.
-    pub fn all_loaded(&self) -> bool {
-        self.asset_provider.all_loaded()
-    }
-
-    pub fn play_audio(&mut self, name: &str, looped: bool) {
-        self.audio.play(name, looped);
-    }
-
-    pub fn pause_audio(&mut self, name: &str) {
-        self.audio.pause(name);
-    }
-
-    pub fn stop_audio(&mut self, name: &str) {
-        self.audio.stop(name);
-    }
-
-    pub fn stop_all_audio(&mut self) {
-        self.audio.stop_all();
-    }
-
-    pub fn update_audio(&mut self, dt: f32) {
-        self.audio.update(dt);
-    }
-
-    pub fn is_playing(&self, name: &str) -> bool {
-        self.audio.is_playing(name)
-    }
-
-    pub fn set_volume(&mut self, name: &str, volume: f32) {
-        self.audio.set_volume(name, volume);
-    }
-
-    /// Stops the event loop and with that quits the `App`.
-    pub fn quit(&mut self) {
-        self.should_quit = true;
-    }
-
-    /// Returns the fixed delta time set by the `App`.
-    pub fn dt(&self) -> f32 {
-        self.update_timer
-    }
-
-    /// Returns the last frame time as computed by the renderer.
-    pub fn frame_dt(&self) -> f32 {
-        self.delta_time
-    }
-
-    /// Sets the amount of times the `App` game logic is updated per second
-    pub fn set_update_rate(&mut self, update_rate: u32) {
-        if update_rate == 0 {
-            self.update_timer = f32::INFINITY;
-            return;
-        }
-        self.update_timer = 1.0 / update_rate as f32;
-    }
-
-    fn begin_logic_tick(&mut self) {
-        let default_query_since_tick = self.scene.component_event_tick().wrapping_sub(1);
-        self.scene
-            .set_default_query_since_tick(default_query_since_tick);
-    }
-
-    fn end_logic_tick(&mut self) {
-        self.scene.apply_commands();
-        let _ = self.scene.advance_component_event_tick();
     }
 
     fn create_window(
@@ -579,13 +305,12 @@ impl App {
             let icon = self.icon.clone();
             let size = self.size.clone();
             let clear_color = self.clear_color.clone();
-            let asset_provider = self.asset_provider.clone();
 
             let (cmd_tx, cmd_rx) = flume::unbounded::<
-                <R::Handle as comet_renderer::renderer::RendererHandle>::Command,
+                <R::Handle as RendererHandle>::Command,
             >();
             let (evt_tx, evt_rx) = flume::unbounded::<
-                <R::Handle as comet_renderer::renderer::RendererHandle>::Event,
+                <R::Handle as RendererHandle>::Event,
             >();
 
             let event_loop = EventLoop::new().unwrap();
@@ -598,14 +323,16 @@ impl App {
                 )),
                 clear_color,
                 evt_tx,
-                asset_provider,
             );
+            renderer.init_assets(&self);
             let quit_flag = Arc::new(AtomicBool::new(false));
             let logic_quit = quit_flag.clone();
             info!("Using Renderer {}", type_name::<R>());
 
             info!("Setting up!");
-            let logic_thread = std::thread::spawn(move || {
+            let logic_thread = std::thread::Builder::new()
+                .name("logic".to_string())
+                .spawn(move || {
                 let mut app = self;
                 let mut handle = R::Handle::new(cmd_tx, evt_rx);
                 setup(&mut app, &mut handle);
@@ -625,7 +352,7 @@ impl App {
                         let mut steps = 0;
                         while time_stack > app.update_timer && steps < max_steps {
                             let step = app.dt();
-                            app.begin_logic_tick();
+                            app.run_pre_tick_hooks();
                             app.apply_tick_system_changes();
                             let mut i = 0;
                             while i < app.tick_systems.len() {
@@ -634,12 +361,12 @@ impl App {
                                 i += 1;
                             }
                             update(&mut app, &mut handle, step);
-                            app.end_logic_tick();
+                            app.run_post_tick_hooks();
                             time_stack -= app.update_timer;
                             steps += 1;
                         }
                     } else {
-                        app.begin_logic_tick();
+                        app.run_pre_tick_hooks();
                         app.apply_tick_system_changes();
                         let mut i = 0;
                         while i < app.tick_systems.len() {
@@ -648,7 +375,7 @@ impl App {
                             i += 1;
                         }
                         update(&mut app, &mut handle, frame_dt);
-                        app.end_logic_tick();
+                        app.run_post_tick_hooks();
                     }
 
                     if app.should_quit {
@@ -754,7 +481,7 @@ impl App {
                 })
                 .unwrap();
             drop(renderer);
-            logic_thread.join().ok();
+            logic_thread.unwrap().join().ok();
         });
 
         info!("Shutting down {}!", title);

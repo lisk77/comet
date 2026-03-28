@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+comet_app = { path = "../comet_app" }
+comet_macros = { path = "../comet_macros" }
 comet_log = { path = "../comet_log" }
 notify = "6"
 wgpu = { version = "22.0", features = ["glsl", "wgsl", "naga-ir"] }

@@ -10,6 +10,7 @@ pub use asset_provider::*;
 pub use font::*;
 pub use texture_atlas::*;
 pub use audio_clip::*;
+pub use asset_module::{AssetModule, AssetModuleExt};
 
 pub mod font;
 pub mod resources;
@@ -23,3 +24,4 @@ pub mod asset_store;
 pub mod asset_handle;
 pub mod asset_provider;
 pub mod audio_clip;
+mod asset_module;

@@ -4,14 +4,10 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-comet_ecs = { path = "../comet_ecs" }
-comet_renderer = { path = "../comet_renderer" }
-comet_assets = { path = "../comet_assets" }
 comet_colors = { path = "../comet_colors" }
 comet_log = { path = "../comet_log" }
 comet_input = { path = "../comet_input" }
 comet_structs = { path = "../comet_structs" }
-comet_audio = { path = "../comet_audio" }
 
 winit = { version = "0.29", features = ["rwh_05"] }
 pollster = "0.3"

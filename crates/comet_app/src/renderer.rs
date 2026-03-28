@@ -1,5 +1,5 @@
+use crate::App;
 use comet_colors::Color;
-use comet_assets::AssetProvider;
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
@@ -19,8 +19,11 @@ pub trait Renderer: Sized + Send + Sync {
         window: Arc<Window>,
         clear_color: Option<impl Color>,
         event_sender: flume::Sender<<Self::Handle as RendererHandle>::Event>,
-        asset_provider: Arc<AssetProvider>,
     ) -> Self;
+
+    /// Called once after construction, before the logic thread starts.
+    /// Implementations can use this to pull shared resources (e.g. asset provider) from loaded modules.
+    fn init_assets(&mut self, _app: &App) {}
     fn apply_command(&mut self, command: <Self::Handle as RendererHandle>::Command);
     fn window(&self) -> &Window;
     fn size(&self) -> PhysicalSize<u32>;

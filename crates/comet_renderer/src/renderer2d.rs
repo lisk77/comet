@@ -5,10 +5,10 @@ use crate::{
     render_context::RenderContext,
     render_events::Renderer2DEvent,
     render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
-    renderer::{Renderer, RendererHandle},
 };
 use comet_colors::Color;
 use comet_ecs::Render;
+use comet_app::{App, Module, renderer::{Renderer, RendererHandle}};
 use comet_log::*;
 use comet_math::{m4, v2, v3};
 use comet_assets::{
@@ -1361,8 +1361,8 @@ impl<'a> Renderer for Renderer2D<'a> {
         window: Arc<Window>,
         clear_color: Option<impl Color>,
         event_sender: flume::Sender<Renderer2DEvent>,
-        asset_provider: Arc<comet_assets::AssetProvider>,
     ) -> Self {
+        let asset_provider = Arc::new(comet_assets::AssetProvider::new(comet_assets::AssetManager::new()));
         Self {
             render_context: RenderContext::new(window, clear_color),
             asset_provider,
@@ -1372,6 +1372,13 @@ impl<'a> Renderer for Renderer2D<'a> {
             event_sender,
             font_cache: std::collections::HashMap::new(),
             accumulated_font_glyphs: Vec::new(),
+        }
+    }
+
+    fn init_assets(&mut self, app: &::comet_app::App) {
+        if app.has_module::<comet_assets::AssetModule>() {
+            use comet_assets::AssetModuleExt;
+            self.asset_provider = app.asset_provider();
         }
     }
 
@@ -1504,3 +1511,21 @@ impl<'a> Renderer for Renderer2D<'a> {
         Ok(())
     }
 }
+
+pub struct Renderer2DModule;
+
+impl Renderer2DModule {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Module for Renderer2DModule {
+    fn dependencies(app: &mut App) where Self: Sized {
+        if !app.has_module::<comet_assets::AssetModule>() {
+            app.add_module(comet_assets::AssetModule::new());
+        }
+    }
+    fn build(&mut self, _app: &mut App) {}
+}
+

@@ -20,18 +20,16 @@
 //!}
 //!
 //!// This function will be called once before the event loop starts
-//!fn setup(app: &mut App, renderer: &mut Renderer2D) {}
+//!fn setup(app: &mut App, renderer: &mut RenderHandle2D) {}
 //!// This function will be called every tick
-//!fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {}
+//!fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {}
 //!
 //!fn main() {
-//!    App::new() // Generate a basic 2D app
-//!        .with_preset(App2D) // Pre-registers the `Transform2D` component in the scene
-//!        .with_title("Comet App") // Sets the window title
-//!        .with_icon(r"res/textures/comet_icon.png") // Sets the window icon
-//!        .with_size(1920, 1080) // Sets the window size
-//!        .with_game_state(GameState::new()) // Adds a custom game state struct
-//!        .run::<Renderer2D>(setup, update) // Starts app with the given renderer and functions
+//!    App::new()
+//!        .with_preset_2d()
+//!        .with_title("Comet App")
+//!        .with_size(1920, 1080)
+//!        .run::<Renderer2D>(setup, update)
 //!}
 //!```
 //! # Subcrates
@@ -58,21 +56,51 @@ pub use comet_math as math;
 pub use comet_renderer as renderer;
 pub use comet_assets as assets;
 
+use comet_app::App;
+use comet_assets::AssetModule;
+use comet_ecs::EcsModule;
+use comet_renderer::Renderer2DModule;
+
+pub enum Preset {
+    App2D,
+    App3D,
+}
+
+pub trait AppPresets {
+    fn with_preset(self, preset: Preset) -> Self;
+}
+
+impl AppPresets for App {
+    fn with_preset(self, preset: Preset) -> Self {
+        match preset {
+            Preset::App2D => self
+                .with_module(AssetModule::new())
+                .with_module(EcsModule::preset_2d())
+                .with_module(Renderer2DModule::new()),
+            Preset::App3D => self
+                .with_module(AssetModule::new())
+                .with_module(EcsModule::preset_3d())
+                .with_module(Renderer2DModule::new()),
+        }
+    }
+}
+
 /// Everything you normally need to get started with Comet.
 pub mod prelude {
-    pub use comet_app::{App, ApplicationType::App2D};
+    pub use comet_app::{App, Module};
     pub use comet_assets::*;
     pub use comet_colors::{
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
-    pub use comet_ecs::*;
+    pub use comet_ecs::{EcsModule, EcsModuleExt, *};
     pub use comet_input::keyboard::Key;
     pub use comet_log::*;
     pub use comet_math::*;
     pub use comet_renderer::{
-        renderer::Renderer,
         renderer2d::{RenderHandle2D, Renderer2D},
+        Renderer2DModule,
     };
-    pub use comet_audio::*;
+    pub use comet_audio::{AudioModule, AudioModuleExt, KiraAudio};
     pub use winit_input_helper::WinitInputHelper as InputManager;
+    pub use crate::{AppPresets, Preset, Preset::App2D, Preset::App3D};
 }
