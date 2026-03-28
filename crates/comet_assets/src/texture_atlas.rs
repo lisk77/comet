@@ -1,5 +1,5 @@
 use crate::asset_handle::Asset;
-use crate::asset_path::resolve_asset_path;
+use comet_app::resolve_asset_path;
 use crate::font::GlyphData;
 use crate::image::Image;
 use comet_log::*;

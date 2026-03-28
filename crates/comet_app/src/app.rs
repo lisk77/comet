@@ -71,8 +71,8 @@ impl App {
     }
 
     /// Allows to set the icon of the `App` instance.
-    pub fn with_icon(mut self, path: impl AsRef<std::path::Path>) -> Self {
-        self.icon = Self::load_icon(path.as_ref());
+    pub fn with_icon(mut self, path: impl AsRef<str>) -> Self {
+        self.icon = Self::load_icon(&crate::asset_path::resolve_asset_path(path));
         self
     }
 

@@ -1,5 +1,5 @@
 pub use resources::*;
-pub use asset_path::*;
+pub use comet_app::{asset_root, file_extension, resolve_asset_path};
 pub use atlas_ref::*;
 pub use image::*;
 pub use vertex::*;
@@ -14,7 +14,6 @@ pub use asset_module::{AssetModule, AssetModuleExt};
 
 pub mod font;
 pub mod resources;
-pub mod asset_path;
 pub mod atlas_ref;
 pub mod image;
 pub mod texture_atlas;

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use comet_app::resolve_asset_path;
 use crate::{
-    asset_path::resolve_asset_path,
     image::Image,
     texture_atlas::{TextureAtlas, TextureRegion},
 };
