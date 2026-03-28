@@ -72,7 +72,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 pub struct Renderer2D<'a> {
     render_context: RenderContext<'a>,
-    asset_provider: Arc<comet_assets::AssetProvider>,
+    asset_provider: comet_assets::AssetProvider,
     render_passes: Vec<RenderPass>,
     last_frame_time: std::time::Instant,
     delta_time: f32,
@@ -1362,7 +1362,7 @@ impl<'a> Renderer for Renderer2D<'a> {
         clear_color: Option<impl Color>,
         event_sender: flume::Sender<Renderer2DEvent>,
     ) -> Self {
-        let asset_provider = Arc::new(comet_assets::AssetProvider::new(comet_assets::AssetManager::new()));
+        let asset_provider = comet_assets::AssetProvider::new(comet_assets::AssetManager::new());
         Self {
             render_context: RenderContext::new(window, clear_color),
             asset_provider,
@@ -1376,9 +1376,8 @@ impl<'a> Renderer for Renderer2D<'a> {
     }
 
     fn init_assets(&mut self, app: &::comet_app::App) {
-        if app.has_module::<comet_assets::AssetModule>() {
-            use comet_assets::AssetModuleExt;
-            self.asset_provider = app.asset_provider();
+        if app.has_context::<comet_assets::AssetProvider>() {
+            self.asset_provider = app.context::<comet_assets::AssetProvider>().clone();
         }
     }
 

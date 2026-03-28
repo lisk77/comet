@@ -16,7 +16,9 @@ impl AssetModule {
 }
 
 impl Module for AssetModule {
-    fn build(&mut self, _app: &mut App) {}
+    fn build(&mut self, app: &mut App) {
+        app.add_context((*self.provider).clone());
+    }
 }
 
 #[module]

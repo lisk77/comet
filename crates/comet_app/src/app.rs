@@ -32,6 +32,7 @@ pub struct App {
     update_timer: f32,
     game_state: Option<Box<dyn Any + Send>>,
     modules: HashMap<TypeId, Box<dyn Any + Send>>,
+    contexts: HashMap<TypeId, Box<dyn Any + Send>>,
     should_quit: bool,
     tick_systems: Vec<fn(&mut App, f32)>,
     pending_tick_add: Vec<fn(&mut App, f32)>,
@@ -53,6 +54,7 @@ impl App {
             update_timer: 0.0166667,
             game_state: None,
             modules: HashMap::new(),
+            contexts: HashMap::new(),
             should_quit: false,
             tick_systems: Vec::new(),
             pending_tick_add: Vec::new(),
@@ -131,6 +133,42 @@ impl App {
     /// Returns whether a module of type `M` has been added.
     pub fn has_module<M: 'static>(&self) -> bool {
         self.modules.contains_key(&TypeId::of::<M>())
+    }
+
+    /// Inserts a context value, replacing any previous value of the same type.
+    pub fn add_context<T: Any + Send + 'static>(&mut self, ctx: T) {
+        self.contexts.insert(TypeId::of::<T>(), Box::new(ctx));
+    }
+
+    /// Returns a reference to the context of type `T`. Panics if not present.
+    pub fn context<T: Any + Send + 'static>(&self) -> &T {
+        self.contexts
+            .get(&TypeId::of::<T>())
+            .and_then(|c| c.downcast_ref::<T>())
+            .unwrap_or_else(|| panic!("context `{}` not found", type_name::<T>()))
+    }
+
+    /// Returns a mutable reference to the context of type `T`. Panics if not present.
+    pub fn context_mut<T: Any + Send + 'static>(&mut self) -> &mut T {
+        self.contexts
+            .get_mut(&TypeId::of::<T>())
+            .and_then(|c| c.downcast_mut::<T>())
+            .unwrap_or_else(|| panic!("context `{}` not found", type_name::<T>()))
+    }
+
+    /// Returns a reference to the context of type `T`, or `None` if not present.
+    pub fn try_get_context<T: Any + Send + 'static>(&self) -> Option<&T> {
+        self.contexts.get(&TypeId::of::<T>())?.downcast_ref::<T>()
+    }
+
+    /// Returns a mutable reference to the context of type `T`, or `None` if not present.
+    pub fn try_get_context_mut<T: Any + Send + 'static>(&mut self) -> Option<&mut T> {
+        self.contexts.get_mut(&TypeId::of::<T>())?.downcast_mut::<T>()
+    }
+
+    /// Returns whether a context of type `T` has been added.
+    pub fn has_context<T: Any + 'static>(&self) -> bool {
+        self.contexts.contains_key(&TypeId::of::<T>())
     }
 
     /// Registers a system that runs every tick in deterministic order.

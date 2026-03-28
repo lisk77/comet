@@ -4,14 +4,14 @@ use kira::{
     sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings},
     AudioManager, AudioManagerSettings, Decibels, Tween,
 };
-use std::{collections::HashMap, io::Cursor, sync::Arc};
+use std::{collections::HashMap, io::Cursor};
 
 pub struct KiraAudio {
     manager: AudioManager,
     sounds: HashMap<String, StaticSoundData>,
     handles: HashMap<String, StaticSoundHandle>,
     pending_plays: Vec<(String, bool)>,
-    asset_provider: Option<Arc<AssetProvider>>,
+    asset_provider: Option<AssetProvider>,
 }
 
 impl Audio for KiraAudio {
@@ -25,7 +25,7 @@ impl Audio for KiraAudio {
         }
     }
 
-    fn set_asset_provider(&mut self, provider: Arc<AssetProvider>) {
+    fn set_asset_provider(&mut self, provider: AssetProvider) {
         self.asset_provider = Some(provider);
     }
 

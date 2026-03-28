@@ -1,6 +1,5 @@
 use comet_macros::module;
 use comet_app::{App, Module};
-use comet_assets::AssetModuleExt;
 use crate::kira::KiraAudio;
 use crate::audio::Audio;
 
@@ -24,7 +23,7 @@ impl Module for AudioModule {
     }
 
     fn build(&mut self, app: &mut App) {
-        self.audio.set_asset_provider(app.asset_provider().clone());
+        self.audio.set_asset_provider(app.context::<comet_assets::AssetProvider>().clone());
         app.add_tick_system(|app, dt| {
             app.get_module_mut::<AudioModule>().audio.update(dt);
         });
