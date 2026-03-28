@@ -20,6 +20,8 @@ use winit::{
 };
 use winit_input_helper::WinitInputHelper as InputManager;
 
+const MAX_TICK_STEPS: usize = 10;
+
 /// The `App` struct represents the common interface for many different components of the game engine.
 /// It provides a unified interface for managing the application's state, input, and modules.
 pub struct App {
@@ -308,6 +310,32 @@ impl App {
         winit_window.build(event_loop).unwrap()
     }
 
+    /// Starts the `App` without a window or renderer.
+    pub fn run_headless(
+        mut self,
+        setup: fn(&mut App),
+        update: fn(&mut App, f32),
+    ) {
+        let title = self.title.clone();
+        info!("Starting up {} (headless)!", title);
+        setup(&mut self);
+
+        let mut time_stack = 0.0f32;
+        let mut last_tick = std::time::Instant::now();
+
+        loop {
+            self.run_tick_cycle(&mut last_tick, &mut time_stack, update);
+
+            if self.should_quit {
+                break;
+            }
+
+            Self::sleep_until_next_tick(self.update_timer, last_tick);
+        }
+
+        info!("Shutting down {}!", title);
+    }
+
     /// Starts the `App` event loop.
     pub fn run<R: Renderer>(
         self,
@@ -319,191 +347,197 @@ impl App {
         let title = self.title.clone();
         info!("Starting up {}!", title);
 
-        pollster::block_on(async {
-            let update_timer = self.update_timer;
-            let input_manager = self.input_manager.clone();
-            let icon = self.icon.clone();
-            let size = self.size.clone();
-            let clear_color = self.clear_color.clone();
+        let input_manager = self.input_manager.clone();
+        let update_timer = self.update_timer;
 
-            let (cmd_tx, cmd_rx) = flume::unbounded::<
-                <R::Handle as RendererHandle>::Command,
-            >();
-            let (evt_tx, evt_rx) = flume::unbounded::<
-                <R::Handle as RendererHandle>::Event,
-            >();
+        let (cmd_tx, cmd_rx) = flume::unbounded();
+        let (evt_tx, evt_rx) = flume::unbounded();
 
-            let event_loop = EventLoop::new().unwrap();
-            let mut renderer = R::new(
-                Arc::new(Self::create_window(
-                    title.clone(),
-                    &icon,
-                    &size,
-                    &event_loop,
-                )),
-                clear_color,
-                evt_tx,
-            );
-            renderer.init_assets(&self);
-            let quit_flag = Arc::new(AtomicBool::new(false));
-            let logic_quit = quit_flag.clone();
-            info!("Using Renderer {}", type_name::<R>());
+        let event_loop = EventLoop::new().unwrap();
+        let window = Arc::new(Self::create_window(title.clone(), &self.icon, &self.size, &event_loop));
+        let mut renderer = R::new(window, self.clear_color, evt_tx);
+        renderer.init_assets(&self);
+        info!("Using Renderer {}", type_name::<R>());
 
-            info!("Setting up!");
-            let logic_thread = std::thread::Builder::new()
-                .name("logic".to_string())
-                .spawn(move || {
-                let mut app = self;
-                let mut handle = R::Handle::new(cmd_tx, evt_rx);
-                setup(&mut app, &mut handle);
+        let quit_flag = Arc::new(AtomicBool::new(false));
+        let logic_thread = std::thread::Builder::new()
+            .name("logic".to_string())
+            .spawn({
+                let quit = quit_flag.clone();
+                move || self.run_logic_thread::<R>(setup, update, quit, cmd_tx, evt_rx)
+            })
+            .unwrap();
 
-                let mut time_stack = 0.0;
-                let mut last_tick = std::time::Instant::now();
-                let max_steps = 5;
+        info!("Starting event loop!");
+        Self::run_event_loop::<R>(event_loop, renderer, input_manager, quit_flag, cmd_rx, update_timer);
 
-                while !logic_quit.load(Ordering::Relaxed) {
-                    let now = std::time::Instant::now();
-                    let frame_dt = now.duration_since(last_tick).as_secs_f32();
-                    last_tick = now;
-                    app.delta_time = frame_dt;
+        logic_thread.join().ok();
+        info!("Shutting down {}!", title);
+    }
 
-                    if app.dt() != f32::INFINITY {
-                        time_stack += frame_dt;
-                        let mut steps = 0;
-                        while time_stack > app.update_timer && steps < max_steps {
-                            let step = app.dt();
-                            app.run_pre_tick_hooks();
-                            app.apply_tick_system_changes();
-                            let mut i = 0;
-                            while i < app.tick_systems.len() {
-                                let system = app.tick_systems[i];
-                                system(&mut app, step);
-                                i += 1;
-                            }
-                            update(&mut app, &mut handle, step);
-                            app.run_post_tick_hooks();
-                            time_stack -= app.update_timer;
-                            steps += 1;
-                        }
-                    } else {
-                        app.run_pre_tick_hooks();
-                        app.apply_tick_system_changes();
-                        let mut i = 0;
-                        while i < app.tick_systems.len() {
-                            let system = app.tick_systems[i];
-                            system(&mut app, frame_dt);
-                            i += 1;
-                        }
-                        update(&mut app, &mut handle, frame_dt);
-                        app.run_post_tick_hooks();
-                    }
+    fn run_logic_thread<R: Renderer>(
+        mut self,
+        setup: fn(&mut App, &mut R::Handle),
+        update: fn(&mut App, &mut R::Handle, f32),
+        quit_flag: Arc<AtomicBool>,
+        cmd_tx: flume::Sender<<R::Handle as RendererHandle>::Command>,
+        evt_rx: flume::Receiver<<R::Handle as RendererHandle>::Event>,
+    ) where
+        R::Handle: 'static,
+    {
+        let mut handle = R::Handle::new(cmd_tx, evt_rx);
+        info!("Setting up!");
+        setup(&mut self, &mut handle);
 
-                    if app.should_quit {
-                        logic_quit.store(true, Ordering::Relaxed);
-                        break;
-                    }
+        let mut time_stack = 0.0f32;
+        let mut last_tick = std::time::Instant::now();
 
-                    if app.update_timer.is_finite() && app.update_timer > 0.0 {
-                        let target_step = std::time::Duration::from_secs_f32(app.update_timer);
-                        let elapsed = last_tick.elapsed();
-                        if elapsed < target_step {
-                            std::thread::sleep(target_step - elapsed);
-                        }
-                    } else {
-                        std::thread::yield_now();
-                    }
+        while !quit_flag.load(Ordering::Relaxed) {
+            self.run_tick_cycle(&mut last_tick, &mut time_stack, |app, dt| update(app, &mut handle, dt));
+
+            if self.should_quit {
+                quit_flag.store(true, Ordering::Relaxed);
+                break;
+            }
+
+            Self::sleep_until_next_tick(self.update_timer, last_tick);
+        }
+    }
+
+    fn run_tick_cycle(
+        &mut self,
+        last_tick: &mut std::time::Instant,
+        time_stack: &mut f32,
+        mut update: impl FnMut(&mut App, f32),
+    ) {
+        let now = std::time::Instant::now();
+        let frame_dt = now.duration_since(*last_tick).as_secs_f32();
+        *last_tick = now;
+        self.delta_time = frame_dt;
+
+        if self.update_timer.is_finite() {
+            *time_stack += frame_dt;
+            let mut steps = 0;
+            while *time_stack > self.update_timer && steps < MAX_TICK_STEPS {
+                let step = self.update_timer;
+                self.run_single_tick(step, &mut update);
+                *time_stack -= self.update_timer;
+                steps += 1;
+            }
+        } else {
+            self.run_single_tick(frame_dt, &mut update);
+        }
+    }
+
+    fn run_single_tick(&mut self, dt: f32, update: &mut impl FnMut(&mut App, f32)) {
+        self.run_pre_tick_hooks();
+        self.apply_tick_system_changes();
+        let mut i = 0;
+        while i < self.tick_systems.len() {
+            let system = self.tick_systems[i];
+            system(self, dt);
+            i += 1;
+        }
+        update(self, dt);
+        self.run_post_tick_hooks();
+    }
+
+    fn run_event_loop<R: Renderer>(
+        event_loop: EventLoop<()>,
+        mut renderer: R,
+        input_manager: Arc<Mutex<InputManager>>,
+        quit_flag: Arc<AtomicBool>,
+        cmd_rx: flume::Receiver<<R::Handle as RendererHandle>::Command>,
+        update_timer: f32,
+    ) {
+        let mut window_occluded = false;
+
+        event_loop
+            .run(|event, elwt| {
+                if quit_flag.load(Ordering::Relaxed) {
+                    elwt.exit();
+                    return;
                 }
-            });
-
-            let mut window_focused = true;
-            let mut window_occluded = false;
-
-            info!("Starting event loop!");
-            event_loop
-                .run(|event, elwt| {
-                    if quit_flag.load(Ordering::Relaxed) {
-                        elwt.exit()
-                    }
-
-                    if let Ok(mut manager) = input_manager.lock() {
-                        manager.update(&event);
-                    }
-
-                    #[allow(unused_variables)]
-                    match event {
-                        Event::WindowEvent {
-                            ref event,
-                            window_id,
-                        } => match event {
-                            WindowEvent::CloseRequested {} => {
-                                quit_flag.store(true, Ordering::Relaxed);
-                                elwt.exit();
+                if let Ok(mut m) = input_manager.lock() {
+                    m.update(&event);
+                }
+                match event {
+                    Event::WindowEvent { ref event, .. } => match event {
+                        WindowEvent::CloseRequested => {
+                            quit_flag.store(true, Ordering::Relaxed);
+                            elwt.exit();
+                        }
+                        WindowEvent::Occluded(occluded) => {
+                            window_occluded = *occluded;
+                        }
+                        WindowEvent::Resized(size) => renderer.resize(*size),
+                        WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                            renderer.set_scale_factor(*scale_factor);
+                        }
+                        WindowEvent::RedrawRequested => {
+                            while let Ok(cmd) = cmd_rx.try_recv() {
+                                renderer.apply_command(cmd);
                             }
-                            WindowEvent::Focused(focused) => {
-                                window_focused = *focused;
-                            }
-                            WindowEvent::Occluded(occluded) => {
-                                window_occluded = *occluded;
-                            }
-                            WindowEvent::Resized(physical_size) => {
-                                renderer.resize(*physical_size);
-                            }
-                            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                                renderer.set_scale_factor(*scale_factor);
-                            }
-                            WindowEvent::RedrawRequested => {
-                                while let Ok(cmd) = cmd_rx.try_recv() {
-                                    renderer.apply_command(cmd);
-                                }
-
-                                if !window_occluded {
-                                    match renderer.render() {
-                                        Ok(_) => {}
-                                        Err(
-                                            wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
-                                        ) => {
-                                            let size = renderer.size();
-                                            renderer.resize(size);
-                                        }
-                                        Err(wgpu::SurfaceError::OutOfMemory) => {
-                                            error!("Out of memory!");
-                                            elwt.exit();
-                                        }
-                                        Err(wgpu::SurfaceError::Timeout) => {
-                                            warn!("Surface timeout - skipping frame");
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {}
-                        },
-                        Event::AboutToWait => {
                             if !window_occluded {
-                                while let Ok(cmd) = cmd_rx.try_recv() {
-                                    renderer.apply_command(cmd);
+                                if Self::handle_render(&mut renderer) {
+                                    elwt.exit();
                                 }
-                                renderer.window().request_redraw();
-
-                                if update_timer.is_finite() {
-                                    let next_frame = std::time::Instant::now()
-                                        + std::time::Duration::from_secs_f32(update_timer);
-                                    elwt.set_control_flow(ControlFlow::WaitUntil(next_frame));
-                                } else {
-                                    elwt.set_control_flow(ControlFlow::Wait);
-                                }
-                            } else {
-                                while cmd_rx.try_recv().is_ok() {}
-                                elwt.set_control_flow(ControlFlow::Wait);
                             }
                         }
                         _ => {}
+                    },
+                    Event::AboutToWait => {
+                        if window_occluded {
+                            while cmd_rx.try_recv().is_ok() {}
+                            elwt.set_control_flow(ControlFlow::Wait);
+                        } else {
+                            while let Ok(cmd) = cmd_rx.try_recv() {
+                                renderer.apply_command(cmd);
+                            }
+                            renderer.window().request_redraw();
+                            if update_timer.is_finite() {
+                                let next = std::time::Instant::now()
+                                    + std::time::Duration::from_secs_f32(update_timer);
+                                elwt.set_control_flow(ControlFlow::WaitUntil(next));
+                            } else {
+                                elwt.set_control_flow(ControlFlow::Wait);
+                            }
+                        }
                     }
-                })
-                .unwrap();
-            drop(renderer);
-            logic_thread.unwrap().join().ok();
-        });
+                    _ => {}
+                }
+            })
+            .unwrap();
+    }
 
-        info!("Shutting down {}!", title);
+    fn handle_render<R: Renderer>(renderer: &mut R) -> bool {
+        match renderer.render() {
+            Ok(_) => false,
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                let size = renderer.size();
+                renderer.resize(size);
+                false
+            }
+            Err(wgpu::SurfaceError::OutOfMemory) => {
+                error!("Out of memory!");
+                true
+            }
+            Err(wgpu::SurfaceError::Timeout) => {
+                warn!("Surface timeout - skipping frame");
+                false
+            }
+        }
+    }
+
+    fn sleep_until_next_tick(update_timer: f32, last_tick: std::time::Instant) {
+        if update_timer.is_finite() && update_timer > 0.0 {
+            let target = std::time::Duration::from_secs_f32(update_timer);
+            let elapsed = last_tick.elapsed();
+            if elapsed < target {
+                std::thread::sleep(target - elapsed);
+            }
+        } else {
+            std::thread::yield_now();
+        }
     }
 }
