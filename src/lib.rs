@@ -48,6 +48,7 @@
 //! | `comet_assets` | Manages resources such as textures, shaders and fonts. |
 //!
 pub use comet_app as app;
+use comet_audio::AudioModule;
 pub use comet_colors as colors;
 pub use comet_ecs as ecs;
 pub use comet_input as input;
@@ -61,6 +62,7 @@ use comet_assets::AssetModule;
 use comet_ecs::EcsModule;
 use comet_renderer::Renderer2DModule;
 
+/// `App3D` exists but right now there is no `Renderer3D` so it is just the `AssetManager`, `ECS` and `AudioModule`
 pub enum Preset {
     App2D,
     App3D,
@@ -75,9 +77,9 @@ impl AppPresets for App {
         let app = App::new();
         match preset {
             Preset::App2D => app
-                .with_modules((AssetModule::new(), EcsModule::preset_2d(), Renderer2DModule::new())),
+                .with_modules((AssetModule::new(), EcsModule::preset_2d(), Renderer2DModule::new(), AudioModule::new())),
             Preset::App3D => app
-                .with_modules((AssetModule::new(), EcsModule::preset_3d(), Renderer2DModule::new())),
+                .with_modules((AssetModule::new(), EcsModule::preset_3d(), AudioModule::new())),
         }
     }
 }
