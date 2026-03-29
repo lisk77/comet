@@ -34,18 +34,10 @@ fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
 
 fn handle_input(app: &mut App, dt: f32) {
     let mut direction = v2::ZERO;
-    if app.key_held(Key::KeyW) {
-        direction += v2::Y;
-    }
-    if app.key_held(Key::KeyA) {
-        direction -= v2::X;
-    }
-    if app.key_held(Key::KeyS) {
-        direction -= v2::Y;
-    }
-    if app.key_held(Key::KeyD) {
-        direction += v2::X;
-    }
+    if app.key_held(Key::KeyW) { direction += v2::Y; }
+    if app.key_held(Key::KeyA) { direction -= v2::X; }
+    if app.key_held(Key::KeyS) { direction -= v2::Y; }
+    if app.key_held(Key::KeyD) { direction += v2::X; }
 
     if direction != v2::ZERO {
         app.query::<&mut Transform2D, With<Player>>().for_each(|t| {

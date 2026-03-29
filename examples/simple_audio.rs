@@ -9,8 +9,7 @@ fn setup(app: &mut App) {
 fn update(_app: &mut App, _dt: f32) {}
 
 fn main() {
-    App::new()
-        .with_title("Comet Sound Example")
+    App::with_preset(Headless)
         .with_module(AudioModule::new())
         .run_headless(setup, update);
 }
