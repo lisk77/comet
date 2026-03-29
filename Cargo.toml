@@ -8,6 +8,7 @@ repository = "https://github.com/lisk77/comet"
 
 [dependencies]
 comet_app = { workspace = true }
+comet_window = { workspace = true }
 comet_colors = { workspace = true }
 comet_math = { workspace = true }
 comet_renderer = { workspace = true }
@@ -52,7 +53,8 @@ members = [
     "./crates/comet_ui",
     "./crates/comet_audio",
     "./crates/comet_structs",
-    "./crates/comet_macros"
+    "./crates/comet_macros",
+    "./crates/comet_window"
 ]
 
 [workspace.dependencies]
@@ -67,3 +69,4 @@ comet_log = { path = "./crates/comet_log" }
 comet_structs = { path = "./crates/comet_structs" }
 comet_audio = { path = "./crates/comet_audio" }
 comet_macros = { path = "./crates/comet_macros" }
+comet_window = { path = "./crates/comet_window" }

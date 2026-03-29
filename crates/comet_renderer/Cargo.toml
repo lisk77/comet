@@ -9,6 +9,7 @@ comet_debug = []
 
 [dependencies]
 comet_app = { path = "../comet_app" }
+comet_window = { path = "../comet_window" }
 comet_ecs = { path = "../comet_ecs" }
 comet_math = { path = "../comet_math" }
 comet_assets = { path = "../comet_assets" }

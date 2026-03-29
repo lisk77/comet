@@ -8,7 +8,8 @@ use crate::{
 };
 use comet_colors::Color;
 use comet_ecs::Render;
-use comet_app::{App, Module, renderer::{Renderer, RendererHandle}};
+use comet_app::{App, Module};
+use comet_window::renderer::{Renderer, RendererHandle};
 use comet_log::*;
 use comet_math::{m4, v2, v3};
 use comet_assets::{

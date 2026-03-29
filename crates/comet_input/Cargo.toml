@@ -4,4 +4,8 @@ version = "0.1.1"
 edition = "2021"
 
 [dependencies]
+comet_app = { path = "../comet_app" }
+comet_window = { path = "../comet_window" }
+comet_macros = { path = "../comet_macros" }
 winit = { version = "0.29", features = ["rwh_05"] }
+winit_input_helper = "0.16.0"
