@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-comet_math = { path = "../comet_math" }
-comet_log = { path = "../comet_log" }
-wgpu = { version = "22.0" }
-chrono = "0.4.40"
+comet_math = { workspace = true }
+comet_log = { workspace = true }
+wgpu = { workspace = true }

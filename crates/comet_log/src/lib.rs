@@ -1,3 +1,5 @@
+pub use chrono;
+
 #[macro_export]
 macro_rules! info {
     ($fmt:expr $(, $args:expr)*) => {{
@@ -7,7 +9,7 @@ macro_rules! info {
         writeln!(
             handle,
             "{} [{}] [{}::{}] : {}",
-            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            $crate::chrono::Utc::now().to_rfc3339_opts($crate::chrono::SecondsFormat::Micros, true),
             "\x1b[32m\x1b[1mINFO\x1b[0m",
             env!("CARGO_PKG_NAME"),
             module_path!(),
@@ -24,7 +26,7 @@ macro_rules! debug {
         writeln!(
             handle,
             "{} [{}] [{}::{}:{}] : {}",
-            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            $crate::chrono::Utc::now().to_rfc3339_opts($crate::chrono::SecondsFormat::Micros, true),
             "\x1b[34m\x1b[1mDEBUG\x1b[0m",
             env!("CARGO_PKG_NAME"),
             module_path!(),
@@ -42,7 +44,7 @@ macro_rules! warn {
         writeln!(
             handle,
             "{} [{}] [{}::{}] : {}",
-            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            $crate::chrono::Utc::now().to_rfc3339_opts($crate::chrono::SecondsFormat::Micros, true),
             "\x1b[33m\x1b[1mWARNING\x1b[0m",
             env!("CARGO_PKG_NAME"),
             module_path!(),
@@ -59,7 +61,7 @@ macro_rules! error {
         writeln!(
             handle,
             "{} [{}] [{}::{}] : {}",
-            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            $crate::chrono::Utc::now().to_rfc3339_opts($crate::chrono::SecondsFormat::Micros, true),
             "\x1b[31m\x1b[1mERROR\x1b[0m",
             env!("CARGO_PKG_NAME"),
             module_path!(),
@@ -76,7 +78,7 @@ macro_rules! fatal {
         writeln!(
             handle,
             "{} [{}] [{}::{}] : {}",
-            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            $crate::chrono::Utc::now().to_rfc3339_opts($crate::chrono::SecondsFormat::Micros, true),
             "\x1b[41mFATAL\x1b[0m",
             env!("CARGO_PKG_NAME"),
             module_path!(),
@@ -94,7 +96,7 @@ macro_rules! trace {
         writeln!(
             handle,
             "{} [{}] [{}::{}] : {}",
-            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            $crate::chrono::Utc::now().to_rfc3339_opts($crate::chrono::SecondsFormat::Micros, true),
             "\x1b[35m\x1b[1mTRACE\x1b[0m",
             env!("CARGO_PKG_NAME"),
             module_path!(),

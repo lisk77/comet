@@ -5,6 +5,7 @@ use crate::{
     render_context::RenderContext,
     render_events::Renderer2DEvent,
     render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
+    Vertex,
 };
 use comet_colors::Color;
 use comet_ecs::Render;
@@ -16,7 +17,7 @@ use comet_log::*;
 use comet_math::{m4, v2, v3};
 use comet_assets::{
     AtlasRef, ImageRef,
-    texture_atlas::*, Vertex,
+    texture_atlas::*,
 };
 use std::{
     sync::Arc,
@@ -870,7 +871,7 @@ impl Renderer2D {
                 vertex: wgpu::VertexState {
                     module: &shader_module,
                     entry_point: "vs_main",
-                    buffers: &[comet_assets::Vertex::desc()],
+                    buffers: &[Vertex::desc()],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
