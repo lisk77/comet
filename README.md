@@ -9,7 +9,7 @@ a free and open source game engine
 >
 > Installation is manual as of right now but if it reaches an acceptable state I will publish the crate on crates.
 >
-> There is a plan for a project creation tool that will automate the project setup process.
+> Goals and ideas can be found in [goals](goals.md).
 
 ## Recommended setup
 
@@ -45,7 +45,7 @@ struct Score(u8);
 
 // This function will be called once before the event loop starts
 fn setup(app: &mut App) {
-  app.add_context(Score(0)); // Registers a shared context everywhere in the app.
+  app.add_context(Score(0)); // Registers a shared context for the app.
 }
 // This function will be called every tick
 fn update(app: &mut App, dt: f32) {}
