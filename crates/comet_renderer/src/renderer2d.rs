@@ -9,11 +9,13 @@ use crate::{
 use comet_colors::Color;
 use comet_ecs::Render;
 use comet_app::{App, Module};
+use comet_ecs::EcsModuleExt;
+use comet_macros::module;
 use comet_window::renderer::{Renderer, RendererHandle};
 use comet_log::*;
 use comet_math::{m4, v2, v3};
 use comet_assets::{
-    asset_root, AtlasRef, ImageRef,
+    AtlasRef, ImageRef,
     texture_atlas::*, Vertex,
 };
 use std::{
@@ -71,8 +73,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
-pub struct Renderer2D<'a> {
-    render_context: RenderContext<'a>,
+pub struct Renderer2D {
+    render_context: RenderContext,
     asset_provider: comet_assets::AssetProvider,
     render_passes: Vec<RenderPass>,
     last_frame_time: std::time::Instant,
@@ -89,17 +91,8 @@ pub struct RenderHandle2D {
     pending_atlas_rebuild: bool,
 }
 
+#[module]
 impl RenderHandle2D {
-    pub fn init_atlas(&mut self) {
-        let _ = self.command_sender.send(Renderer2DCommand::InitAtlas);
-    }
-
-    pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
-        let _ = self
-            .command_sender
-            .send(Renderer2DCommand::InitAtlasFromPaths(paths));
-    }
-
     fn resolve_atlas_ref(&mut self, path: &'static str) -> Option<(AtlasRef, Option<comet_assets::Asset<comet_assets::Image>>)> {
         let _ = self
             .command_sender
@@ -213,6 +206,9 @@ impl RenderHandle2D {
         }
     }
 
+}
+
+impl RenderHandle2D {
     pub fn render_scene_2d(&mut self, scene: &mut comet_ecs::Scene) {
         self.poll_events();
         if self.pending_atlas_rebuild {
@@ -352,61 +348,25 @@ impl RendererHandle for RenderHandle2D {
     }
 }
 
-impl<'a> Renderer2D<'a> {
-    pub fn init_atlas(&mut self) {
-        let texture_path = "res://textures/".to_string();
-        let mut paths: Vec<String> = Vec::new();
-
-        let dir = match std::fs::read_dir(asset_root().join("textures")) {
-            Ok(d) => d,
-            Err(e) => {
-                error!("Failed to read textures directory: {}", e);
-                return;
-            }
-        };
-        for entry in dir {
-            match entry {
-                Ok(e) => {
-                    if let Some(name) = e.file_name().to_str() {
-                        paths.push(texture_path.clone() + name);
-                    }
-                }
-                Err(e) => error!("Failed to read directory entry: {}", e),
-            }
+impl comet_app::Module for RenderHandle2D {
+    fn dependencies(app: &mut comet_app::App) where Self: Sized {
+        if !app.has_module::<comet_assets::AssetModule>() {
+            app.add_module(comet_assets::AssetModule::new());
         }
-
-        self.init_atlas_by_paths(paths);
+        if !app.has_module::<comet_ecs::EcsModule>() {
+            app.add_module(comet_ecs::EcsModule::new());
+        }
     }
-
-    pub fn init_atlas_by_paths(&mut self, paths: Vec<String>) {
-        let mut names = Vec::new();
-        let mut dynamic_images = Vec::new();
-        let mut image_handles = Vec::new();
-
-        for path in &paths {
-            let image_handle = self.asset_provider.load::<comet_assets::Image>(path);
-            let dynamic = match self.asset_provider.with(image_handle, |img| img.to_dynamic_image()) {
-                Some(Ok(d)) => d,
-                Some(Err(e)) => { error!("Failed to convert image '{}': {}", path, e); continue; }
-                None => { error!("Failed to access image '{}'", path); continue; }
-            };
-            image_handles.push(image_handle);
-            names.push(path.clone());
-            dynamic_images.push(dynamic);
-        }
-
-        let texture_atlas = {
-            info!("Loaded texture atlas from paths: {} images", names.len());
-            comet_assets::TextureAtlas::from_textures(names, dynamic_images)
-        };
-
-        for handle in image_handles {
-            self.asset_provider.unload(handle);
-        }
-
-        self.setup_atlas_pipeline(texture_atlas);
+    fn build(&mut self, app: &mut comet_app::App) {
+        app.add_post_tick_hook(|app| {
+            let mut renderer = app.take_module::<RenderHandle2D>().unwrap();
+            renderer.render_scene_2d(app.scene_mut());
+            app.reinsert_module(renderer);
+        });
     }
+}
 
+impl Renderer2D {
     fn setup_atlas_pipeline(&mut self, mut atlas: comet_assets::TextureAtlas) {
         let gpu_texture = match GpuTexture::from_dynamic_image(
             self.render_context.device(),
@@ -723,15 +683,12 @@ impl<'a> Renderer2D<'a> {
         }
         let atlas_handle = self.render_context.resources().get_asset_atlas_handle("atlas")?;
 
-        // Return immediately if already in atlas
         if let Some(region) = self.asset_provider.with(atlas_handle, |atlas| atlas.region_for_handle(handle)).flatten() {
             return Some(AtlasRef::new(region, atlas_handle));
         }
 
-        // Get image dimensions
         let (w, h) = self.asset_provider.with(handle, |img| (img.width(), img.height()))?;
 
-        // Allocate space — rebuild if full
         let alloc = self.asset_provider.with_mut(atlas_handle, |atlas| {
             atlas.insert_image_handle(handle, w, h, 1)
         }).flatten();
@@ -752,7 +709,6 @@ impl<'a> Renderer2D<'a> {
             }
         };
 
-        // Upload pixels to GPU then evict the CPU copy
         let gpu_texture = self.render_context.resources().get_gpu_texture("atlas")?.clone();
         self.asset_provider.with(handle, |img| {
             gpu_texture.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h);
@@ -820,7 +776,6 @@ impl<'a> Renderer2D<'a> {
             }
         }
 
-        // Swap GPU texture and recreate bind group
         let new_gpu_arc = Arc::new(new_gpu);
         self.render_context.resources_mut().insert_gpu_texture("atlas".to_string(), new_gpu_arc.clone());
 
@@ -1333,9 +1288,6 @@ impl<'a> Renderer2D<'a> {
         let mut camera_uniform = crate::camera::CameraUniform::new();
         camera_uniform.update_view_proj(&render_camera);
 
-        // Write to the existing camera buffer in-place.
-        // The bind group keeps pointing to the same buffer, so no new allocations needed.
-        // The Font pass shares the Universal camera bind group, so it picks up the update too.
         let buffer = match self.render_context.resources().get_buffer("Universal")
             .and_then(|v| v.first())
             .cloned()
@@ -1355,7 +1307,7 @@ impl<'a> Renderer2D<'a> {
     }
 }
 
-impl<'a> Renderer for Renderer2D<'a> {
+impl Renderer for Renderer2D {
     type Handle = RenderHandle2D;
 
     fn new(
@@ -1385,10 +1337,7 @@ impl<'a> Renderer for Renderer2D<'a> {
     fn apply_command(&mut self, command: <Self::Handle as RendererHandle>::Command) {
         match command {
             Renderer2DCommand::Clear => {}
-            Renderer2DCommand::InitAtlas => self.init_atlas(),
-            Renderer2DCommand::InitAtlasFromPaths(paths) => self.init_atlas_by_paths(paths),
             Renderer2DCommand::ResolveAtlasRef(path) => {
-                // Check the pre-built string-keyed atlas first (populated by init_atlas_by_paths).
                 let atlas_ref = self.render_context
                     .resources()
                     .get_asset_atlas_handle("atlas")
@@ -1402,7 +1351,6 @@ impl<'a> Renderer for Renderer2D<'a> {
                         .flatten()
                     });
 
-                // Not found — load and insert dynamically, same as handle-based flow.
                 let mut dynamic_image_handle: Option<comet_assets::Asset<comet_assets::Image>> = None;
                 let atlas_ref = atlas_ref.or_else(|| {
                     let fs_path = comet_assets::resolve_asset_path(path);
@@ -1512,6 +1460,43 @@ impl<'a> Renderer for Renderer2D<'a> {
     }
 }
 
+struct ErasedRenderer2D {
+    renderer: Renderer2D,
+    cmd_rx: flume::Receiver<Renderer2DCommand>,
+}
+
+impl comet_window::ErasedRenderer for ErasedRenderer2D {
+    fn init_assets(&mut self, app: &comet_app::App) {
+        self.renderer.init_assets(app);
+    }
+    fn drain_commands(&mut self) {
+        while let Ok(cmd) = self.cmd_rx.try_recv() {
+            self.renderer.apply_command(cmd);
+        }
+    }
+    fn window(&self) -> &winit::window::Window {
+        self.renderer.window()
+    }
+    fn size(&self) -> winit::dpi::PhysicalSize<u32> {
+        self.renderer.size()
+    }
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.renderer.resize(new_size);
+    }
+    fn scale_factor(&self) -> f64 {
+        self.renderer.scale_factor()
+    }
+    fn set_scale_factor(&mut self, scale_factor: f64) {
+        self.renderer.set_scale_factor(scale_factor);
+    }
+    fn update(&mut self) -> f32 {
+        self.renderer.update()
+    }
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.renderer.render()
+    }
+}
+
 pub struct Renderer2DModule;
 
 impl Renderer2DModule {
@@ -1526,6 +1511,25 @@ impl Module for Renderer2DModule {
             app.add_module(comet_assets::AssetModule::new());
         }
     }
-    fn build(&mut self, _app: &mut App) {}
+    fn build(&mut self, app: &mut App) {
+        if !app.has_module::<comet_window::winit_module::WinitModule>() {
+            return;
+        }
+        app.get_module_mut::<comet_window::winit_module::WinitModule>()
+            .set_renderer_factory(Box::new(|window, clear_color| {
+                let (cmd_tx, cmd_rx) = flume::unbounded::<Renderer2DCommand>();
+                let (evt_tx, evt_rx) = flume::unbounded::<Renderer2DEvent>();
+
+                let renderer = Renderer2D::new(window, clear_color, evt_tx);
+                let handle = RenderHandle2D::new(cmd_tx, evt_rx);
+
+                let erased: Box<dyn comet_window::ErasedRenderer> =
+                    Box::new(ErasedRenderer2D { renderer, cmd_rx });
+                let add_handle: Box<dyn FnOnce(&mut comet_app::App) + Send> =
+                    Box::new(move |app| { app.add_module(handle); });
+
+                (erased, add_handle)
+            }));
+    }
 }
 

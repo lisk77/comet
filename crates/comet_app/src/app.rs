@@ -1,5 +1,5 @@
-use comet_log::*;
 use crate::module::Module;
+use comet_log::fatal;
 use std::any::{type_name, Any, TypeId};
 use std::collections::HashMap;
 
@@ -54,12 +54,17 @@ impl App {
         self.modules.insert(TypeId::of::<M>(), Box::new(module));
     }
 
+    /// Re-inserts a previously taken module without calling `dependencies` or `build` again.
+    pub fn reinsert_module<M: Module>(&mut self, module: M) {
+        self.modules.insert(TypeId::of::<M>(), Box::new(module));
+    }
+
     /// Returns a reference to the module of type `M`. Panics if not loaded.
     pub fn get_module<M: 'static>(&self) -> &M {
         self.modules
             .get(&TypeId::of::<M>())
             .and_then(|m| (m.as_ref() as &dyn Any).downcast_ref::<M>())
-            .unwrap_or_else(|| panic!("module `{}` is not loaded", type_name::<M>()))
+            .unwrap_or_else(|| fatal!("Module {} is not loaded", type_name::<M>()))
     }
 
     /// Returns a mutable reference to the module of type `M`. Panics if not loaded.
@@ -67,7 +72,7 @@ impl App {
         self.modules
             .get_mut(&TypeId::of::<M>())
             .and_then(|m| (m.as_mut() as &mut dyn Any).downcast_mut::<M>())
-            .unwrap_or_else(|| panic!("module `{}` is not loaded", type_name::<M>()))
+            .unwrap_or_else(|| fatal!("Module {} is not loaded", type_name::<M>()))
     }
 
     /// Returns whether a module of type `M` has been added.
@@ -93,7 +98,7 @@ impl App {
         self.contexts
             .get(&TypeId::of::<T>())
             .and_then(|c| c.downcast_ref::<T>())
-            .unwrap_or_else(|| panic!("context `{}` not found", type_name::<T>()))
+            .unwrap_or_else(|| fatal!("Context {} not found", type_name::<T>()))
     }
 
     /// Returns a mutable reference to the context of type `T`. Panics if not present.
@@ -101,7 +106,7 @@ impl App {
         self.contexts
             .get_mut(&TypeId::of::<T>())
             .and_then(|c| c.downcast_mut::<T>())
-            .unwrap_or_else(|| panic!("context `{}` not found", type_name::<T>()))
+            .unwrap_or_else(|| fatal!("Context {} not found", type_name::<T>()))
     }
 
     /// Returns a reference to the context of type `T`, or `None` if not present.
@@ -213,27 +218,6 @@ impl App {
         }
     }
 
-    /// Starts the app without a window or renderer.
-    pub fn run_headless(mut self, setup: fn(&mut App), update: fn(&mut App, f32)) {
-        info!("Starting up (headless)!");
-        setup(&mut self);
-
-        let mut time_stack = 0.0f32;
-        let mut last_tick = std::time::Instant::now();
-
-        loop {
-            self.run_tick_cycle(&mut last_tick, &mut time_stack, update);
-
-            if self.should_quit {
-                break;
-            }
-
-            Self::sleep_until_next_tick(self.update_timer, last_tick);
-        }
-
-        info!("Shutting down!");
-    }
-
     pub fn run_tick_cycle(
         &mut self,
         last_tick: &mut std::time::Instant,
@@ -272,15 +256,4 @@ impl App {
         self.run_post_tick_hooks();
     }
 
-    pub(crate) fn sleep_until_next_tick(update_timer: f32, last_tick: std::time::Instant) {
-        if update_timer.is_finite() && update_timer > 0.0 {
-            let target = std::time::Duration::from_secs_f32(update_timer);
-            let elapsed = last_tick.elapsed();
-            if elapsed < target {
-                std::thread::sleep(target - elapsed);
-            }
-        } else {
-            std::thread::yield_now();
-        }
-    }
 }

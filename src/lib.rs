@@ -11,14 +11,14 @@
 //!// main.rs example
 //!use comet::prelude::*;
 //!
-//!fn setup(app: &mut App, renderer: &mut RenderHandle2D) {}
-//!fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {}
+//!fn setup(app: &mut App) {}
+//!fn update(app: &mut App, dt: f32) {}
 //!
 //!fn main() {
-//!    App::new()
+//!    App::with_preset(App2D)
 //!        .with_title("Comet App")
 //!        .with_size(1920, 1080)
-//!        .run::<Renderer2D>(setup, update)
+//!        .run(setup, update)
 //!}
 //!```
 //! # Subcrates
@@ -80,7 +80,7 @@ impl AppPresets for App {
 /// Everything you normally need to get started with Comet.
 pub mod prelude {
     pub use comet_app::{App, Module};
-    pub use comet_window::{WinitAppExt, WinitModule, Renderer, RendererHandle};
+    pub use comet_window::{WinitAppExt, WinitModule, WinitModuleExt, Renderer, RendererHandle};
     pub use comet_assets::*;
     pub use comet_colors::{
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
@@ -90,7 +90,7 @@ pub mod prelude {
     pub use comet_log::*;
     pub use comet_math::*;
     pub use comet_renderer::{
-        renderer2d::{RenderHandle2D, Renderer2D},
+        renderer2d::{RenderHandle2D, RenderHandle2DExt, Renderer2D},
         Renderer2DModule,
     };
     pub use comet_audio::{AudioModule, AudioModuleExt, KiraAudio};

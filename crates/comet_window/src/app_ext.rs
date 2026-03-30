@@ -1,89 +1,54 @@
-use std::any::type_name;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use comet_app::App;
-use comet_colors::Color;
 use comet_log::*;
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window;
-use crate::renderer::{Renderer, RendererHandle};
+use crate::renderer::ErasedRenderer;
 use crate::winit_module::WinitModule;
 
 pub trait WinitAppExt {
-    fn with_title(self, title: impl Into<String>) -> Self;
-    fn with_icon(self, path: impl AsRef<str>) -> Self;
-    fn with_size(self, width: u32, height: u32) -> Self;
-    fn with_clear_color(self, color: impl Color) -> Self;
-    fn run<R: Renderer>(self, setup: fn(&mut App, &mut R::Handle), update: fn(&mut App, &mut R::Handle, f32))
-    where
-        R::Handle: 'static;
-}
-
-fn ensure_winit_module(app: &mut App) {
-    if !app.has_module::<WinitModule>() {
-        app.add_module(WinitModule::new());
-    }
-}
-
-fn replace_winit_module(mut app: App, f: impl FnOnce(WinitModule) -> WinitModule) -> App {
-    ensure_winit_module(&mut app);
-    let m = app.take_module::<WinitModule>().unwrap();
-    app.add_module(f(m));
-    app
+    fn run(self, setup: fn(&mut App), update: fn(&mut App, f32));
 }
 
 impl WinitAppExt for App {
-    fn with_title(self, title: impl Into<String>) -> Self {
-        replace_winit_module(self, |m| m.with_title(title))
-    }
+    fn run(mut self, setup: fn(&mut App), update: fn(&mut App, f32)) {
+        if !self.has_module::<WinitModule>() {
+            run_headless(self, setup, update);
+            return;
+        }
 
-    fn with_icon(self, path: impl AsRef<str>) -> Self {
-        replace_winit_module(self, |m| m.with_icon(path))
-    }
-
-    fn with_size(self, width: u32, height: u32) -> Self {
-        replace_winit_module(self, |m| m.with_size(width, height))
-    }
-
-    fn with_clear_color(self, color: impl Color) -> Self {
-        replace_winit_module(self, |m| m.with_clear_color(color))
-    }
-
-    fn run<R: Renderer>(mut self, setup: fn(&mut App, &mut R::Handle), update: fn(&mut App, &mut R::Handle, f32))
-    where
-        R::Handle: 'static,
-    {
-        let winit_mod = self
-            .take_module::<WinitModule>()
-            .expect("WinitModule is required to use this method");
-
+        let winit_mod = self.take_module::<WinitModule>().unwrap();
         let title = winit_mod.title.clone();
         let event_hooks = winit_mod.event_hooks;
         let update_timer = self.dt();
 
         info!("Starting up {}!", title);
 
-        let (cmd_tx, cmd_rx) = flume::unbounded();
-        let (evt_tx, evt_rx) = flume::unbounded();
-
         let event_loop = EventLoop::new().unwrap();
         let window = Arc::new(create_window(title.clone(), &winit_mod.icon, &winit_mod.size, &event_loop));
-        let mut renderer = R::new(window, winit_mod.clear_color, evt_tx);
-        renderer.init_assets(&self);
-        info!("Using Renderer {}", type_name::<R>());
+
+        let renderer = if let Some(factory) = winit_mod.renderer_factory {
+            let (mut erased, add_handle) = factory(window.clone(), winit_mod.clear_color);
+            erased.init_assets(&self);
+            add_handle(&mut self);
+            Some(erased)
+        } else {
+            None
+        };
 
         let quit_flag = Arc::new(AtomicBool::new(false));
         let logic_thread = std::thread::Builder::new()
             .name("logic".to_string())
             .spawn({
                 let quit = quit_flag.clone();
-                move || run_logic_thread::<R>(self, setup, update, quit, cmd_tx, evt_rx)
+                move || run_app_loop(self, setup, update, Some(quit))
             })
             .unwrap();
 
         info!("Starting event loop!");
-        run_event_loop::<R>(event_loop, renderer, event_hooks, quit_flag, cmd_rx, update_timer);
+        run_event_loop(event_loop, renderer, window, event_hooks, quit_flag, update_timer);
 
         logic_thread.join().ok();
         info!("Shutting down {}!", title);
@@ -113,28 +78,38 @@ fn create_window(
     builder.build(event_loop).unwrap()
 }
 
-fn run_logic_thread<R: Renderer>(
+fn run_headless(app: App, setup: fn(&mut App), update: fn(&mut App, f32)) {
+    info!("Starting up (headless)!");
+    run_app_loop(app, setup, update, None);
+    info!("Shutting down!");
+}
+
+fn run_app_loop(
     mut app: App,
-    setup: fn(&mut App, &mut R::Handle),
-    update: fn(&mut App, &mut R::Handle, f32),
-    quit_flag: Arc<AtomicBool>,
-    cmd_tx: flume::Sender<<R::Handle as RendererHandle>::Command>,
-    evt_rx: flume::Receiver<<R::Handle as RendererHandle>::Event>,
-) where
-    R::Handle: 'static,
-{
-    let mut handle = R::Handle::new(cmd_tx, evt_rx);
+    setup: fn(&mut App),
+    update: fn(&mut App, f32),
+    quit_flag: Option<Arc<AtomicBool>>,
+) {
     info!("Setting up!");
-    setup(&mut app, &mut handle);
+    setup(&mut app);
 
     let mut time_stack = 0.0f32;
     let mut last_tick = std::time::Instant::now();
 
-    while !quit_flag.load(Ordering::Relaxed) {
-        app.run_tick_cycle(&mut last_tick, &mut time_stack, |a, dt| update(a, &mut handle, dt));
+    loop {
+        if quit_flag
+            .as_ref()
+            .is_some_and(|quit| quit.load(Ordering::Relaxed))
+        {
+            break;
+        }
+
+        app.run_tick_cycle(&mut last_tick, &mut time_stack, update);
 
         if app.should_quit() {
-            quit_flag.store(true, Ordering::Relaxed);
+            if let Some(quit) = &quit_flag {
+                quit.store(true, Ordering::Relaxed);
+            }
             break;
         }
 
@@ -142,12 +117,12 @@ fn run_logic_thread<R: Renderer>(
     }
 }
 
-fn run_event_loop<R: Renderer>(
+fn run_event_loop(
     event_loop: EventLoop<()>,
-    mut renderer: R,
+    mut renderer: Option<Box<dyn ErasedRenderer>>,
+    window: Arc<Window>,
     event_hooks: Vec<Box<dyn Fn(&Event<()>) + Send + Sync>>,
     quit_flag: Arc<AtomicBool>,
-    cmd_rx: flume::Receiver<<R::Handle as RendererHandle>::Command>,
     update_timer: f32,
 ) {
     let mut window_occluded = false;
@@ -172,17 +147,20 @@ fn run_event_loop<R: Renderer>(
                     WindowEvent::Occluded(occluded) => {
                         window_occluded = *occluded;
                     }
-                    WindowEvent::Resized(size) => renderer.resize(*size),
+                    WindowEvent::Resized(size) => {
+                        if let Some(r) = renderer.as_mut() { r.resize(*size); }
+                    }
                     WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                        renderer.set_scale_factor(*scale_factor);
+                        if let Some(r) = renderer.as_mut() { r.set_scale_factor(*scale_factor); }
                     }
                     WindowEvent::RedrawRequested => {
-                        while let Ok(cmd) = cmd_rx.try_recv() {
-                            renderer.apply_command(cmd);
-                        }
-                        if !window_occluded {
-                            if handle_render(&mut renderer) {
-                                elwt.exit();
+                        drain_renderer_commands(&mut renderer);
+                        if let Some(r) = renderer.as_mut() {
+                            if !window_occluded {
+                                if handle_render(r.as_mut()) {
+                                    quit_flag.store(true, Ordering::Relaxed);
+                                    elwt.exit();
+                                }
                             }
                         }
                     }
@@ -190,13 +168,11 @@ fn run_event_loop<R: Renderer>(
                 },
                 Event::AboutToWait => {
                     if window_occluded {
-                        while cmd_rx.try_recv().is_ok() {}
+                        drain_renderer_commands(&mut renderer);
                         elwt.set_control_flow(ControlFlow::Wait);
                     } else {
-                        while let Ok(cmd) = cmd_rx.try_recv() {
-                            renderer.apply_command(cmd);
-                        }
-                        renderer.window().request_redraw();
+                        drain_renderer_commands(&mut renderer);
+                        window.request_redraw();
                         if update_timer.is_finite() {
                             let next = std::time::Instant::now()
                                 + std::time::Duration::from_secs_f32(update_timer);
@@ -212,7 +188,13 @@ fn run_event_loop<R: Renderer>(
         .unwrap();
 }
 
-fn handle_render<R: Renderer>(renderer: &mut R) -> bool {
+fn drain_renderer_commands(renderer: &mut Option<Box<dyn ErasedRenderer>>) {
+    if let Some(renderer) = renderer.as_mut() {
+        renderer.drain_commands();
+    }
+}
+
+fn handle_render(renderer: &mut dyn ErasedRenderer) -> bool {
     match renderer.render() {
         Ok(_) => false,
         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

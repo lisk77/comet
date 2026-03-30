@@ -1,22 +1,8 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, FnArg, ImplItem, ItemImpl, Pat, Type, Visibility};
+use syn::{parse_macro_input, FnArg, ImplItem, ItemImpl, Pat, ReturnType, Type, Visibility};
 
-/// Attribute macro for module impl blocks.
-///
-/// Generates a `{TypeName}Ext` trait and a forwarding `impl {TypeName}Ext for ::comet_app::App`
-/// for all `pub` methods with a self receiver (excluding `build`).
-///
-/// # Example
-/// ```ignore
-/// #[module]
-/// impl AudioModule {
-///     pub fn play_audio(&mut self, name: &str, looped: bool) { ... }
-///     pub fn is_playing(&self, name: &str) -> bool { ... }
-/// }
-/// ```
-/// Generates `AudioModuleExt` with those methods forwarded through `App::get_module_mut` / `App::get_module`.
 #[proc_macro_attribute]
 pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemImpl);
@@ -73,10 +59,14 @@ pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
         let sig = &method.sig;
         let method_name = &sig.ident;
 
-        let is_mut = match sig.inputs.first() {
-            Some(FnArg::Receiver(r)) => r.mutability.is_some(),
-            _ => false,
+        let receiver = match sig.inputs.first() {
+            Some(FnArg::Receiver(r)) => r,
+            _ => continue,
         };
+
+        // Builder method: takes self by value and returns Self
+        let is_builder = receiver.reference.is_none()
+            && matches!(&sig.output, ReturnType::Type(_, t) if matches!(t.as_ref(), Type::Path(p) if p.path.is_ident("Self")));
 
         let param_names: Vec<_> = sig
             .inputs
@@ -92,19 +82,45 @@ pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
             })
             .collect();
 
-        trait_methods.push(quote! { #sig; });
+        // Rebuild param list without the self receiver for trait/impl signatures
+        let params: Vec<_> = sig.inputs.iter().skip(1).collect();
+        let generics = &sig.generics;
+        let where_clause = &sig.generics.where_clause;
 
-        let accessor = if is_mut {
-            quote! { self.get_module_mut::<#ty>() }
+        if is_builder {
+            trait_methods.push(quote! {
+                fn #method_name #generics (self, #(#params),*) -> Self #where_clause;
+            });
+            impl_methods.push(quote! {
+                fn #method_name #generics (mut self, #(#params),*) -> Self #where_clause {
+                    let m = self.take_module::<#ty>().unwrap();
+                    let m = m.#method_name(#(#param_names),*);
+                    self.reinsert_module(m);
+                    self
+                }
+            });
         } else {
-            quote! { self.get_module::<#ty>() }
-        };
-
-        impl_methods.push(quote! {
-            #sig {
-                #accessor.#method_name(#(#param_names),*)
-            }
-        });
+            let is_mut = receiver.mutability.is_some();
+            let accessor = if is_mut {
+                quote! { self.get_module_mut::<#ty>() }
+            } else {
+                quote! { self.get_module::<#ty>() }
+            };
+            let output = &sig.output;
+            let self_ref = if is_mut {
+                quote! { &mut self }
+            } else {
+                quote! { &self }
+            };
+            trait_methods.push(quote! {
+                fn #method_name #generics (#self_ref, #(#params),*) #output #where_clause;
+            });
+            impl_methods.push(quote! {
+                fn #method_name #generics (#self_ref, #(#params),*) #output #where_clause {
+                    #accessor.#method_name(#(#param_names),*)
+                }
+            });
+        }
     }
 
     TokenStream::from(quote! {

@@ -1,8 +1,25 @@
 use comet_app::App;
-use comet_colors::Color;
+use comet_colors::{Color, LinearRgba};
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+
+pub trait ErasedRenderer: 'static {
+    fn init_assets(&mut self, app: &App);
+    fn drain_commands(&mut self);
+    fn window(&self) -> &Window;
+    fn size(&self) -> PhysicalSize<u32>;
+    fn resize(&mut self, new_size: PhysicalSize<u32>);
+    fn scale_factor(&self) -> f64;
+    fn set_scale_factor(&mut self, scale_factor: f64);
+    fn update(&mut self) -> f32;
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError>;
+}
+
+pub type RendererFactory = Box<
+    dyn FnOnce(Arc<Window>, Option<LinearRgba>) -> (Box<dyn ErasedRenderer>, Box<dyn FnOnce(&mut App) + Send>)
+        + Send,
+>;
 
 pub trait RendererHandle {
     type Command: Send + 'static;

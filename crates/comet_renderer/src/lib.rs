@@ -9,4 +9,4 @@ pub mod render_resources;
 pub mod renderer2d;
 
 pub use gpu_texture::*;
-pub use renderer2d::{Renderer2D, RenderHandle2D, Renderer2DModule};
+pub use renderer2d::{Renderer2D, RenderHandle2D, RenderHandle2DExt, Renderer2DModule};

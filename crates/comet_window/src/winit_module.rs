@@ -1,6 +1,8 @@
+use crate::renderer::RendererFactory;
 use comet_app::{App, Module};
 use comet_colors::{Color, LinearRgba};
 use comet_log::*;
+use comet_macros::module;
 use winit::dpi::LogicalSize;
 use winit::event::Event;
 use winit::window::Icon;
@@ -11,6 +13,7 @@ pub struct WinitModule {
     pub(crate) size: Option<LogicalSize<u32>>,
     pub(crate) clear_color: Option<LinearRgba>,
     pub(crate) event_hooks: Vec<Box<dyn Fn(&Event<()>) + Send + Sync>>,
+    pub(crate) renderer_factory: Option<RendererFactory>,
 }
 
 impl WinitModule {
@@ -21,9 +24,13 @@ impl WinitModule {
             size: None,
             clear_color: None,
             event_hooks: Vec::new(),
+            renderer_factory: None,
         }
     }
+}
 
+#[module]
+impl WinitModule {
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
@@ -48,6 +55,12 @@ impl WinitModule {
         self.event_hooks.push(Box::new(hook));
     }
 
+    pub fn set_renderer_factory(&mut self, factory: RendererFactory) {
+        self.renderer_factory = Some(factory);
+    }
+}
+
+impl WinitModule {
     fn load_icon(path: &std::path::Path) -> Option<Icon> {
         let image = match image::open(path) {
             Ok(img) => img,

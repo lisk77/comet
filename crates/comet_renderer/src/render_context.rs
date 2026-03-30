@@ -4,11 +4,11 @@ use comet_assets::Vertex;
 use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
-pub struct RenderContext<'a> {
+pub struct RenderContext {
     window: Arc<Window>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    surface: wgpu::Surface<'a>,
+    surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
     scale_factor: f64,
@@ -18,7 +18,7 @@ pub struct RenderContext<'a> {
     resources: RenderResources,
 }
 
-impl<'a> RenderContext<'a> {
+impl RenderContext {
     pub fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Self {
         let size = window.inner_size();
         let scale_factor = window.scale_factor();
@@ -102,7 +102,7 @@ impl<'a> RenderContext<'a> {
         &self.queue
     }
 
-    pub fn surface(&self) -> &wgpu::Surface<'a> {
+    pub fn surface(&self) -> &wgpu::Surface<'static> {
         &self.surface
     }
 
