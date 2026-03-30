@@ -4,7 +4,7 @@ use comet::prelude::*;
 #[derive(Component)]
 struct Player;
 
-fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
+fn setup(app: &mut App) {
     app.register_component::<Player>();
 
     register_prefab!(
@@ -26,10 +26,8 @@ fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     app.spawn_prefab("player");
 }
 
-fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {
+fn update(app: &mut App, dt: f32) {
     handle_input(app, dt);
-
-    renderer.render_scene_2d(app.scene_mut());
 }
 
 fn handle_input(app: &mut App, dt: f32) {
@@ -49,5 +47,5 @@ fn handle_input(app: &mut App, dt: f32) {
 fn main() {
     App::with_preset(App2D)
         .with_title("Prefabs Example")
-        .run::<Renderer2D>(setup, update);
+        .run(setup, update);
 }

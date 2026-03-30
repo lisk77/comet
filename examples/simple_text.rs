@@ -1,6 +1,6 @@
 use comet::prelude::*;
 
-fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
+fn setup(app: &mut App) {
     app.spawn((Transform2D::new(), Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)));
 
     app.spawn((
@@ -15,14 +15,11 @@ fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
     ));
 }
 
-fn update(app: &mut App, renderer: &mut RenderHandle2D, _dt: f32) {
-    let size = renderer.size();
-
+fn update(app: &mut App, _dt: f32) {
+    let size = app.size();
     if size.width > 0 && size.height > 0 {
         text_update(app, v2::new(size.width as f32, size.height as f32));
     }
-
-    renderer.render_scene_2d(app.scene_mut());
 }
 
 fn text_update(app: &mut App, size: v2) {
@@ -35,5 +32,5 @@ fn text_update(app: &mut App, size: v2) {
 fn main() {
     App::with_preset(App2D)
         .with_title("Simple Text")
-        .run::<Renderer2D>(setup, update);
+        .run(setup, update);
 }

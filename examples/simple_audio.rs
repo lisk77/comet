@@ -11,5 +11,5 @@ fn update(_app: &mut App, _dt: f32) {}
 fn main() {
     App::with_preset(Headless)
         .with_module(AudioModule::new())
-        .run_headless(setup, update);
+        .run(setup, update);
 }
