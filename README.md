@@ -44,18 +44,18 @@ use comet::prelude::*;
 struct Score(u8);
 
 // This function will be called once before the event loop starts
-fn setup(app: &mut App, renderer: &mut RenderHandle2D) {
+fn setup(app: &mut App) {
   app.add_context(Score(0)); // Registers a shared context everywhere in the app.
 }
 // This function will be called every tick
-fn update(app: &mut App, renderer: &mut RenderHandle2D, dt: f32) {}
+fn update(app: &mut App, dt: f32) {}
 
 fn main() {
     App::with_preset(App2D) // Creates a new `App` and pre-registers specific components and modules
         .with_title("Comet App") // Sets the window title
         .with_icon("res://textures/comet_icon.png") // Sets the window icon
         .with_size(1920, 1080) // Sets the window size
-        .run::<Renderer2D>(setup, update) // Starts app with the given
+        .run(setup, update) // Starts app with the given
 }
 ```
 
