@@ -80,7 +80,7 @@ impl AppPresets for App {
 /// Everything you normally need to get started with Comet.
 pub mod prelude {
     pub use comet_app::{App, Module};
-    pub use comet_window::{WinitAppExt, WinitModule, WinitModuleExt, Renderer, RendererHandle};
+    pub use comet_window::{WinitModule, WinitModuleExt, Renderer, RendererHandle};
     pub use comet_assets::*;
     pub use comet_colors::{
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,

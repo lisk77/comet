@@ -1,4 +1,5 @@
 use crate::module::Module;
+use crate::runner::Runner;
 use comet_log::fatal;
 use std::any::{type_name, Any, TypeId};
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ pub struct App {
     pending_tick_remove: Vec<fn(&mut App, f32)>,
     pre_tick_hooks: Vec<fn(&mut App)>,
     post_tick_hooks: Vec<fn(&mut App)>,
+    runner: Option<Box<dyn Runner>>,
 }
 
 impl App {
@@ -31,6 +33,19 @@ impl App {
             pending_tick_remove: Vec::new(),
             pre_tick_hooks: Vec::new(),
             post_tick_hooks: Vec::new(),
+            runner: None,
+        }
+    }
+
+    pub fn set_runner(&mut self, runner: impl Runner) {
+        self.runner = Some(Box::new(runner));
+    }
+
+    pub fn run(mut self, setup: fn(&mut App), update: fn(&mut App, f32)) {
+        if let Some(runner) = self.runner.take() {
+            runner.run(self, setup, update);
+        } else {
+            Box::new(crate::runner::HeadlessRunner).run(self, setup, update);
         }
     }
 
