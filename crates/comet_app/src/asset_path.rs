@@ -27,13 +27,18 @@ pub fn asset_root() -> PathBuf {
     cwd.join("res")
 }
 
-pub fn file_extension<'a>(resolved: &'a std::path::Path, original_path: &str) -> anyhow::Result<&'a str> {
+pub fn file_extension<'a>(resolved: &'a Path, original_path: &str) -> anyhow::Result<&'a str> {
     resolved
         .extension()
         .and_then(|e| e.to_str())
         .ok_or_else(|| anyhow::anyhow!("Path '{}' has no file extension", original_path))
 }
 
+/// Resolves a path, expanding the `res://` scheme to the engine's resource root.
+///
+/// - `res://textures/icon.png` → `<asset_root>/textures/icon.png`
+/// - Absolute paths are returned as-is.
+/// - Relative paths are returned as-is.
 pub fn resolve_asset_path(path: impl AsRef<str>) -> PathBuf {
     let path = path.as_ref();
 

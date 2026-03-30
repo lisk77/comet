@@ -1,14 +1,16 @@
 [package]
-name = "comet_assets"
+name = "comet_window"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 comet_app = { workspace = true }
 comet_macros = { workspace = true }
+comet_colors = { workspace = true }
 comet_log = { workspace = true }
-notify = "6"
+winit = { workspace = true }
+winit_input_helper = { workspace = true }
+wgpu = { workspace = true }
+flume = { workspace = true }
 anyhow = { workspace = true }
-ab_glyph = "0.2.29"
-guillotiere = "0.6"
 image = { workspace = true }

@@ -31,8 +31,6 @@ pub struct Text2D {
 
 pub enum Renderer2DCommand {
     Clear,
-    InitAtlas,
-    InitAtlasFromPaths(Vec<String>),
     ResolveAtlasRef(&'static str),
     EnsureHandleInAtlas(comet_assets::Asset<comet_assets::Image>),
     Size,

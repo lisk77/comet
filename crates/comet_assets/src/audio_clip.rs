@@ -1,4 +1,4 @@
-use crate::asset_path::resolve_asset_path;
+use comet_app::resolve_asset_path;
 use comet_log::error;
 
 pub struct AudioClip {

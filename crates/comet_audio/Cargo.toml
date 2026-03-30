@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 kira = "0.10.8"
 comet_assets = { workspace = true }
+comet_app = { workspace = true }
+comet_macros = { workspace = true }

@@ -8,18 +8,20 @@ default = []
 comet_debug = []
 
 [dependencies]
-comet_ecs = { path = "../comet_ecs" }
-comet_math = { path = "../comet_math" }
-comet_assets = { path = "../comet_assets" }
-comet_colors = { path = "../comet_colors" }
-comet_log = { path = "../comet_log" }
-comet_structs = { path = "../comet_structs" }
-bytemuck = { version = "1.16", features = [ "derive" ] }
+comet_app = { workspace = true }
+comet_macros = { workspace = true }
+comet_window = { workspace = true }
+comet_ecs = { workspace = true }
+comet_math = { workspace = true }
+comet_assets = { workspace = true }
+comet_colors = { workspace = true }
+comet_log = { workspace = true }
+comet_structs = { workspace = true }
+bytemuck = { workspace = true }
 cgmath = "0.18"
-wgpu = { version = "22.0", features = ["glsl", "wgsl", "naga-ir"]}
-winit = { version = "0.29", features = ["rwh_05"] }
-chrono = "0.4.40"
+wgpu = { workspace = true, features = ["glsl", "wgsl", "naga-ir"] }
+winit = { workspace = true }
 pollster = "0.3"
-image = "0.24"
-flume = "0.12.0"
-anyhow = "1.0"
+image = { workspace = true }
+flume = { workspace = true }
+anyhow = { workspace = true }

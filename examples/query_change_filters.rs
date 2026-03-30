@@ -3,13 +3,13 @@ use comet::prelude::*;
 #[derive(Component)]
 struct Count(u8);
 
-fn setup(app: &mut App, _renderer: &mut RenderHandle2D) {
+fn setup(app: &mut App) {
     app.register_component::<Count>();
 
     app.spawn(Count::new());
 }
 
-fn update(app: &mut App, _renderer: &mut RenderHandle2D, _dt: f32) {
+fn update(app: &mut App, _dt: f32) {
     // Note: the setup tick and first update tick are handled as the same tick
     if app.query::<&Count, Added<Count>>().iter().count() != 0 {
         info!("Count was added this tick");
@@ -42,7 +42,7 @@ fn counter(app: &mut App) {
 }
 
 fn main() {
-    App::new()
+    App::with_preset(Headless)
         .with_title("Query Change Filters")
-        .run::<Renderer2D>(setup, update);
+        .run(setup, update);
 }

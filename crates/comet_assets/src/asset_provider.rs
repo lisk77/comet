@@ -8,7 +8,7 @@ use crate::{AssetManager, Asset};
 use crate::asset_manager::Loadable;
 use crate::image::Image;
 use crate::texture_atlas::TextureAtlas;
-use crate::asset_path::file_extension;
+use comet_app::file_extension;
 use crate::asset_store::LoadState;
 
 #[derive(Clone)]
@@ -58,7 +58,7 @@ impl AssetProvider {
             Err(e) => { comet_log::warn!("Hot reload unavailable: {}", e); return None; }
         };
 
-        let asset_root = crate::asset_path::asset_root();
+        let asset_root = comet_app::asset_root();
         if let Err(e) = watcher.watch(&asset_root, RecursiveMode::Recursive) {
             comet_log::warn!("Hot reload: failed to watch '{}': {}", asset_root.display(), e);
             return None;
@@ -170,7 +170,7 @@ impl AssetProvider {
 
     /// Loads an asset from `path` in the background. Returns a typed handle immediately.
     pub fn load<T: Loadable>(&self, path: &str) -> Asset<T> {
-        let resolved = crate::asset_path::resolve_asset_path(path);
+        let resolved = comet_app::resolve_asset_path(path);
 
         let ext = match file_extension(&resolved, path) {
             Ok(e) => e,
@@ -237,7 +237,7 @@ impl AssetProvider {
     /// Registers a handle (created via `add`) for hot reload watching.
     /// Call this after `add` when you have a known file path for the asset.
     pub fn track_for_reload<T: Loadable>(&self, handle: Asset<T>, path: &str) {
-        let resolved = crate::asset_path::resolve_asset_path(path);
+        let resolved = comet_app::resolve_asset_path(path);
         let ext = match file_extension(&resolved, path) {
             Ok(e) => e,
             Err(e) => { comet_log::error!("{}", e); return; }
@@ -262,7 +262,7 @@ impl AssetProvider {
         reload_map: Arc<RwLock<HashMap<PathBuf, ReloadEntry>>>,
         path: &str,
     ) {
-        let resolved = crate::asset_path::resolve_asset_path(path);
+        let resolved = comet_app::resolve_asset_path(path);
 
         {
             let Ok(map) = reload_map.read() else { return; };

@@ -1,4 +1,4 @@
-use comet_assets::Vertex;
+use crate::Vertex;
 use wgpu::util::DeviceExt;
 use wgpu::{BufferUsages, Device};
 

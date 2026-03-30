@@ -20,9 +20,10 @@ These things should be provided for an official 1.0 version of Comet:
 - [ ] particle system
 - [x] ECS
 - [x] sound system
-- [ ] simple physics engine
+- [ ] simple physics module
 - [ ] multiple scenes (aka serialization and deserialization)
 - [ ] extensive documentation
+- [x] modularization
 
 Future endeavors might include:
 

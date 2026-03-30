@@ -11,27 +11,14 @@
 //!// main.rs example
 //!use comet::prelude::*;
 //!
-//!struct GameState {}
-//!
-//!impl GameState {
-//!    pub fn new() -> Self {
-//!      Self {}
-//!    }
-//!}
-//!
-//!// This function will be called once before the event loop starts
-//!fn setup(app: &mut App, renderer: &mut Renderer2D) {}
-//!// This function will be called every tick
-//!fn update(app: &mut App, renderer: &mut Renderer2D, dt: f32) {}
+//!fn setup(app: &mut App) {}
+//!fn update(app: &mut App, dt: f32) {}
 //!
 //!fn main() {
-//!    App::new() // Generate a basic 2D app
-//!        .with_preset(App2D) // Pre-registers the `Transform2D` component in the scene
-//!        .with_title("Comet App") // Sets the window title
-//!        .with_icon(r"res/textures/comet_icon.png") // Sets the window icon
-//!        .with_size(1920, 1080) // Sets the window size
-//!        .with_game_state(GameState::new()) // Adds a custom game state struct
-//!        .run::<Renderer2D>(setup, update) // Starts app with the given renderer and functions
+//!    App::with_preset(App2D)
+//!        .with_title("Comet App")
+//!        .with_size(1920, 1080)
+//!        .run(setup, update)
 //!}
 //!```
 //! # Subcrates
@@ -40,16 +27,17 @@
 //!
 //! | Subcrate | Description |
 //! |----------|-------------|
-//! | `comet_app` | Provides the core functionality for creating and managing applications. |
+//! | `comet_app` | Provides the core application and module system. |
+//! | `comet_window` | Winit window creation, event loop, and `Renderer`/`RendererHandle` traits. |
 //! | `comet_colors` | Offers a variety of color representations and utilities. |
 //! | `comet_ecs` | Implements an Entity-Component-System (ECS) architecture for game development. |
-//! | `comet_input` | Handles input events and provides utilities for keyboard and mouse input (as well as gamepad input in the future). |
+//! | `comet_input` | Handles input events via `WinitInputModule`. |
 //! | `comet_log` | Provides logging functionality for debugging and error reporting. |
-//! | `comet_math` | Includes mathematical utilities and data structures like vectors, matrices, and quaternions. |
-//! | `comet_renderer` | (right now) implements a simple 2D renderer for drawing graphics and text. |
+//! | `comet_math` | Includes mathematical utilities and data structures. |
+//! | `comet_renderer` | Implements a simple 2D renderer for drawing graphics and text. |
 //! | `comet_assets` | Manages resources such as textures, shaders and fonts. |
-//!
 pub use comet_app as app;
+pub use comet_window as window;
 pub use comet_colors as colors;
 pub use comet_ecs as ecs;
 pub use comet_input as input;
@@ -58,21 +46,76 @@ pub use comet_math as math;
 pub use comet_renderer as renderer;
 pub use comet_assets as assets;
 
+use comet_app::App;
+use comet_assets::AssetModule;
+use comet_audio::AudioModule;
+use comet_ecs::EcsModule;
+use comet_input::WinitInputModule;
+use comet_renderer::Renderer2DModule;
+
+pub trait AppPreset {
+    fn apply(self, app: App) -> App;
+}
+
+pub trait AppPresets {
+    fn with_preset(preset: impl AppPreset) -> Self;
+}
+
+impl AppPresets for App {
+    fn with_preset(preset: impl AppPreset) -> Self {
+        preset.apply(App::new())
+    }
+}
+
+pub struct Headless;
+pub struct App2D;
+pub struct App3D;
+
+impl AppPreset for Headless {
+    fn apply(self, app: App) -> App {
+        app.with_modules((AssetModule::new(), EcsModule::new()))
+    }
+}
+
+impl AppPreset for App2D {
+    fn apply(self, app: App) -> App {
+        app.with_modules((
+            AssetModule::new(),
+            WinitInputModule::new(),
+            EcsModule::preset_2d(),
+            Renderer2DModule::new(),
+            AudioModule::new(),
+        ))
+    }
+}
+
+impl AppPreset for App3D {
+    fn apply(self, app: App) -> App {
+        app.with_modules((
+            AssetModule::new(),
+            WinitInputModule::new(),
+            EcsModule::preset_3d(),
+            AudioModule::new(),
+        ))
+    }
+}
+
 /// Everything you normally need to get started with Comet.
 pub mod prelude {
-    pub use comet_app::{App, ApplicationType::App2D};
+    pub use comet_app::{App, Module};
+    pub use comet_window::{WinitModule, WinitModuleExt, Renderer, RendererHandle};
     pub use comet_assets::*;
     pub use comet_colors::{
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
-    pub use comet_ecs::*;
-    pub use comet_input::keyboard::Key;
+    pub use comet_ecs::{EcsModule, EcsModuleExt, *};
+    pub use comet_input::{keyboard::Key, WinitInputModule, WinitInputModuleExt};
     pub use comet_log::*;
     pub use comet_math::*;
     pub use comet_renderer::{
-        renderer::Renderer,
-        renderer2d::{RenderHandle2D, Renderer2D},
+        renderer2d::{RenderHandle2D, RenderHandle2DExt, Renderer2D},
+        Renderer2DModule,
     };
-    pub use comet_audio::*;
-    pub use winit_input_helper::WinitInputHelper as InputManager;
+    pub use comet_audio::{AudioModule, AudioModuleExt, KiraAudio};
+    pub use crate::{AppPreset, AppPresets, App2D, App3D, Headless};
 }
