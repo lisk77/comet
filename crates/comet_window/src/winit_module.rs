@@ -34,22 +34,22 @@ impl WinitModule {
 
 #[module]
 impl WinitModule {
-    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+    pub fn with_title(&mut self, title: impl Into<String>) -> &mut Self {
         self.title = title.into();
         self
     }
 
-    pub fn with_icon(mut self, path: impl AsRef<str>) -> Self {
+    pub fn with_icon(&mut self, path: impl AsRef<str>) -> &mut Self {
         self.icon = Self::load_icon(&comet_app::resolve_asset_path(path));
         self
     }
 
-    pub fn with_size(mut self, width: u32, height: u32) -> Self {
+    pub fn with_size(&mut self, width: u32, height: u32) -> &mut Self {
         self.size = Some(LogicalSize::new(width, height));
         self
     }
 
-    pub fn with_clear_color(mut self, color: impl Color) -> Self {
+    pub fn with_clear_color(&mut self, color: impl Color) -> &mut Self {
         self.clear_color = Some(color.to_linear());
         self
     }

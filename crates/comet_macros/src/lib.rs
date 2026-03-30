@@ -64,9 +64,19 @@ pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
             _ => continue,
         };
 
-        // Builder method: takes self by value and returns Self
-        let is_builder = receiver.reference.is_none()
-            && matches!(&sig.output, ReturnType::Type(_, t) if matches!(t.as_ref(), Type::Path(p) if p.path.is_ident("Self")));
+        // Builder method: takes &mut self and returns &mut Self
+        let returns_mut_self = match &sig.output {
+            ReturnType::Type(_, t) => match t.as_ref() {
+                Type::Reference(r) if r.mutability.is_some() => {
+                    matches!(r.elem.as_ref(), Type::Path(p) if p.path.is_ident("Self"))
+                }
+                _ => false,
+            },
+            _ => false,
+        };
+        let is_builder = receiver.reference.is_some()
+            && receiver.mutability.is_some()
+            && returns_mut_self;
 
         let param_names: Vec<_> = sig
             .inputs
@@ -93,9 +103,7 @@ pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
             });
             impl_methods.push(quote! {
                 fn #method_name #generics (mut self, #(#params),*) -> Self #where_clause {
-                    let m = self.take_module::<#ty>().unwrap();
-                    let m = m.#method_name(#(#param_names),*);
-                    self.reinsert_module(m);
+                    self.get_module_mut::<#ty>().#method_name(#(#param_names),*);
                     self
                 }
             });

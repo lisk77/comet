@@ -53,27 +53,50 @@ use comet_ecs::EcsModule;
 use comet_input::WinitInputModule;
 use comet_renderer::Renderer2DModule;
 
-pub enum Preset {
-    Headless,
-    App2D,
-    App3D,
+pub trait AppPreset {
+    fn apply(self, app: App) -> App;
 }
 
 pub trait AppPresets {
-    fn with_preset(preset: Preset) -> Self;
+    fn with_preset(preset: impl AppPreset) -> Self;
 }
 
 impl AppPresets for App {
-    fn with_preset(preset: Preset) -> Self {
-        let app = App::new();
-        match preset {
-            Preset::Headless => app
-                .with_modules((AssetModule::new(), EcsModule::new())),
-            Preset::App2D => app
-                .with_modules((AssetModule::new(), WinitInputModule::new(), EcsModule::preset_2d(), Renderer2DModule::new(), AudioModule::new())),
-            Preset::App3D => app
-                .with_modules((AssetModule::new(), WinitInputModule::new(), EcsModule::preset_3d(), AudioModule::new())),
-        }
+    fn with_preset(preset: impl AppPreset) -> Self {
+        preset.apply(App::new())
+    }
+}
+
+pub struct Headless;
+pub struct App2D;
+pub struct App3D;
+
+impl AppPreset for Headless {
+    fn apply(self, app: App) -> App {
+        app.with_modules((AssetModule::new(), EcsModule::new()))
+    }
+}
+
+impl AppPreset for App2D {
+    fn apply(self, app: App) -> App {
+        app.with_modules((
+            AssetModule::new(),
+            WinitInputModule::new(),
+            EcsModule::preset_2d(),
+            Renderer2DModule::new(),
+            AudioModule::new(),
+        ))
+    }
+}
+
+impl AppPreset for App3D {
+    fn apply(self, app: App) -> App {
+        app.with_modules((
+            AssetModule::new(),
+            WinitInputModule::new(),
+            EcsModule::preset_3d(),
+            AudioModule::new(),
+        ))
     }
 }
 
@@ -94,5 +117,5 @@ pub mod prelude {
         Renderer2DModule,
     };
     pub use comet_audio::{AudioModule, AudioModuleExt, KiraAudio};
-    pub use crate::{AppPresets, Preset::*};
+    pub use crate::{AppPreset, AppPresets, App2D, App3D, Headless};
 }
