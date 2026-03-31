@@ -13,25 +13,60 @@ pub use gilrs::Button as GamepadButton;
 pub use gilrs::Axis as GamepadAxis;
 pub use gilrs::GamepadId;
 
+const DEFAULT_DEADZONE: f32 = 0.2;
+
+pub enum AxisDirection {
+    Positive,
+    Negative,
+}
+
+pub struct AxisBinding {
+    pub axis: GamepadAxis,
+    pub direction: AxisDirection,
+}
+
+impl AxisBinding {
+    pub fn new(axis: GamepadAxis, direction: AxisDirection) -> Self {
+        Self { axis, direction }
+    }
+}
+
 pub trait Binding: Send + 'static {
-    fn pressed(&self, state: &InputState) -> bool;
-    fn held(&self, state: &InputState) -> bool;
+    fn strength(&self, state: &InputState) -> f32;
+
+    fn pressed(&self, state: &InputState) -> bool {
+        self.strength(state) > DEFAULT_DEADZONE
+    }
+
+    fn held(&self, state: &InputState) -> bool {
+        self.strength(state) > DEFAULT_DEADZONE
+    }
+
     fn released(&self, state: &InputState) -> bool;
 }
 
 impl Binding for Key {
+    fn strength(&self, state: &InputState) -> f32 {
+        if state.keys_held.contains(self) { 1.0 } else { 0.0 }
+    }
     fn pressed(&self, state: &InputState) -> bool { state.keys_pressed.contains(self) }
     fn held(&self, state: &InputState) -> bool { state.keys_held.contains(self) }
     fn released(&self, state: &InputState) -> bool { state.keys_released.contains(self) }
 }
 
 impl Binding for Button {
+    fn strength(&self, state: &InputState) -> f32 {
+        if state.mouse_held.contains(self) { 1.0 } else { 0.0 }
+    }
     fn pressed(&self, state: &InputState) -> bool { state.mouse_pressed.contains(self) }
     fn held(&self, state: &InputState) -> bool { state.mouse_held.contains(self) }
     fn released(&self, state: &InputState) -> bool { state.mouse_released.contains(self) }
 }
 
 impl Binding for GamepadButton {
+    fn strength(&self, state: &InputState) -> f32 {
+        if state.gamepads.values().any(|gp| gp.buttons_held.contains(self)) { 1.0 } else { 0.0 }
+    }
     fn pressed(&self, state: &InputState) -> bool {
         state.gamepads.values().any(|gp| gp.buttons_pressed.contains(self))
     }
@@ -40,6 +75,23 @@ impl Binding for GamepadButton {
     }
     fn released(&self, state: &InputState) -> bool {
         state.gamepads.values().any(|gp| gp.buttons_released.contains(self))
+    }
+}
+
+impl Binding for AxisBinding {
+    fn strength(&self, state: &InputState) -> f32 {
+        let raw = state.gamepads.values()
+            .filter_map(|gp| gp.axes.get(&self.axis).copied())
+            .fold(0.0f32, |a, b| if b.abs() > a.abs() { b } else { a });
+        let value = match self.direction {
+            AxisDirection::Positive => raw.max(0.0),
+            AxisDirection::Negative => (-raw).max(0.0),
+        };
+        if value < DEFAULT_DEADZONE { 0.0 } else { value }
+    }
+
+    fn released(&self, state: &InputState) -> bool {
+        self.strength(state) <= DEFAULT_DEADZONE
     }
 }
 
@@ -346,6 +398,15 @@ impl InputModule {
 
     pub fn unbind(&mut self, action: impl Into<String>) {
         self.input_map.unbind(&action.into());
+    }
+
+    pub fn action_strength(&self, action: &str) -> f32 {
+        self.input_map.bindings.get(action)
+            .map_or(0.0, |bs| bs.iter().map(|b| b.strength(&self.state)).fold(0.0f32, f32::max))
+    }
+
+    pub fn get_axis(&self, negative: &str, positive: &str) -> f32 {
+        self.action_strength(positive) - self.action_strength(negative)
     }
 
     pub fn action_pressed(&self, action: &str) -> bool {
