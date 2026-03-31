@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use comet_app::{App, Module};
 use comet_macros::module;
 use comet_window::WinitModule;
 use gilrs::{Axis, Button as GilrsButton, EventType, Gilrs};
 use winit::event::{DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+use winit::keyboard::{KeyCode, PhysicalKey};
 
 pub use crate::keyboard::Key;
 pub use crate::mouse::Button;
@@ -49,6 +50,7 @@ impl Binding for Key {
     fn strength(&self, state: &InputState) -> f32 {
         if state.keys_held.contains(self) { 1.0 } else { 0.0 }
     }
+
     fn pressed(&self, state: &InputState) -> bool { state.keys_pressed.contains(self) }
     fn held(&self, state: &InputState) -> bool { state.keys_held.contains(self) }
     fn released(&self, state: &InputState) -> bool { state.keys_released.contains(self) }
@@ -58,6 +60,7 @@ impl Binding for Button {
     fn strength(&self, state: &InputState) -> f32 {
         if state.mouse_held.contains(self) { 1.0 } else { 0.0 }
     }
+    
     fn pressed(&self, state: &InputState) -> bool { state.mouse_pressed.contains(self) }
     fn held(&self, state: &InputState) -> bool { state.mouse_held.contains(self) }
     fn released(&self, state: &InputState) -> bool { state.mouse_released.contains(self) }
@@ -67,12 +70,15 @@ impl Binding for GamepadButton {
     fn strength(&self, state: &InputState) -> f32 {
         if state.gamepads.values().any(|gp| gp.buttons_held.contains(self)) { 1.0 } else { 0.0 }
     }
+
     fn pressed(&self, state: &InputState) -> bool {
         state.gamepads.values().any(|gp| gp.buttons_pressed.contains(self))
     }
+
     fn held(&self, state: &InputState) -> bool {
         state.gamepads.values().any(|gp| gp.buttons_held.contains(self))
     }
+
     fn released(&self, state: &InputState) -> bool {
         state.gamepads.values().any(|gp| gp.buttons_released.contains(self))
     }
@@ -95,6 +101,33 @@ impl Binding for AxisBinding {
     }
 }
 
+macro_rules! impl_binding_tuple {
+    ($($T:ident),+) => {
+        impl<$($T: Binding),+> Binding for ($($T,)+) {
+            fn strength(&self, state: &InputState) -> f32 {
+                #[allow(non_snake_case)]
+                let ($($T,)+) = self;
+                if [$($T.strength(state)),+].iter().all(|&s| s > DEFAULT_DEADZONE) { 1.0 } else { 0.0 }
+            }
+
+            fn pressed(&self, state: &InputState) -> bool {
+                #[allow(non_snake_case)]
+                let ($($T,)+) = self;
+                [$($T.strength(state)),+].iter().all(|&s| s > DEFAULT_DEADZONE)
+                    && [$($T.pressed(state)),+].iter().any(|&p| p)
+            }
+
+            fn released(&self, state: &InputState) -> bool {
+                !self.held(state)
+            }
+        }
+    };
+}
+
+impl_binding_tuple!(A, B);
+impl_binding_tuple!(A, B, C);
+impl_binding_tuple!(A, B, C, D);
+
 pub struct InputMap {
     bindings: HashMap<String, Vec<Box<dyn Binding>>>,
 }
@@ -113,17 +146,9 @@ impl InputMap {
     }
 }
 
-pub enum Modifier {
-    Shift,
-    Ctrl,
-    Alt,
-    Super,
-}
-
 enum RawInputEvent {
     KeyPressed(KeyCode),
     KeyReleased(KeyCode),
-    ModifiersChanged(ModifiersState),
     MousePressed(MouseButton),
     MouseReleased(MouseButton),
     MouseMoved(f32, f32),
@@ -160,7 +185,6 @@ pub struct InputState {
     pub keys_pressed: HashSet<KeyCode>,
     pub keys_held: HashSet<KeyCode>,
     pub keys_released: HashSet<KeyCode>,
-    pub modifiers: ModifiersState,
     pub mouse_pressed: HashSet<MouseButton>,
     pub mouse_held: HashSet<MouseButton>,
     pub mouse_released: HashSet<MouseButton>,
@@ -180,7 +204,6 @@ impl InputState {
             keys_pressed: HashSet::new(),
             keys_held: HashSet::new(),
             keys_released: HashSet::new(),
-            modifiers: ModifiersState::empty(),
             mouse_pressed: HashSet::new(),
             mouse_held: HashSet::new(),
             mouse_released: HashSet::new(),
@@ -197,7 +220,9 @@ impl InputState {
 }
 
 pub struct InputModule {
-    queue: Arc<Mutex<Vec<RawInputEvent>>>,
+    queue: Arc<Mutex<Vec<(u64, RawInputEvent)>>>,
+    frame_gen: Arc<AtomicU64>,
+    last_gen: u64,
     state: InputState,
     gilrs: Gilrs,
     input_map: InputMap,
@@ -207,6 +232,8 @@ impl InputModule {
     pub fn new() -> Self {
         Self {
             queue: Arc::new(Mutex::new(Vec::new())),
+            frame_gen: Arc::new(AtomicU64::new(0)),
+            last_gen: u64::MAX,
             state: InputState::new(),
             gilrs: Gilrs::new().unwrap(),
             input_map: InputMap::new(),
@@ -214,22 +241,37 @@ impl InputModule {
     }
 
     fn advance_tick(&mut self) {
-        self.state.keys_pressed.clear();
-        self.state.keys_released.clear();
-        self.state.mouse_pressed.clear();
-        self.state.mouse_released.clear();
-        self.state.mouse_delta = (0.0, 0.0);
-        self.state.mouse_moved = false;
-        self.state.scroll_delta = (0.0, 0.0);
-        self.state.cursor_entered = false;
-        self.state.cursor_exited = false;
+        let current_gen = self.frame_gen.load(Ordering::Relaxed);
+        let new_frame = current_gen != self.last_gen;
 
-        for gp in self.state.gamepads.values_mut() {
-            gp.clear_transient();
+        if new_frame {
+            self.last_gen = current_gen;
+            self.state.keys_pressed.clear();
+            self.state.keys_released.clear();
+            self.state.mouse_pressed.clear();
+            self.state.mouse_released.clear();
+            self.state.mouse_delta = (0.0, 0.0);
+            self.state.mouse_moved = false;
+            self.state.scroll_delta = (0.0, 0.0);
+            self.state.cursor_entered = false;
+            self.state.cursor_exited = false;
+            for gp in self.state.gamepads.values_mut() {
+                gp.clear_transient();
+            }
         }
 
-        let events: Vec<RawInputEvent> = self.queue.lock().unwrap().drain(..).collect();
-        for event in events {
+        let events: Vec<(u64, RawInputEvent)> = self.queue.lock().unwrap().drain(..).collect();
+        for (gen, event) in events {
+            let is_oneshot = matches!(event,
+                RawInputEvent::KeyPressed(_) | RawInputEvent::KeyReleased(_) |
+                RawInputEvent::MousePressed(_) | RawInputEvent::MouseReleased(_) |
+                RawInputEvent::CursorEntered | RawInputEvent::CursorLeft
+            );
+
+            if is_oneshot && gen != current_gen {
+                continue;
+            }
+
             match event {
                 RawInputEvent::KeyPressed(k) => {
                     if self.state.keys_held.insert(k) {
@@ -240,9 +282,6 @@ impl InputModule {
                     self.state.keys_held.remove(&k);
                     self.state.keys_released.insert(k);
                 }
-                RawInputEvent::ModifiersChanged(s) => {
-                    self.state.modifiers = s;
-                }
                 RawInputEvent::MousePressed(b) => {
                     if self.state.mouse_held.insert(b) {
                         self.state.mouse_pressed.insert(b);
@@ -251,6 +290,14 @@ impl InputModule {
                 RawInputEvent::MouseReleased(b) => {
                     self.state.mouse_held.remove(&b);
                     self.state.mouse_released.insert(b);
+                }
+                RawInputEvent::CursorEntered => {
+                    self.state.cursor_in_window = true;
+                    self.state.cursor_entered = true;
+                }
+                RawInputEvent::CursorLeft => {
+                    self.state.cursor_in_window = false;
+                    self.state.cursor_exited = true;
                 }
                 RawInputEvent::MouseMoved(x, y) => {
                     self.state.mouse_position = (x, y);
@@ -263,14 +310,6 @@ impl InputModule {
                 RawInputEvent::MouseScrolled(x, y) => {
                     self.state.scroll_delta.0 += x;
                     self.state.scroll_delta.1 += y;
-                }
-                RawInputEvent::CursorEntered => {
-                    self.state.cursor_in_window = true;
-                    self.state.cursor_entered = true;
-                }
-                RawInputEvent::CursorLeft => {
-                    self.state.cursor_in_window = false;
-                    self.state.cursor_exited = true;
                 }
             }
         }
@@ -321,15 +360,6 @@ impl InputModule {
 
     pub fn any_key_pressed(&self) -> bool {
         !self.state.keys_pressed.is_empty()
-    }
-
-    pub fn modifier_held(&self, modifier: Modifier) -> bool {
-        match modifier {
-            Modifier::Shift => self.state.modifiers.shift_key(),
-            Modifier::Ctrl => self.state.modifiers.control_key(),
-            Modifier::Alt => self.state.modifiers.alt_key(),
-            Modifier::Super => self.state.modifiers.super_key(),
-        }
     }
 
     pub fn mouse_pressed(&self, button: Button) -> bool {
@@ -437,7 +467,14 @@ impl Module for InputModule {
 
     fn build(&mut self, app: &mut App) {
         let queue = Arc::clone(&self.queue);
+        let frame_gen = Arc::clone(&self.frame_gen);
         app.get_module_mut::<WinitModule>().add_event_hook(move |event| {
+            if matches!(event, Event::AboutToWait) {
+                frame_gen.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+
+            let gen = frame_gen.load(Ordering::Relaxed);
             let raw: Option<RawInputEvent> = match event {
                 Event::WindowEvent { event, .. } => match event {
                     WindowEvent::KeyboardInput { event: key_event, .. } => {
@@ -449,9 +486,6 @@ impl Module for InputModule {
                         } else {
                             None
                         }
-                    }
-                    WindowEvent::ModifiersChanged(modifiers) => {
-                        Some(RawInputEvent::ModifiersChanged(modifiers.state()))
                     }
                     WindowEvent::MouseInput { state, button, .. } => Some(match state {
                         ElementState::Pressed => RawInputEvent::MousePressed(*button),
@@ -478,7 +512,7 @@ impl Module for InputModule {
             };
             if let Some(e) = raw {
                 if let Ok(mut q) = queue.lock() {
-                    q.push(e);
+                    q.push((gen, e));
                 }
             }
         });
