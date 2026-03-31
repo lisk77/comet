@@ -20,10 +20,6 @@ fn update(app: &mut App, _dt: f32) {
         }
     }
 
-    if app.modifier_held(Modifier::Shift) { info!("Modifier held: Shift"); }
-    if app.modifier_held(Modifier::Ctrl)  { info!("Modifier held: Ctrl"); }
-    if app.modifier_held(Modifier::Alt)   { info!("Modifier held: Alt"); }
-
     for button in [Button::Left, Button::Right, Button::Middle] {
         if app.mouse_pressed(button)  { info!("Mouse pressed:  {:?}", button); }
         if app.mouse_released(button) { info!("Mouse released: {:?}", button); }

@@ -13,6 +13,9 @@ fn setup(app: &mut App) {
     app.bind("move_up",   Key::KeyW);
     app.bind("move_down", AxisBinding::new(GamepadAxis::LeftStickY, AxisDirection::Negative));
     app.bind("move_up",   AxisBinding::new(GamepadAxis::LeftStickY, AxisDirection::Positive));
+
+    app.bind("copy", (Key::ControlLeft, Key::KeyC));
+    app.bind("paste", (Key::ControlLeft, Key::KeyV));
 }
 
 fn update(app: &mut App, _dt: f32) {
@@ -25,6 +28,13 @@ fn update(app: &mut App, _dt: f32) {
 
     if x != 0.0 || y != 0.0 {
         info!("Move ({:.2}, {:.2})", x, y);
+    }
+
+    if app.action_pressed("copy") {
+        info!("Copy!");
+    }
+    if app.action_pressed("paste") {
+        info!("Paste!");
     }
 }
 
