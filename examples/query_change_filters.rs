@@ -43,6 +43,5 @@ fn counter(app: &mut App) {
 
 fn main() {
     App::with_preset(Headless)
-        .with_title("Query Change Filters")
         .run(setup, update);
 }

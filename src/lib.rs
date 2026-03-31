@@ -50,7 +50,7 @@ use comet_app::App;
 use comet_assets::AssetModule;
 use comet_audio::AudioModule;
 use comet_ecs::EcsModule;
-use comet_input::WinitInputModule;
+use comet_input::InputModule;
 use comet_renderer::Renderer2DModule;
 
 pub trait AppPreset {
@@ -81,7 +81,7 @@ impl AppPreset for App2D {
     fn apply(self, app: App) -> App {
         app.with_modules((
             AssetModule::new(),
-            WinitInputModule::new(),
+            InputModule::new(),
             EcsModule::preset_2d(),
             Renderer2DModule::new(),
             AudioModule::new(),
@@ -93,7 +93,7 @@ impl AppPreset for App3D {
     fn apply(self, app: App) -> App {
         app.with_modules((
             AssetModule::new(),
-            WinitInputModule::new(),
+            InputModule::new(),
             EcsModule::preset_3d(),
             AudioModule::new(),
         ))
@@ -109,7 +109,7 @@ pub mod prelude {
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
     pub use comet_ecs::{EcsModule, EcsModuleExt, *};
-    pub use comet_input::{keyboard::Key, WinitInputModule, WinitInputModuleExt};
+    pub use comet_input::{keyboard::Key, mouse::Button, input_module::{Binding, AxisBinding, AxisDirection, InputState, GamepadState, GamepadButton, GamepadAxis, GamepadId}, InputModule, InputModuleExt};
     pub use comet_log::*;
     pub use comet_math::*;
     pub use comet_renderer::{
