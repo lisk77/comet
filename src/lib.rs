@@ -109,7 +109,7 @@ pub mod prelude {
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
     pub use comet_ecs::{EcsModule, EcsModuleExt, *};
-    pub use comet_input::{keyboard::Key, mouse::Button, input_module::{Modifier, GamepadButton, GamepadAxis, GamepadId}, InputModule, InputModuleExt};
+    pub use comet_input::{keyboard::Key, mouse::Button, input_module::{Modifier, Binding, InputState, GamepadState, GamepadButton, GamepadAxis, GamepadId}, InputModule, InputModuleExt};
     pub use comet_log::*;
     pub use comet_math::*;
     pub use comet_renderer::{

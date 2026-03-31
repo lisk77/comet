@@ -13,6 +13,54 @@ pub use gilrs::Button as GamepadButton;
 pub use gilrs::Axis as GamepadAxis;
 pub use gilrs::GamepadId;
 
+pub trait Binding: Send + 'static {
+    fn pressed(&self, state: &InputState) -> bool;
+    fn held(&self, state: &InputState) -> bool;
+    fn released(&self, state: &InputState) -> bool;
+}
+
+impl Binding for Key {
+    fn pressed(&self, state: &InputState) -> bool { state.keys_pressed.contains(self) }
+    fn held(&self, state: &InputState) -> bool { state.keys_held.contains(self) }
+    fn released(&self, state: &InputState) -> bool { state.keys_released.contains(self) }
+}
+
+impl Binding for Button {
+    fn pressed(&self, state: &InputState) -> bool { state.mouse_pressed.contains(self) }
+    fn held(&self, state: &InputState) -> bool { state.mouse_held.contains(self) }
+    fn released(&self, state: &InputState) -> bool { state.mouse_released.contains(self) }
+}
+
+impl Binding for GamepadButton {
+    fn pressed(&self, state: &InputState) -> bool {
+        state.gamepads.values().any(|gp| gp.buttons_pressed.contains(self))
+    }
+    fn held(&self, state: &InputState) -> bool {
+        state.gamepads.values().any(|gp| gp.buttons_held.contains(self))
+    }
+    fn released(&self, state: &InputState) -> bool {
+        state.gamepads.values().any(|gp| gp.buttons_released.contains(self))
+    }
+}
+
+pub struct InputMap {
+    bindings: HashMap<String, Vec<Box<dyn Binding>>>,
+}
+
+impl InputMap {
+    fn new() -> Self {
+        Self { bindings: HashMap::new() }
+    }
+
+    fn bind(&mut self, action: impl Into<String>, binding: impl Binding) {
+        self.bindings.entry(action.into()).or_default().push(Box::new(binding));
+    }
+
+    fn unbind(&mut self, action: &str) {
+        self.bindings.remove(action);
+    }
+}
+
 pub enum Modifier {
     Shift,
     Ctrl,
@@ -33,14 +81,14 @@ enum RawInputEvent {
     CursorLeft,
 }
 
-struct GamepadSnapshot {
-    buttons_pressed: HashSet<GilrsButton>,
-    buttons_held: HashSet<GilrsButton>,
-    buttons_released: HashSet<GilrsButton>,
-    axes: HashMap<Axis, f32>,
+pub struct GamepadState {
+    pub buttons_pressed: HashSet<GilrsButton>,
+    pub buttons_held: HashSet<GilrsButton>,
+    pub buttons_released: HashSet<GilrsButton>,
+    pub axes: HashMap<Axis, f32>,
 }
 
-impl GamepadSnapshot {
+impl GamepadState {
     fn new() -> Self {
         Self {
             buttons_pressed: HashSet::new(),
@@ -56,25 +104,25 @@ impl GamepadSnapshot {
     }
 }
 
-struct InputSnapshot {
-    keys_pressed: HashSet<KeyCode>,
-    keys_held: HashSet<KeyCode>,
-    keys_released: HashSet<KeyCode>,
-    modifiers: ModifiersState,
-    mouse_pressed: HashSet<MouseButton>,
-    mouse_held: HashSet<MouseButton>,
-    mouse_released: HashSet<MouseButton>,
-    mouse_position: (f32, f32),
-    mouse_delta: (f32, f32),
-    mouse_moved: bool,
-    scroll_delta: (f32, f32),
-    cursor_entered: bool,
-    cursor_exited: bool,
-    cursor_in_window: bool,
-    gamepads: HashMap<GamepadId, GamepadSnapshot>,
+pub struct InputState {
+    pub keys_pressed: HashSet<KeyCode>,
+    pub keys_held: HashSet<KeyCode>,
+    pub keys_released: HashSet<KeyCode>,
+    pub modifiers: ModifiersState,
+    pub mouse_pressed: HashSet<MouseButton>,
+    pub mouse_held: HashSet<MouseButton>,
+    pub mouse_released: HashSet<MouseButton>,
+    pub mouse_position: (f32, f32),
+    pub mouse_delta: (f32, f32),
+    pub mouse_moved: bool,
+    pub scroll_delta: (f32, f32),
+    pub cursor_entered: bool,
+    pub cursor_exited: bool,
+    pub cursor_in_window: bool,
+    pub gamepads: HashMap<GamepadId, GamepadState>,
 }
 
-impl InputSnapshot {
+impl InputState {
     fn new() -> Self {
         Self {
             keys_pressed: HashSet::new(),
@@ -98,84 +146,85 @@ impl InputSnapshot {
 
 pub struct InputModule {
     queue: Arc<Mutex<Vec<RawInputEvent>>>,
-    snapshot: InputSnapshot,
+    state: InputState,
     gilrs: Gilrs,
+    input_map: InputMap,
 }
 
 impl InputModule {
     pub fn new() -> Self {
         Self {
             queue: Arc::new(Mutex::new(Vec::new())),
-            snapshot: InputSnapshot::new(),
+            state: InputState::new(),
             gilrs: Gilrs::new().unwrap(),
+            input_map: InputMap::new(),
         }
     }
 
     fn advance_tick(&mut self) {
-        self.snapshot.keys_pressed.clear();
-        self.snapshot.keys_released.clear();
-        self.snapshot.mouse_pressed.clear();
-        self.snapshot.mouse_released.clear();
-        self.snapshot.mouse_delta = (0.0, 0.0);
-        self.snapshot.mouse_moved = false;
-        self.snapshot.scroll_delta = (0.0, 0.0);
-        self.snapshot.cursor_entered = false;
-        self.snapshot.cursor_exited = false;
+        self.state.keys_pressed.clear();
+        self.state.keys_released.clear();
+        self.state.mouse_pressed.clear();
+        self.state.mouse_released.clear();
+        self.state.mouse_delta = (0.0, 0.0);
+        self.state.mouse_moved = false;
+        self.state.scroll_delta = (0.0, 0.0);
+        self.state.cursor_entered = false;
+        self.state.cursor_exited = false;
 
-        for gp in self.snapshot.gamepads.values_mut() {
+        for gp in self.state.gamepads.values_mut() {
             gp.clear_transient();
         }
 
-        // drain winit events
         let events: Vec<RawInputEvent> = self.queue.lock().unwrap().drain(..).collect();
         for event in events {
             match event {
                 RawInputEvent::KeyPressed(k) => {
-                    if self.snapshot.keys_held.insert(k) {
-                        self.snapshot.keys_pressed.insert(k);
+                    if self.state.keys_held.insert(k) {
+                        self.state.keys_pressed.insert(k);
                     }
                 }
                 RawInputEvent::KeyReleased(k) => {
-                    self.snapshot.keys_held.remove(&k);
-                    self.snapshot.keys_released.insert(k);
+                    self.state.keys_held.remove(&k);
+                    self.state.keys_released.insert(k);
                 }
-                RawInputEvent::ModifiersChanged(state) => {
-                    self.snapshot.modifiers = state;
+                RawInputEvent::ModifiersChanged(s) => {
+                    self.state.modifiers = s;
                 }
                 RawInputEvent::MousePressed(b) => {
-                    if self.snapshot.mouse_held.insert(b) {
-                        self.snapshot.mouse_pressed.insert(b);
+                    if self.state.mouse_held.insert(b) {
+                        self.state.mouse_pressed.insert(b);
                     }
                 }
                 RawInputEvent::MouseReleased(b) => {
-                    self.snapshot.mouse_held.remove(&b);
-                    self.snapshot.mouse_released.insert(b);
+                    self.state.mouse_held.remove(&b);
+                    self.state.mouse_released.insert(b);
                 }
                 RawInputEvent::MouseMoved(x, y) => {
-                    self.snapshot.mouse_position = (x, y);
-                    self.snapshot.mouse_moved = true;
+                    self.state.mouse_position = (x, y);
+                    self.state.mouse_moved = true;
                 }
                 RawInputEvent::MouseDelta(dx, dy) => {
-                    self.snapshot.mouse_delta.0 += dx;
-                    self.snapshot.mouse_delta.1 += dy;
+                    self.state.mouse_delta.0 += dx;
+                    self.state.mouse_delta.1 += dy;
                 }
                 RawInputEvent::MouseScrolled(x, y) => {
-                    self.snapshot.scroll_delta.0 += x;
-                    self.snapshot.scroll_delta.1 += y;
+                    self.state.scroll_delta.0 += x;
+                    self.state.scroll_delta.1 += y;
                 }
                 RawInputEvent::CursorEntered => {
-                    self.snapshot.cursor_in_window = true;
-                    self.snapshot.cursor_entered = true;
+                    self.state.cursor_in_window = true;
+                    self.state.cursor_entered = true;
                 }
                 RawInputEvent::CursorLeft => {
-                    self.snapshot.cursor_in_window = false;
-                    self.snapshot.cursor_exited = true;
+                    self.state.cursor_in_window = false;
+                    self.state.cursor_exited = true;
                 }
             }
         }
 
         while let Some(gilrs::Event { id, event, .. }) = self.gilrs.next_event() {
-            let gp = self.snapshot.gamepads.entry(id).or_insert_with(GamepadSnapshot::new);
+            let gp = self.state.gamepads.entry(id).or_insert_with(GamepadState::new);
             match event {
                 EventType::ButtonPressed(btn, _) => {
                     if gp.buttons_held.insert(btn) {
@@ -190,7 +239,7 @@ impl InputModule {
                     gp.axes.insert(axis, value);
                 }
                 EventType::Disconnected => {
-                    self.snapshot.gamepads.remove(&id);
+                    self.state.gamepads.remove(&id);
                 }
                 _ => {}
             }
@@ -207,88 +256,111 @@ fn input_pre_tick(app: &mut App) {
 #[module]
 impl InputModule {
     pub fn key_pressed(&self, key: Key) -> bool {
-        self.snapshot.keys_pressed.contains(&key)
+        self.state.keys_pressed.contains(&key)
     }
 
     pub fn key_held(&self, key: Key) -> bool {
-        self.snapshot.keys_held.contains(&key)
+        self.state.keys_held.contains(&key)
     }
 
     pub fn key_released(&self, key: Key) -> bool {
-        self.snapshot.keys_released.contains(&key)
+        self.state.keys_released.contains(&key)
     }
 
     pub fn any_key_pressed(&self) -> bool {
-        !self.snapshot.keys_pressed.is_empty()
+        !self.state.keys_pressed.is_empty()
     }
 
     pub fn modifier_held(&self, modifier: Modifier) -> bool {
         match modifier {
-            Modifier::Shift => self.snapshot.modifiers.shift_key(),
-            Modifier::Ctrl => self.snapshot.modifiers.control_key(),
-            Modifier::Alt => self.snapshot.modifiers.alt_key(),
-            Modifier::Super => self.snapshot.modifiers.super_key(),
+            Modifier::Shift => self.state.modifiers.shift_key(),
+            Modifier::Ctrl => self.state.modifiers.control_key(),
+            Modifier::Alt => self.state.modifiers.alt_key(),
+            Modifier::Super => self.state.modifiers.super_key(),
         }
     }
 
     pub fn mouse_pressed(&self, button: Button) -> bool {
-        self.snapshot.mouse_pressed.contains(&button)
+        self.state.mouse_pressed.contains(&button)
     }
 
     pub fn mouse_held(&self, button: Button) -> bool {
-        self.snapshot.mouse_held.contains(&button)
+        self.state.mouse_held.contains(&button)
     }
 
     pub fn mouse_released(&self, button: Button) -> bool {
-        self.snapshot.mouse_released.contains(&button)
+        self.state.mouse_released.contains(&button)
     }
 
     pub fn mouse_position(&self) -> (f32, f32) {
-        self.snapshot.mouse_position
+        self.state.mouse_position
     }
 
     pub fn mouse_delta(&self) -> (f32, f32) {
-        self.snapshot.mouse_delta
+        self.state.mouse_delta
     }
 
     pub fn mouse_moved(&self) -> bool {
-        self.snapshot.mouse_moved
+        self.state.mouse_moved
     }
 
     pub fn scroll_delta(&self) -> (f32, f32) {
-        self.snapshot.scroll_delta
+        self.state.scroll_delta
     }
 
     pub fn cursor_entered(&self) -> bool {
-        self.snapshot.cursor_entered
+        self.state.cursor_entered
     }
 
     pub fn cursor_exited(&self) -> bool {
-        self.snapshot.cursor_exited
+        self.state.cursor_exited
     }
 
     pub fn cursor_in_window(&self) -> bool {
-        self.snapshot.cursor_in_window
+        self.state.cursor_in_window
     }
 
     pub fn gamepad_button_pressed(&self, id: GamepadId, button: GamepadButton) -> bool {
-        self.snapshot.gamepads.get(&id).map_or(false, |gp| gp.buttons_pressed.contains(&button))
+        self.state.gamepads.get(&id).map_or(false, |gp| gp.buttons_pressed.contains(&button))
     }
 
     pub fn gamepad_button_held(&self, id: GamepadId, button: GamepadButton) -> bool {
-        self.snapshot.gamepads.get(&id).map_or(false, |gp| gp.buttons_held.contains(&button))
+        self.state.gamepads.get(&id).map_or(false, |gp| gp.buttons_held.contains(&button))
     }
 
     pub fn gamepad_button_released(&self, id: GamepadId, button: GamepadButton) -> bool {
-        self.snapshot.gamepads.get(&id).map_or(false, |gp| gp.buttons_released.contains(&button))
+        self.state.gamepads.get(&id).map_or(false, |gp| gp.buttons_released.contains(&button))
     }
 
     pub fn gamepad_axis(&self, id: GamepadId, axis: GamepadAxis) -> f32 {
-        self.snapshot.gamepads.get(&id).and_then(|gp| gp.axes.get(&axis)).copied().unwrap_or(0.0)
+        self.state.gamepads.get(&id).and_then(|gp| gp.axes.get(&axis)).copied().unwrap_or(0.0)
     }
 
     pub fn connected_gamepads(&self) -> Vec<GamepadId> {
-        self.snapshot.gamepads.keys().copied().collect()
+        self.state.gamepads.keys().copied().collect()
+    }
+
+    pub fn bind(&mut self, action: impl Into<String>, binding: impl Binding) {
+        self.input_map.bind(action, binding);
+    }
+
+    pub fn unbind(&mut self, action: impl Into<String>) {
+        self.input_map.unbind(&action.into());
+    }
+
+    pub fn action_pressed(&self, action: &str) -> bool {
+        self.input_map.bindings.get(action)
+            .map_or(false, |bs| bs.iter().any(|b| b.pressed(&self.state)))
+    }
+
+    pub fn action_held(&self, action: &str) -> bool {
+        self.input_map.bindings.get(action)
+            .map_or(false, |bs| bs.iter().any(|b| b.held(&self.state)))
+    }
+
+    pub fn action_released(&self, action: &str) -> bool {
+        self.input_map.bindings.get(action)
+            .map_or(false, |bs| bs.iter().any(|b| b.released(&self.state)))
     }
 }
 
