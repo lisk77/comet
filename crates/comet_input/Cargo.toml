@@ -8,3 +8,4 @@ comet_app = { workspace = true }
 comet_window = { workspace = true }
 comet_macros = { workspace = true }
 winit = { workspace = true }
+gilrs = "0.11.1"

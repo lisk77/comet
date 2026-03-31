@@ -1,13 +1,17 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use comet_app::{App, Module};
 use comet_macros::module;
 use comet_window::WinitModule;
+use gilrs::{Axis, Button as GilrsButton, EventType, Gilrs};
 use winit::event::{DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
 pub use crate::keyboard::Key;
 pub use crate::mouse::Button;
+pub use gilrs::Button as GamepadButton;
+pub use gilrs::Axis as GamepadAxis;
+pub use gilrs::GamepadId;
 
 pub enum Modifier {
     Shift,
@@ -29,6 +33,29 @@ enum RawInputEvent {
     CursorLeft,
 }
 
+struct GamepadSnapshot {
+    buttons_pressed: HashSet<GilrsButton>,
+    buttons_held: HashSet<GilrsButton>,
+    buttons_released: HashSet<GilrsButton>,
+    axes: HashMap<Axis, f32>,
+}
+
+impl GamepadSnapshot {
+    fn new() -> Self {
+        Self {
+            buttons_pressed: HashSet::new(),
+            buttons_held: HashSet::new(),
+            buttons_released: HashSet::new(),
+            axes: HashMap::new(),
+        }
+    }
+
+    fn clear_transient(&mut self) {
+        self.buttons_pressed.clear();
+        self.buttons_released.clear();
+    }
+}
+
 struct InputSnapshot {
     keys_pressed: HashSet<KeyCode>,
     keys_held: HashSet<KeyCode>,
@@ -44,6 +71,7 @@ struct InputSnapshot {
     cursor_entered: bool,
     cursor_exited: bool,
     cursor_in_window: bool,
+    gamepads: HashMap<GamepadId, GamepadSnapshot>,
 }
 
 impl InputSnapshot {
@@ -63,6 +91,7 @@ impl InputSnapshot {
             cursor_entered: false,
             cursor_exited: false,
             cursor_in_window: false,
+            gamepads: HashMap::new(),
         }
     }
 }
@@ -70,6 +99,7 @@ impl InputSnapshot {
 pub struct InputModule {
     queue: Arc<Mutex<Vec<RawInputEvent>>>,
     snapshot: InputSnapshot,
+    gilrs: Gilrs,
 }
 
 impl InputModule {
@@ -77,6 +107,7 @@ impl InputModule {
         Self {
             queue: Arc::new(Mutex::new(Vec::new())),
             snapshot: InputSnapshot::new(),
+            gilrs: Gilrs::new().unwrap(),
         }
     }
 
@@ -91,6 +122,11 @@ impl InputModule {
         self.snapshot.cursor_entered = false;
         self.snapshot.cursor_exited = false;
 
+        for gp in self.snapshot.gamepads.values_mut() {
+            gp.clear_transient();
+        }
+
+        // drain winit events
         let events: Vec<RawInputEvent> = self.queue.lock().unwrap().drain(..).collect();
         for event in events {
             match event {
@@ -135,6 +171,28 @@ impl InputModule {
                     self.snapshot.cursor_in_window = false;
                     self.snapshot.cursor_exited = true;
                 }
+            }
+        }
+
+        while let Some(gilrs::Event { id, event, .. }) = self.gilrs.next_event() {
+            let gp = self.snapshot.gamepads.entry(id).or_insert_with(GamepadSnapshot::new);
+            match event {
+                EventType::ButtonPressed(btn, _) => {
+                    if gp.buttons_held.insert(btn) {
+                        gp.buttons_pressed.insert(btn);
+                    }
+                }
+                EventType::ButtonReleased(btn, _) => {
+                    gp.buttons_held.remove(&btn);
+                    gp.buttons_released.insert(btn);
+                }
+                EventType::AxisChanged(axis, value, _) => {
+                    gp.axes.insert(axis, value);
+                }
+                EventType::Disconnected => {
+                    self.snapshot.gamepads.remove(&id);
+                }
+                _ => {}
             }
         }
     }
@@ -211,6 +269,26 @@ impl InputModule {
 
     pub fn cursor_in_window(&self) -> bool {
         self.snapshot.cursor_in_window
+    }
+
+    pub fn gamepad_button_pressed(&self, id: GamepadId, button: GamepadButton) -> bool {
+        self.snapshot.gamepads.get(&id).map_or(false, |gp| gp.buttons_pressed.contains(&button))
+    }
+
+    pub fn gamepad_button_held(&self, id: GamepadId, button: GamepadButton) -> bool {
+        self.snapshot.gamepads.get(&id).map_or(false, |gp| gp.buttons_held.contains(&button))
+    }
+
+    pub fn gamepad_button_released(&self, id: GamepadId, button: GamepadButton) -> bool {
+        self.snapshot.gamepads.get(&id).map_or(false, |gp| gp.buttons_released.contains(&button))
+    }
+
+    pub fn gamepad_axis(&self, id: GamepadId, axis: GamepadAxis) -> f32 {
+        self.snapshot.gamepads.get(&id).and_then(|gp| gp.axes.get(&axis)).copied().unwrap_or(0.0)
+    }
+
+    pub fn connected_gamepads(&self) -> Vec<GamepadId> {
+        self.snapshot.gamepads.keys().copied().collect()
     }
 }
 
