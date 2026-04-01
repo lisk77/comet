@@ -9,5 +9,7 @@ pub enum Renderer2DEvent {
     ScaleFactor(f64),
     PrecomputedTextBounds { width: f32, height: f32 },
     FrameTime(f32),
-    PassAdded(Option<PassOutput>),
+    PassAdded(PassOutput),
+    PassRemoved,
+    PassOutputSet,
 }

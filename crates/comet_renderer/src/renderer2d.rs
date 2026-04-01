@@ -4,7 +4,7 @@ use crate::{
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
     render_events::Renderer2DEvent,
-    render_pass::{universal_clear_execute, universal_load_execute, PassOutput, RenderPass},
+    render_pass::{universal_clear_execute, universal_load_execute, PassCache, PassOutput, RenderPass},
     Vertex,
 };
 use comet_colors::Color;
@@ -78,7 +78,7 @@ pub struct Renderer2D {
     render_context: RenderContext,
     asset_provider: comet_assets::AssetProvider,
     render_passes: Vec<RenderPass>,
-    execution_order: Vec<usize>,
+    execution_order: Vec<String>,
     graph_dirty: bool,
     last_frame_time: std::time::Instant,
     delta_time: f32,
@@ -231,9 +231,24 @@ impl RenderHandle2D {
             matches!(e, Renderer2DEvent::PassAdded(_))
         })
         .and_then(|e| match e {
-            Renderer2DEvent::PassAdded(handle) => handle,
+            Renderer2DEvent::PassAdded(handle) => Some(handle),
             _ => None,
         })
+    }
+
+    pub fn remove_render_pass(&mut self, output: PassOutput) {
+        let _ = self.command_sender.send(Renderer2DCommand::RemoveRenderPass(output.0));
+        let _ = self.recv_matching_event(Duration::from_millis(5000), |e| {
+            matches!(e, Renderer2DEvent::PassRemoved)
+        });
+    }
+
+    pub fn set_pass_output(&mut self, label: &str, output: Option<String>) -> Option<PassOutput> {
+        let _ = self.command_sender.send(Renderer2DCommand::SetPassOutput(label.to_string(), output.clone()));
+        let _ = self.recv_matching_event(Duration::from_millis(5000), |e| {
+            matches!(e, Renderer2DEvent::PassOutputSet)
+        });
+        output.map(PassOutput)
     }
 
 }
@@ -851,7 +866,7 @@ impl Renderer2D {
         output: Option<String>,
         output_format: Option<wgpu::TextureFormat>,
         execute: Box<
-            dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[Arc<GpuTexture>])
+            dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[&wgpu::BindGroup])
                 + Send
                 + Sync,
         >,
@@ -1003,7 +1018,7 @@ impl Renderer2D {
         let pass_output = output.as_ref().map(|name| PassOutput(name.clone()));
 
         self.render_passes
-            .push(RenderPass::new(label.clone(), input_names, output, output_format, execute));
+            .push(RenderPass::new(label.clone(), input_names, output, output_format, None, execute));
 
         self.render_context
             .new_batch(label.clone(), Vec::new(), Vec::new());
@@ -1013,13 +1028,11 @@ impl Renderer2D {
         pass_output
     }
 
-    fn new_post_process_pass(&mut self, desc: crate::render_commands::PassDescriptor) -> Option<PassOutput> {
-        use std::sync::Arc;
-
-        let shader_module = Arc::new(self.render_context.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+    fn add_pass(&mut self, desc: crate::render_commands::PassDescriptor) -> PassOutput {
+        let shader_module = self.render_context.device().create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(&format!("{} Shader", desc.label)),
             source: wgpu::ShaderSource::Wgsl(desc.shader_src.into()),
-        }));
+        });
 
         let input_count = desc.inputs.len();
 
@@ -1099,28 +1112,9 @@ impl Renderer2D {
             None => wgpu::LoadOp::Load,
         };
 
-        let execute: Box<dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[Arc<GpuTexture>]) + Send + Sync> = {
+        let execute: Box<dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[&wgpu::BindGroup]) + Send + Sync> = {
             let pipeline = pipeline.clone();
-            let layouts = bind_group_layouts.clone();
-            let sampler = sampler.clone();
-            Box::new(move |label, ctx, encoder, view, inputs| {
-                let bind_groups: Vec<wgpu::BindGroup> = inputs.iter().zip(layouts.iter()).map(|(tex, layout)| {
-                    ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-                        layout,
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: wgpu::BindingResource::TextureView(&tex.view),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 1,
-                                resource: wgpu::BindingResource::Sampler(&sampler),
-                            },
-                        ],
-                        label: Some(&format!("{} Bind Group", label)),
-                    })
-                }).collect();
-
+            Box::new(move |label, ctx, encoder, view, input_bind_groups| {
                 let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some(&format!("{} Render Pass", label)),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1134,27 +1128,54 @@ impl Renderer2D {
                 });
 
                 rpass.set_pipeline(&pipeline);
-                for (i, bg) in bind_groups.iter().enumerate() {
+                for (i, bg) in input_bind_groups.iter().enumerate() {
                     rpass.set_bind_group(i as u32, bg, &[]);
                 }
                 rpass.draw(0..3, 0..1);
             })
         };
 
-        let pass_output = desc.output.as_ref().map(|name| PassOutput(name.clone()));
+        let pass_output = PassOutput(desc.output.clone().unwrap_or_else(|| desc.label.clone()));
         let input_names = desc.inputs;
+        let cache = PassCache::new(bind_group_layouts, sampler);
 
         self.render_passes.push(RenderPass::new(
             desc.label.clone(),
             input_names,
             desc.output,
             desc.output_format,
+            Some(cache),
             execute,
         ));
 
         self.graph_dirty = true;
         info!("Created post-process pass {}!", desc.label);
         pass_output
+    }
+
+    fn remove_render_pass(&mut self, label: &str) {
+        if let Some(pos) = self.render_passes.iter().position(|p| p.label == label) {
+            let pass = self.render_passes.remove(pos);
+            if let Some(ref name) = pass.output {
+                self.render_context.resources_mut().remove_gpu_texture(name);
+            }
+        }
+        self.graph_dirty = true;
+    }
+
+    fn set_pass_output(&mut self, label: &str, output: Option<String>) {
+        let Some(pass) = self.render_passes.iter_mut().find(|p| p.label == label) else {
+            error!("set_pass_output: no pass '{}'", label);
+            return;
+        };
+        if let Some(ref old) = pass.output {
+            self.render_context.resources_mut().remove_gpu_texture(old);
+        }
+        pass.output = output;
+        if let Some(ref mut cache) = pass.cache {
+            cache.invalidate();
+        }
+        self.graph_dirty = true;
     }
 
     fn build_graph(&mut self) {
@@ -1199,9 +1220,9 @@ impl Renderer2D {
             fatal!("Render graph contains a cycle");
         }
 
-        self.execution_order = order;
+        self.execution_order = order.into_iter().map(|i| self.render_passes[i].label.clone()).collect();
         self.graph_dirty = false;
-        info!("Render graph built: {:?}", self.execution_order.iter().map(|&i| &self.render_passes[i].label).collect::<Vec<_>>());
+        info!("Render graph built: {:?}", self.execution_order);
     }
 
     fn get_texture_region(&self, texture: AtlasRef) -> TextureRegion {
@@ -1634,8 +1655,16 @@ impl Renderer for Renderer2D {
                 self.submit_frame(camera, draws, texts, referenced_handles)
             }
             Renderer2DCommand::AddRenderPass(desc) => {
-                let pass_output = self.new_post_process_pass(desc);
+                let pass_output = self.add_pass(desc);
                 let _ = self.event_sender.send(Renderer2DEvent::PassAdded(pass_output));
+            }
+            Renderer2DCommand::RemoveRenderPass(label) => {
+                self.remove_render_pass(&label);
+                let _ = self.event_sender.send(Renderer2DEvent::PassRemoved);
+            }
+            Renderer2DCommand::SetPassOutput(label, output) => {
+                self.set_pass_output(&label, output);
+                let _ = self.event_sender.send(Renderer2DEvent::PassOutputSet);
             }
         }
     }
@@ -1655,9 +1684,12 @@ impl Renderer for Renderer2D {
             self.render_context.config_mut().height = new_size.height;
             self.render_context.configure_surface();
 
-            for pass in &self.render_passes {
+            for pass in &mut self.render_passes {
                 if let Some(ref name) = pass.output {
                     self.render_context.resources_mut().remove_gpu_texture(name);
+                }
+                if let Some(ref mut cache) = pass.cache {
+                    cache.invalidate();
                 }
             }
         }
@@ -1695,21 +1727,27 @@ impl Renderer for Renderer2D {
                     label: Some("Render Encoder"),
                 });
 
-        for idx in 0..self.execution_order.len() {
-            let i = self.execution_order[idx];
-            let label = self.render_passes[i].label.clone();
+        let labels: Vec<String> = self.execution_order.clone();
+        for label in labels {
+            let pass_idx = match self.render_passes.iter().position(|p| p.label == label) {
+                Some(i) => i,
+                None => continue,
+            };
 
-            if let Some(ref name) = self.render_passes[i].output.clone() {
+            if let Some(ref name) = self.render_passes[pass_idx].output.clone() {
                 if self.render_context.resources().get_gpu_texture(name).is_none() {
                     let w = self.render_context.config().width;
                     let h = self.render_context.config().height;
-                    let format = self.render_passes[i].output_format
+                    let format = self.render_passes[pass_idx].output_format
                         .unwrap_or(self.render_context.config().format);
                     self.render_context.create_intermediate_texture(name.clone(), w, h, format);
+                    if let Some(ref mut cache) = self.render_passes[pass_idx].cache {
+                        cache.invalidate();
+                    }
                 }
             }
 
-            let intermediate = self.render_passes[i].output.as_ref()
+            let intermediate = self.render_passes[pass_idx].output.as_ref()
                 .and_then(|name| self.render_context.resources().get_gpu_texture(name).cloned());
 
             let view: &wgpu::TextureView = match &intermediate {
@@ -1717,11 +1755,39 @@ impl Renderer for Renderer2D {
                 None => &output_view,
             };
 
-            let resolved: Vec<Arc<GpuTexture>> = self.render_passes[i].inputs.iter()
-                .filter_map(|name| self.render_context.resources().get_gpu_texture(name).cloned())
-                .collect();
+            if self.render_passes[pass_idx].cache.as_ref().is_some_and(|c| c.bind_groups.is_none()) {
+                let inputs: Vec<Arc<GpuTexture>> = self.render_passes[pass_idx].inputs.iter()
+                    .filter_map(|name| self.render_context.resources().get_gpu_texture(name).cloned())
+                    .collect();
+                if let Some(ref cache) = self.render_passes[pass_idx].cache {
+                    let groups: Vec<Arc<wgpu::BindGroup>> = inputs.iter().zip(cache.layouts.iter()).map(|(tex, layout)| {
+                        Arc::new(self.render_context.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                            layout,
+                            entries: &[
+                                wgpu::BindGroupEntry {
+                                    binding: 0,
+                                    resource: wgpu::BindingResource::TextureView(&tex.view),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 1,
+                                    resource: wgpu::BindingResource::Sampler(&cache.sampler),
+                                },
+                            ],
+                            label: Some(&format!("{} Bind Group", label)),
+                        }))
+                    }).collect();
+                    self.render_passes[pass_idx].cache.as_mut().unwrap().bind_groups = Some(groups);
+                }
+            }
 
-            (self.render_passes[i].execute)(label, &mut self.render_context, &mut encoder, view, &resolved);
+            let owned_groups: Vec<Arc<wgpu::BindGroup>> = self.render_passes[pass_idx].cache
+                .as_ref()
+                .and_then(|c| c.bind_groups.as_ref())
+                .map(|v| v.clone())
+                .unwrap_or_default();
+            let group_refs: Vec<&wgpu::BindGroup> = owned_groups.iter().map(|g| g.as_ref()).collect();
+
+            (self.render_passes[pass_idx].execute)(label.clone(), &mut self.render_context, &mut encoder, view, &group_refs);
         }
 
         self.render_context
