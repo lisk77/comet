@@ -78,6 +78,8 @@ pub struct Renderer2D {
     render_context: RenderContext,
     asset_provider: comet_assets::AssetProvider,
     render_passes: Vec<RenderPass>,
+    execution_order: Vec<usize>,
+    graph_dirty: bool,
     last_frame_time: std::time::Instant,
     delta_time: f32,
     event_sender: flume::Sender<Renderer2DEvent>,
@@ -977,7 +979,55 @@ impl Renderer2D {
             .new_batch(label.clone(), Vec::new(), Vec::new());
         info!("Created render pass {}!", label);
 
+        self.graph_dirty = true;
         pass_output
+    }
+
+    fn build_graph(&mut self) {
+        use std::collections::{HashMap, VecDeque};
+
+        let n = self.render_passes.len();
+        let output_map: HashMap<&str, usize> = self.render_passes.iter().enumerate()
+            .filter_map(|(i, p)| p.output.as_deref().map(|name| (name, i)))
+            .collect();
+
+        let mut in_degree = vec![0usize; n];
+        let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
+
+        for (i, pass) in self.render_passes.iter().enumerate() {
+            for input in &pass.inputs {
+                if let Some(&producer) = output_map.get(input.as_str()) {
+                    adj[producer].push(i);
+                    in_degree[i] += 1;
+                } else {
+                    error!("Render pass '{}' declares input '{}' but no pass produces it", pass.label, input);
+                }
+            }
+        }
+
+        let mut queue: VecDeque<usize> = in_degree.iter().enumerate()
+            .filter(|(_, &d)| d == 0)
+            .map(|(i, _)| i)
+            .collect();
+
+        let mut order = Vec::with_capacity(n);
+        while let Some(i) = queue.pop_front() {
+            order.push(i);
+            for &dep in &adj[i] {
+                in_degree[dep] -= 1;
+                if in_degree[dep] == 0 {
+                    queue.push_back(dep);
+                }
+            }
+        }
+
+        if order.len() != n {
+            fatal!("Render graph contains a cycle");
+        }
+
+        self.execution_order = order;
+        self.graph_dirty = false;
+        info!("Render graph built: {:?}", self.execution_order.iter().map(|&i| &self.render_passes[i].label).collect::<Vec<_>>());
     }
 
     fn get_texture_region(&self, texture: AtlasRef) -> TextureRegion {
@@ -1332,6 +1382,8 @@ impl Renderer for Renderer2D {
             render_context: RenderContext::new(window, clear_color),
             asset_provider,
             render_passes: Vec::new(),
+            execution_order: Vec::new(),
+            graph_dirty: true,
             last_frame_time: std::time::Instant::now(),
             delta_time: 0.0,
             event_sender,
@@ -1449,6 +1501,10 @@ impl Renderer for Renderer2D {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        if self.graph_dirty {
+            self.build_graph();
+        }
+
         let output = self.render_context.surface().get_current_texture()?;
         let output_view = output
             .texture
@@ -1461,7 +1517,8 @@ impl Renderer for Renderer2D {
                     label: Some("Render Encoder"),
                 });
 
-        for i in 0..self.render_passes.len() {
+        for idx in 0..self.execution_order.len() {
+            let i = self.execution_order[idx];
             let label = self.render_passes[i].label.clone();
 
             if let Some(ref name) = self.render_passes[i].output.clone() {
