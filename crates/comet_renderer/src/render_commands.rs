@@ -33,6 +33,7 @@ pub struct PassDescriptor {
     pub label: String,
     pub inputs: Vec<String>,
     pub output: Option<String>,
+    pub render_target: Option<String>,
     pub output_format: Option<wgpu::TextureFormat>,
     pub shader_src: String,
     pub clear: Option<wgpu::Color>,
@@ -53,4 +54,5 @@ pub enum Renderer2DCommand {
     AddRenderPass(PassDescriptor),
     RemoveRenderPass(String),
     SetPassOutput(String, Option<String>),
+    SetPassRenderTarget(String, Option<String>),
 }

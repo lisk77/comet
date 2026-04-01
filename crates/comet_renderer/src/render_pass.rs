@@ -30,6 +30,7 @@ pub struct RenderPass {
     pub label: String,
     pub inputs: Vec<String>,
     pub output: Option<String>,
+    pub render_target: Option<String>,
     pub output_format: Option<wgpu::TextureFormat>,
     pub cache: Option<PassCache>,
     pub execute: Box<
@@ -44,6 +45,7 @@ impl RenderPass {
         label: String,
         inputs: Vec<String>,
         output: Option<String>,
+        render_target: Option<String>,
         output_format: Option<wgpu::TextureFormat>,
         cache: Option<PassCache>,
         execute: Box<
@@ -52,7 +54,7 @@ impl RenderPass {
                 + Sync,
         >,
     ) -> Self {
-        Self { label, inputs, output, output_format, cache, execute }
+        Self { label, inputs, output, render_target, output_format, cache, execute }
     }
 }
 

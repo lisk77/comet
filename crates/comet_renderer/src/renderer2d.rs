@@ -214,6 +214,7 @@ impl RenderHandle2D {
         label: String,
         inputs: Vec<&PassOutput>,
         output: Option<String>,
+        render_target: Option<&PassOutput>,
         output_format: Option<wgpu::TextureFormat>,
         shader_src: String,
         clear: Option<wgpu::Color>,
@@ -222,6 +223,7 @@ impl RenderHandle2D {
             label,
             inputs: inputs.iter().map(|p| p.0.clone()).collect(),
             output,
+            render_target: render_target.map(|p| p.0.clone()),
             output_format,
             shader_src,
             clear,
@@ -249,6 +251,16 @@ impl RenderHandle2D {
             matches!(e, Renderer2DEvent::PassOutputSet)
         });
         output.map(PassOutput)
+    }
+
+    pub fn set_pass_render_target(&mut self, label: &str, render_target: Option<&PassOutput>) {
+        let _ = self.command_sender.send(Renderer2DCommand::SetPassRenderTarget(
+            label.to_string(),
+            render_target.map(|p| p.0.clone()),
+        ));
+        let _ = self.recv_matching_event(Duration::from_millis(5000), |e| {
+            matches!(e, Renderer2DEvent::PassRenderTargetSet)
+        });
     }
 
 }
@@ -1018,7 +1030,7 @@ impl Renderer2D {
         let pass_output = output.as_ref().map(|name| PassOutput(name.clone()));
 
         self.render_passes
-            .push(RenderPass::new(label.clone(), input_names, output, output_format, None, execute));
+            .push(RenderPass::new(label.clone(), input_names, output, None, output_format, None, execute));
 
         self.render_context
             .new_batch(label.clone(), Vec::new(), Vec::new());
@@ -1143,6 +1155,7 @@ impl Renderer2D {
             desc.label.clone(),
             input_names,
             desc.output,
+            desc.render_target,
             desc.output_format,
             Some(cache),
             execute,
@@ -1160,6 +1173,15 @@ impl Renderer2D {
                 self.render_context.resources_mut().remove_gpu_texture(name);
             }
         }
+        self.graph_dirty = true;
+    }
+
+    fn set_pass_render_target(&mut self, label: &str, render_target: Option<String>) {
+        let Some(pass) = self.render_passes.iter_mut().find(|p| p.label == label) else {
+            error!("set_pass_render_target: no pass '{}'", label);
+            return;
+        };
+        pass.render_target = render_target;
         self.graph_dirty = true;
     }
 
@@ -1196,6 +1218,14 @@ impl Renderer2D {
                     in_degree[i] += 1;
                 } else {
                     error!("Render pass '{}' declares input '{}' but no pass produces it", pass.label, input);
+                }
+            }
+            if let Some(ref target) = pass.render_target {
+                if let Some(&producer) = output_map.get(target.as_str()) {
+                    adj[producer].push(i);
+                    in_degree[i] += 1;
+                } else {
+                    error!("Render pass '{}' declares render_target '{}' but no pass produces it", pass.label, target);
                 }
             }
         }
@@ -1666,6 +1696,10 @@ impl Renderer for Renderer2D {
                 self.set_pass_output(&label, output);
                 let _ = self.event_sender.send(Renderer2DEvent::PassOutputSet);
             }
+            Renderer2DCommand::SetPassRenderTarget(label, render_target) => {
+                self.set_pass_render_target(&label, render_target);
+                let _ = self.event_sender.send(Renderer2DEvent::PassRenderTargetSet);
+            }
         }
     }
 
@@ -1747,10 +1781,12 @@ impl Renderer for Renderer2D {
                 }
             }
 
-            let intermediate = self.render_passes[pass_idx].output.as_ref()
+            let owned_tex = self.render_passes[pass_idx].output.as_ref()
+                .and_then(|name| self.render_context.resources().get_gpu_texture(name).cloned());
+            let target_tex = self.render_passes[pass_idx].render_target.as_ref()
                 .and_then(|name| self.render_context.resources().get_gpu_texture(name).cloned());
 
-            let view: &wgpu::TextureView = match &intermediate {
+            let view: &wgpu::TextureView = match target_tex.as_ref().or(owned_tex.as_ref()) {
                 Some(tex) => &tex.view,
                 None => &output_view,
             };

@@ -12,4 +12,5 @@ pub enum Renderer2DEvent {
     PassAdded(PassOutput),
     PassRemoved,
     PassOutputSet,
+    PassRenderTargetSet,
 }
