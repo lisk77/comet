@@ -1,7 +1,18 @@
 use crate::render_context::RenderContext;
 
+#[derive(Debug, Clone)]
+pub struct PassOutput(pub(crate) String);
+
+impl PassOutput {
+    pub fn name(&self) -> &str {
+        &self.0
+    }
+}
+
 pub struct RenderPass {
     pub label: String,
+    pub inputs: Vec<String>,
+    pub output: Option<String>,
     pub execute: Box<
         dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView)
             + Send
@@ -12,13 +23,15 @@ pub struct RenderPass {
 impl RenderPass {
     pub fn new(
         label: String,
+        inputs: Vec<String>,
+        output: Option<String>,
         execute: Box<
             dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView)
                 + Send
                 + Sync,
         >,
     ) -> Self {
-        Self { label, execute }
+        Self { label, inputs, output, execute }
     }
 }
 

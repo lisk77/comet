@@ -4,7 +4,7 @@ use crate::{
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
     render_events::Renderer2DEvent,
-    render_pass::{universal_clear_execute, universal_load_execute, RenderPass},
+    render_pass::{universal_clear_execute, universal_load_execute, PassOutput, RenderPass},
     Vertex,
 };
 use comet_colors::Color;
@@ -457,6 +457,8 @@ impl Renderer2D {
             ));
         self.new_render_pass(
             "Universal".to_string(),
+            vec![],
+            None,
             Box::new(universal_clear_execute),
             BASE_2D_SHADER_SRC,
             None,
@@ -653,6 +655,8 @@ impl Renderer2D {
 
             self.new_render_pass(
                 "Font".to_string(),
+                vec![],
+                None,
                 Box::new(universal_load_execute),
                 BASE_2D_SHADER_SRC,
                 None,
@@ -812,6 +816,8 @@ impl Renderer2D {
     pub fn new_render_pass(
         &mut self,
         label: String,
+        inputs: Vec<&PassOutput>,
+        output: Option<String>,
         execute: Box<
             dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView)
                 + Send
@@ -824,7 +830,7 @@ impl Renderer2D {
         texture_sampler: wgpu::Sampler,
         bind_groups: Vec<Arc<wgpu::BindGroup>>,
         extra_bind_group_layouts: &[Arc<wgpu::BindGroupLayout>],
-    ) {
+    ) -> Option<PassOutput> {
         info!("Creating render pass {}", label);
 
         let shader_module = self.render_context.device().create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -961,12 +967,17 @@ impl Renderer2D {
                 );
         }
 
+        let input_names: Vec<String> = inputs.iter().map(|p| p.0.clone()).collect();
+        let pass_output = output.as_ref().map(|name| PassOutput(name.clone()));
+
         self.render_passes
-            .push(RenderPass::new(label.clone(), execute));
+            .push(RenderPass::new(label.clone(), input_names, output, execute));
 
         self.render_context
             .new_batch(label.clone(), Vec::new(), Vec::new());
-        info!("Created render pass {}!", label)
+        info!("Created render pass {}!", label);
+
+        pass_output
     }
 
     fn get_texture_region(&self, texture: AtlasRef) -> TextureRegion {
@@ -1413,6 +1424,12 @@ impl Renderer for Renderer2D {
             self.render_context.config_mut().width = new_size.width;
             self.render_context.config_mut().height = new_size.height;
             self.render_context.configure_surface();
+
+            for pass in &self.render_passes {
+                if let Some(ref name) = pass.output {
+                    self.render_context.resources_mut().remove_gpu_texture(name);
+                }
+            }
         }
     }
 
@@ -1444,9 +1461,27 @@ impl Renderer for Renderer2D {
                     label: Some("Render Encoder"),
                 });
 
-        for pass in &self.render_passes {
-            let label = pass.label.clone();
-            (pass.execute)(label, &mut self.render_context, &mut encoder, &output_view);
+        for i in 0..self.render_passes.len() {
+            let label = self.render_passes[i].label.clone();
+
+            if let Some(ref name) = self.render_passes[i].output.clone() {
+                if self.render_context.resources().get_gpu_texture(name).is_none() {
+                    let w = self.render_context.config().width;
+                    let h = self.render_context.config().height;
+                    let format = self.render_context.config().format;
+                    self.render_context.create_intermediate_texture(name.clone(), w, h, format);
+                }
+            }
+
+            let intermediate = self.render_passes[i].output.as_ref()
+                .and_then(|name| self.render_context.resources().get_gpu_texture(name).cloned());
+
+            let view: &wgpu::TextureView = match &intermediate {
+                Some(tex) => &tex.view,
+                None => &output_view,
+            };
+
+            (self.render_passes[i].execute)(label, &mut self.render_context, &mut encoder, view);
         }
 
         self.render_context
