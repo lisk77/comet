@@ -114,7 +114,7 @@ pub mod prelude {
     pub use comet_math::*;
     pub use comet_renderer::{
         renderer2d::{RenderHandle2D, RenderHandle2DExt, Renderer2D},
-        Renderer2DModule,
+        PassDescriptor, PassOutput, Renderer2DModule,
     };
     pub use comet_audio::{AudioModule, AudioModuleExt, KiraAudio};
     pub use crate::{AppPreset, AppPresets, App2D, App3D, Headless};

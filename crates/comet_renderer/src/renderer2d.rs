@@ -209,6 +209,33 @@ impl RenderHandle2D {
         }
     }
 
+    pub fn add_render_pass(
+        &mut self,
+        label: String,
+        inputs: Vec<&PassOutput>,
+        output: Option<String>,
+        output_format: Option<wgpu::TextureFormat>,
+        shader_src: String,
+        clear: Option<wgpu::Color>,
+    ) -> Option<PassOutput> {
+        let desc = crate::render_commands::PassDescriptor {
+            label,
+            inputs: inputs.iter().map(|p| p.0.clone()).collect(),
+            output,
+            output_format,
+            shader_src,
+            clear,
+        };
+        let _ = self.command_sender.send(Renderer2DCommand::AddRenderPass(desc));
+        self.recv_matching_event(Duration::from_millis(5000), |e| {
+            matches!(e, Renderer2DEvent::PassAdded(_))
+        })
+        .and_then(|e| match e {
+            Renderer2DEvent::PassAdded(handle) => handle,
+            _ => None,
+        })
+    }
+
 }
 
 impl RenderHandle2D {
@@ -461,6 +488,7 @@ impl Renderer2D {
             "Universal".to_string(),
             vec![],
             None,
+            None,
             Box::new(universal_clear_execute),
             BASE_2D_SHADER_SRC,
             None,
@@ -659,6 +687,7 @@ impl Renderer2D {
                 "Font".to_string(),
                 vec![],
                 None,
+                None,
                 Box::new(universal_load_execute),
                 BASE_2D_SHADER_SRC,
                 None,
@@ -820,8 +849,9 @@ impl Renderer2D {
         label: String,
         inputs: Vec<&PassOutput>,
         output: Option<String>,
+        output_format: Option<wgpu::TextureFormat>,
         execute: Box<
-            dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView)
+            dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[Arc<GpuTexture>])
                 + Send
                 + Sync,
         >,
@@ -973,13 +1003,157 @@ impl Renderer2D {
         let pass_output = output.as_ref().map(|name| PassOutput(name.clone()));
 
         self.render_passes
-            .push(RenderPass::new(label.clone(), input_names, output, execute));
+            .push(RenderPass::new(label.clone(), input_names, output, output_format, execute));
 
         self.render_context
             .new_batch(label.clone(), Vec::new(), Vec::new());
         info!("Created render pass {}!", label);
 
         self.graph_dirty = true;
+        pass_output
+    }
+
+    fn new_post_process_pass(&mut self, desc: crate::render_commands::PassDescriptor) -> Option<PassOutput> {
+        use std::sync::Arc;
+
+        let shader_module = Arc::new(self.render_context.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(&format!("{} Shader", desc.label)),
+            source: wgpu::ShaderSource::Wgsl(desc.shader_src.into()),
+        }));
+
+        let input_count = desc.inputs.len();
+
+        let bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>> = (0..input_count).map(|i| {
+            Arc::new(self.render_context.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some(&format!("{} Input {} Layout", desc.label, i)),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            }))
+        }).collect();
+
+        let sampler = Arc::new(self.render_context.device().create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        }));
+
+        let layout_refs: Vec<&wgpu::BindGroupLayout> = bind_group_layouts.iter().map(|l| l.as_ref()).collect();
+        let pipeline_layout = self.render_context.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(&format!("{} Pipeline Layout", desc.label)),
+            bind_group_layouts: &layout_refs,
+            push_constant_ranges: &[],
+        });
+
+        let output_format = desc.output_format.unwrap_or(self.render_context.config().format);
+        let pipeline = Arc::new(self.render_context.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(&format!("{} Pipeline", desc.label)),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: "vs_main",
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: output_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        }));
+
+        let load_op = match desc.clear {
+            Some(color) => wgpu::LoadOp::Clear(color),
+            None => wgpu::LoadOp::Load,
+        };
+
+        let execute: Box<dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[Arc<GpuTexture>]) + Send + Sync> = {
+            let pipeline = pipeline.clone();
+            let layouts = bind_group_layouts.clone();
+            let sampler = sampler.clone();
+            Box::new(move |label, ctx, encoder, view, inputs| {
+                let bind_groups: Vec<wgpu::BindGroup> = inputs.iter().zip(layouts.iter()).map(|(tex, layout)| {
+                    ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                        layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&tex.view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(&sampler),
+                            },
+                        ],
+                        label: Some(&format!("{} Bind Group", label)),
+                    })
+                }).collect();
+
+                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some(&format!("{} Render Pass", label)),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: wgpu::Operations { load: load_op, store: wgpu::StoreOp::Store },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+
+                rpass.set_pipeline(&pipeline);
+                for (i, bg) in bind_groups.iter().enumerate() {
+                    rpass.set_bind_group(i as u32, bg, &[]);
+                }
+                rpass.draw(0..3, 0..1);
+            })
+        };
+
+        let pass_output = desc.output.as_ref().map(|name| PassOutput(name.clone()));
+        let input_names = desc.inputs;
+
+        self.render_passes.push(RenderPass::new(
+            desc.label.clone(),
+            input_names,
+            desc.output,
+            desc.output_format,
+            execute,
+        ));
+
+        self.graph_dirty = true;
+        info!("Created post-process pass {}!", desc.label);
         pass_output
     }
 
@@ -1459,6 +1633,10 @@ impl Renderer for Renderer2D {
             Renderer2DCommand::SubmitFrame(camera, draws, texts, referenced_handles) => {
                 self.submit_frame(camera, draws, texts, referenced_handles)
             }
+            Renderer2DCommand::AddRenderPass(desc) => {
+                let pass_output = self.new_post_process_pass(desc);
+                let _ = self.event_sender.send(Renderer2DEvent::PassAdded(pass_output));
+            }
         }
     }
 
@@ -1525,7 +1703,8 @@ impl Renderer for Renderer2D {
                 if self.render_context.resources().get_gpu_texture(name).is_none() {
                     let w = self.render_context.config().width;
                     let h = self.render_context.config().height;
-                    let format = self.render_context.config().format;
+                    let format = self.render_passes[i].output_format
+                        .unwrap_or(self.render_context.config().format);
                     self.render_context.create_intermediate_texture(name.clone(), w, h, format);
                 }
             }
@@ -1538,7 +1717,11 @@ impl Renderer for Renderer2D {
                 None => &output_view,
             };
 
-            (self.render_passes[i].execute)(label, &mut self.render_context, &mut encoder, view);
+            let resolved: Vec<Arc<GpuTexture>> = self.render_passes[i].inputs.iter()
+                .filter_map(|name| self.render_context.resources().get_gpu_texture(name).cloned())
+                .collect();
+
+            (self.render_passes[i].execute)(label, &mut self.render_context, &mut encoder, view, &resolved);
         }
 
         self.render_context

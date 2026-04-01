@@ -1,4 +1,5 @@
-use crate::render_context::RenderContext;
+use std::sync::Arc;
+use crate::{gpu_texture::GpuTexture, render_context::RenderContext};
 
 #[derive(Debug, Clone)]
 pub struct PassOutput(pub(crate) String);
@@ -13,8 +14,9 @@ pub struct RenderPass {
     pub label: String,
     pub inputs: Vec<String>,
     pub output: Option<String>,
+    pub output_format: Option<wgpu::TextureFormat>,
     pub execute: Box<
-        dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView)
+        dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[Arc<GpuTexture>])
             + Send
             + Sync,
     >,
@@ -25,13 +27,14 @@ impl RenderPass {
         label: String,
         inputs: Vec<String>,
         output: Option<String>,
+        output_format: Option<wgpu::TextureFormat>,
         execute: Box<
-            dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView)
+            dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[Arc<GpuTexture>])
                 + Send
                 + Sync,
         >,
     ) -> Self {
-        Self { label, inputs, output, execute }
+        Self { label, inputs, output, output_format, execute }
     }
 }
 
@@ -40,6 +43,7 @@ pub fn universal_clear_execute(
     ctx: &mut RenderContext,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
+    _inputs: &[Arc<GpuTexture>],
 ) {
     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some(format!("{} Render Pass", label.clone()).as_str()),
@@ -91,6 +95,7 @@ pub fn universal_load_execute(
     ctx: &mut RenderContext,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
+    _inputs: &[Arc<GpuTexture>],
 ) {
     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some(format!("{} Render Pass", label.clone()).as_str()),

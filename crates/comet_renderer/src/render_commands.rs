@@ -29,6 +29,15 @@ pub struct Text2D {
     pub visible: bool,
 }
 
+pub struct PassDescriptor {
+    pub label: String,
+    pub inputs: Vec<String>,
+    pub output: Option<String>,
+    pub output_format: Option<wgpu::TextureFormat>,
+    pub shader_src: String,
+    pub clear: Option<wgpu::Color>,
+}
+
 pub enum Renderer2DCommand {
     Clear,
     ResolveAtlasRef(&'static str),
@@ -41,4 +50,5 @@ pub enum Renderer2DCommand {
         font_size: f32,
     },
     SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>, Vec<comet_assets::Asset<comet_assets::Image>>),
+    AddRenderPass(PassDescriptor),
 }
