@@ -1547,6 +1547,9 @@ impl Renderer2D {
             index_buffer,
         );
 
+        let mut font_vertex_buffer: Vec<Vertex> = Vec::new();
+        let mut font_index_buffer: Vec<u16> = Vec::new();
+
         for text in texts {
             if !text.visible {
                 continue;
@@ -1561,7 +1564,7 @@ impl Renderer2D {
             };
 
             let mut bounds = v2::ZERO;
-            let (vertices, indices) = self.add_text_to_buffers(
+            let (mut vertices, indices) = self.add_text_to_buffers(
                 &text.content,
                 text.font,
                 text.size,
@@ -1570,9 +1573,13 @@ impl Renderer2D {
                 &mut bounds,
             );
 
-            self.render_state
-                .update_batch_buffers("Font".to_string(), vertices, indices);
+            let offset = font_vertex_buffer.len() as u16;
+            font_vertex_buffer.append(&mut vertices);
+            font_index_buffer.extend(indices.iter().map(|i| i + offset));
         }
+
+        self.render_state
+            .update_batch_buffers("Font".to_string(), font_vertex_buffer, font_index_buffer);
     }
 
     fn setup_camera_from_packet(&mut self, camera: CameraPacket2D) {
