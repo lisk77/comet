@@ -1,9 +1,9 @@
-use crate::{batch::Batch, render_resources::RenderResources, Vertex};
+use crate::{batch::Batch, gpu_texture::GpuTexture, render_resources::RenderResources, Vertex};
 use comet_colors::Color;
 use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
-pub struct RenderContext {
+pub struct RenderState {
     window: Arc<Window>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -17,12 +17,12 @@ pub struct RenderContext {
     resources: RenderResources,
 }
 
-impl RenderContext {
+impl RenderState {
     pub fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Self {
         let size = window.inner_size();
         let scale_factor = window.scale_factor();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
+            backends: wgpu::Backends::VULKAN,
             ..Default::default()
         });
 
@@ -181,5 +181,18 @@ impl RenderContext {
 
     pub fn resources_mut(&mut self) -> &mut RenderResources {
         &mut self.resources
+    }
+
+    pub fn create_intermediate_texture(&mut self, name: String, width: u32, height: u32, format: wgpu::TextureFormat) {
+        let gpu_tex = GpuTexture::create_2d_texture(
+            &self.device,
+            width,
+            height,
+            format,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            wgpu::FilterMode::Linear,
+            Some(&name),
+        );
+        self.resources.insert_gpu_texture(name, Arc::new(gpu_tex));
     }
 }
