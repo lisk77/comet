@@ -11,6 +11,6 @@ pub enum Renderer2DEvent {
     FrameTime(f32),
     PassAdded(PassOutput),
     PassRemoved,
-    PassOutputSet,
+    PassOutputSet(Option<PassOutput>),
     PassRenderTargetSet,
 }

@@ -54,6 +54,6 @@ pub enum Renderer2DCommand {
     SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>, Vec<comet_assets::Asset<comet_assets::Image>>),
     AddRenderPass(PassDescriptor),
     RemoveRenderPass(String),
-    SetPassOutput(String, Option<String>),
+    SetPassOutput(String, Option<crate::render_pass::PassOutput>),
     SetPassRenderTarget(String, Option<String>),
 }

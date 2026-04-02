@@ -245,12 +245,15 @@ impl RenderHandle2D {
         });
     }
 
-    pub fn set_pass_output(&mut self, label: &str, output: Option<String>) -> Option<PassOutput> {
-        let _ = self.command_sender.send(Renderer2DCommand::SetPassOutput(label.to_string(), output.clone()));
-        let _ = self.recv_matching_event(Duration::from_millis(5000), |e| {
-            matches!(e, Renderer2DEvent::PassOutputSet)
-        });
-        output.map(PassOutput)
+    pub fn set_pass_output(&mut self, label: &str, output: Option<PassOutput>) -> Option<PassOutput> {
+        let _ = self.command_sender.send(Renderer2DCommand::SetPassOutput(label.to_string(), output));
+        self.recv_matching_event(Duration::from_millis(5000), |e| {
+            matches!(e, Renderer2DEvent::PassOutputSet(_))
+        })
+        .and_then(|e| match e {
+            Renderer2DEvent::PassOutputSet(handle) => handle,
+            _ => None,
+        })
     }
 
     pub fn set_pass_render_target(&mut self, label: &str, render_target: Option<&PassOutput>) {
@@ -1176,19 +1179,20 @@ impl Renderer2D {
         self.graph_dirty = true;
     }
 
-    fn set_pass_output(&mut self, label: &str, output: Option<String>) {
+    fn set_pass_output(&mut self, label: &str, output: Option<PassOutput>) -> Option<PassOutput> {
         let Some(pass) = self.render_passes.iter_mut().find(|p| p.label == label) else {
             error!("set_pass_output: no pass '{}'", label);
-            return;
+            return None;
         };
         if let Some(ref old) = pass.output {
             self.render_context.resources_mut().remove_gpu_texture(old);
         }
-        pass.output = output;
+        pass.output = output.as_ref().map(|p| p.0.clone());
         if let Some(ref mut cache) = pass.cache {
             cache.invalidate();
         }
         self.graph_dirty = true;
+        output
     }
 
     fn build_graph(&mut self) {
@@ -1704,8 +1708,8 @@ impl Renderer for Renderer2D {
                 let _ = self.event_sender.send(Renderer2DEvent::PassRemoved);
             }
             Renderer2DCommand::SetPassOutput(label, output) => {
-                self.set_pass_output(&label, output);
-                let _ = self.event_sender.send(Renderer2DEvent::PassOutputSet);
+                let handle = self.set_pass_output(&label, output);
+                let _ = self.event_sender.send(Renderer2DEvent::PassOutputSet(handle));
             }
             Renderer2DCommand::SetPassRenderTarget(label, render_target) => {
                 self.set_pass_render_target(&label, render_target);
