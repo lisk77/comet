@@ -566,11 +566,6 @@ impl Renderer2D {
                 } else {
                     resources.insert_bind_group("Font".into(), cg);
                 }
-
-                if let Some(pos) = self.render_passes.iter().position(|p| p.label == "Font") {
-                    let font_pass = self.render_passes.remove(pos);
-                    self.render_passes.push(font_pass);
-                }
             }
         }
     }
