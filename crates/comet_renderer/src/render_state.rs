@@ -3,7 +3,7 @@ use comet_colors::Color;
 use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
-pub struct RenderContext {
+pub struct RenderState {
     window: Arc<Window>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -17,12 +17,12 @@ pub struct RenderContext {
     resources: RenderResources,
 }
 
-impl RenderContext {
+impl RenderState {
     pub fn new(window: Arc<Window>, clear_color: Option<impl Color>) -> Self {
         let size = window.inner_size();
         let scale_factor = window.scale_factor();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
+            backends: wgpu::Backends::VULKAN,
             ..Default::default()
         });
 

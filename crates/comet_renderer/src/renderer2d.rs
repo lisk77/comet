@@ -2,7 +2,7 @@ use crate::{
     camera::RenderCamera,
     gpu_texture::GpuTexture,
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
-    render_context::RenderContext,
+    render_state::RenderState,
     render_events::Renderer2DEvent,
     render_pass::{universal_execute, PassCache, LoadOp, PassOutput, RenderPass},
     Vertex,
@@ -75,7 +75,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 "#;
 
 pub struct Renderer2D {
-    render_context: RenderContext,
+    render_state: RenderState,
     asset_provider: comet_assets::AssetProvider,
     render_passes: Vec<RenderPass>,
     execution_order: Vec<String>,
@@ -429,8 +429,8 @@ impl comet_app::Module for RenderHandle2D {
 impl Renderer2D {
     fn setup_atlas_pipeline(&mut self, mut atlas: comet_assets::TextureAtlas) {
         let gpu_texture = match GpuTexture::from_dynamic_image(
-            self.render_context.device(),
-            self.render_context.queue(),
+            self.render_state.device(),
+            self.render_state.queue(),
             atlas.atlas(),
             Some("Atlas"),
             false,
@@ -444,19 +444,19 @@ impl Renderer2D {
         atlas.clear_atlas_image();
 
         if let Some(handle) = self.asset_provider.add(atlas) {
-            self.render_context.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
+            self.render_state.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
         } else {
             error!("Failed to add texture atlas to asset provider");
             return;
         }
 
         let gpu_texture_arc = Arc::new(gpu_texture);
-        self.render_context
+        self.render_state
             .resources_mut()
             .insert_gpu_texture("atlas".to_string(), gpu_texture_arc.clone());
 
         let texture_bind_group_layout =
-            Arc::new(self.render_context.device().create_bind_group_layout(
+            Arc::new(self.render_state.device().create_bind_group_layout(
                 &wgpu::BindGroupLayoutDescriptor {
                     label: Some("Texture Bind Group Layout"),
                     entries: &[
@@ -481,7 +481,7 @@ impl Renderer2D {
             ));
 
         let texture_sampler =
-            self.render_context
+            self.render_state
                 .device()
                 .create_sampler(&wgpu::SamplerDescriptor {
                     address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -499,7 +499,7 @@ impl Renderer2D {
                 });
 
         let camera_bind_group_layout =
-            Arc::new(self.render_context.device().create_bind_group_layout(
+            Arc::new(self.render_state.device().create_bind_group_layout(
                 &wgpu::BindGroupLayoutDescriptor {
                     label: Some("Camera Bind Group Layout"),
                     entries: &[wgpu::BindGroupLayoutEntry {
@@ -531,8 +531,8 @@ impl Renderer2D {
         );
 
         let new_bind_group = Arc::new({
-            let device = self.render_context.device();
-            let sampler = self.render_context.resources().get_sampler("Universal")
+            let device = self.render_state.device();
+            let sampler = self.render_state.resources().get_sampler("Universal")
                 .expect("Universal sampler missing after new_render_pass");
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
@@ -550,18 +550,18 @@ impl Renderer2D {
             })
         });
 
-        self.render_context.resources_mut().replace_bind_group(
+        self.render_state.resources_mut().replace_bind_group(
             "Universal".to_string(),
             0,
             new_bind_group,
         );
 
-        let camera_group = self.render_context.resources()
+        let camera_group = self.render_state.resources()
             .get_bind_groups("Universal")
             .and_then(|groups| groups.get(1))
             .cloned();
         if let Some(cg) = camera_group {
-            let resources = self.render_context.resources_mut();
+            let resources = self.render_state.resources_mut();
             if resources.get_bind_groups("Font").is_some() {
                 let font_groups = resources.get_bind_groups("Font").map(|v| v.len()).unwrap_or(0);
                 if font_groups > 1 {
@@ -605,8 +605,8 @@ impl Renderer2D {
         let mut atlas = comet_assets::TextureAtlas::from_glyphs(&self.accumulated_font_glyphs);
 
         let font_texture = match GpuTexture::from_dynamic_image(
-            self.render_context.device(),
-            self.render_context.queue(),
+            self.render_state.device(),
+            self.render_state.queue(),
             atlas.atlas(),
             Some("FontAtlas"),
             false,
@@ -620,26 +620,26 @@ impl Renderer2D {
         atlas.clear_atlas_image();
         let font_texture_arc = Arc::new(font_texture);
 
-        if let Some(old_handle) = self.render_context.resources().get_asset_atlas_handle("font_atlas") {
+        if let Some(old_handle) = self.render_state.resources().get_asset_atlas_handle("font_atlas") {
             self.asset_provider.unload(old_handle);
         }
         if let Some(atlas_handle) = self.asset_provider.add(atlas) {
-            self.render_context.resources_mut().insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
+            self.render_state.resources_mut().insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
         }
-        self.render_context.resources_mut().insert_gpu_texture("font_atlas".to_string(), font_texture_arc.clone());
+        self.render_state.resources_mut().insert_gpu_texture("font_atlas".to_string(), font_texture_arc.clone());
 
-        let font_pass_exists = self.render_context.resources().get_bind_group_layout("Font").is_some();
+        let font_pass_exists = self.render_state.resources().get_bind_group_layout("Font").is_some();
 
         if font_pass_exists {
-            let texture_bind_group_layout = self.render_context.resources()
+            let texture_bind_group_layout = self.render_state.resources()
                 .get_bind_group_layout("Font")
                 .and_then(|v| v.first())
                 .cloned()
                 .expect("Font bind group layout missing");
 
-            let sampler = self.render_context.resources().get_sampler("Font")
+            let sampler = self.render_state.resources().get_sampler("Font")
                 .expect("Font sampler missing");
-            let new_bind_group = Arc::new(self.render_context.device().create_bind_group(
+            let new_bind_group = Arc::new(self.render_state.device().create_bind_group(
                 &wgpu::BindGroupDescriptor {
                     layout: &texture_bind_group_layout,
                     entries: &[
@@ -655,10 +655,10 @@ impl Renderer2D {
                     label: Some("Font Texture Bind Group (Updated)"),
                 },
             ));
-            self.render_context.resources_mut().replace_bind_group("Font".into(), 0, new_bind_group);
+            self.render_state.resources_mut().replace_bind_group("Font".into(), 0, new_bind_group);
         } else {
             let texture_bind_group_layout =
-                Arc::new(self.render_context.device().create_bind_group_layout(
+                Arc::new(self.render_state.device().create_bind_group_layout(
                     &wgpu::BindGroupLayoutDescriptor {
                         label: Some("Font Texture Bind Group Layout"),
                         entries: &[
@@ -682,7 +682,7 @@ impl Renderer2D {
                     },
                 ));
 
-            let texture_sampler = self.render_context.device().create_sampler(&wgpu::SamplerDescriptor {
+            let texture_sampler = self.render_state.device().create_sampler(&wgpu::SamplerDescriptor {
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
                 address_mode_v: wgpu::AddressMode::ClampToEdge,
                 address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -693,7 +693,7 @@ impl Renderer2D {
             });
 
             let camera_bind_group_layout =
-                Arc::new(self.render_context.device().create_bind_group_layout(
+                Arc::new(self.render_state.device().create_bind_group_layout(
                     &wgpu::BindGroupLayoutDescriptor {
                         label: Some("Font Camera Bind Group Layout"),
                         entries: &[wgpu::BindGroupLayoutEntry {
@@ -725,12 +725,12 @@ impl Renderer2D {
                 &[camera_bind_group_layout],
             );
 
-            let camera_group = self.render_context.resources()
+            let camera_group = self.render_state.resources()
                 .get_bind_groups("Universal")
                 .and_then(|groups| groups.get(1))
                 .cloned();
             if let Some(cg) = camera_group {
-                let resources = self.render_context.resources_mut();
+                let resources = self.render_state.resources_mut();
                 if resources.get_bind_groups("Font").map(|v| v.len() > 1).unwrap_or(false) {
                     resources.replace_bind_group("Font".into(), 1, cg);
                 } else {
@@ -741,10 +741,10 @@ impl Renderer2D {
     }
 
     fn ensure_image_in_atlas(&mut self, handle: comet_assets::Asset<comet_assets::Image>) -> Option<AtlasRef> {
-        if self.render_context.resources().get_asset_atlas_handle("atlas").is_none() {
+        if self.render_state.resources().get_asset_atlas_handle("atlas").is_none() {
             self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
         }
-        let atlas_handle = self.render_context.resources().get_asset_atlas_handle("atlas")?;
+        let atlas_handle = self.render_state.resources().get_asset_atlas_handle("atlas")?;
 
         if let Some(region) = self.asset_provider.with(atlas_handle, |atlas| atlas.region_for_handle(handle)).flatten() {
             return Some(AtlasRef::new(region, atlas_handle));
@@ -772,9 +772,9 @@ impl Renderer2D {
             }
         };
 
-        let gpu_texture = self.render_context.resources().get_gpu_texture("atlas")?.clone();
+        let gpu_texture = self.render_state.resources().get_gpu_texture("atlas")?.clone();
         self.asset_provider.with(handle, |img| {
-            gpu_texture.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h);
+            gpu_texture.write_region(self.render_state.queue(), blit_x, blit_y, img.data(), w, h);
         });
         self.asset_provider.with_mut(handle, |img| img.evict_pixels());
 
@@ -797,7 +797,7 @@ impl Renderer2D {
         });
 
         let new_gpu = GpuTexture::create_2d_texture(
-            self.render_context.device(),
+            self.render_state.device(),
             new_size, new_size,
             wgpu::TextureFormat::Rgba8UnormSrgb,
             wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
@@ -819,7 +819,7 @@ impl Renderer2D {
 
             let uploaded = self.asset_provider.with(h, |img| {
                 if !img.is_evicted() {
-                    new_gpu.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h_px);
+                    new_gpu.write_region(self.render_state.queue(), blit_x, blit_y, img.data(), w, h_px);
                     true
                 } else {
                     false
@@ -832,7 +832,7 @@ impl Renderer2D {
                     let fs_path = comet_assets::resolve_asset_path(&path);
                     if let Ok(bytes) = std::fs::read(&fs_path) {
                         if let Ok(img) = comet_assets::Image::from_bytes(&bytes, false) {
-                            new_gpu.write_region(self.render_context.queue(), blit_x, blit_y, img.data(), w, h_px);
+                            new_gpu.write_region(self.render_state.queue(), blit_x, blit_y, img.data(), w, h_px);
                         }
                     }
                 }
@@ -840,18 +840,18 @@ impl Renderer2D {
         }
 
         let new_gpu_arc = Arc::new(new_gpu);
-        self.render_context.resources_mut().insert_gpu_texture("atlas".to_string(), new_gpu_arc.clone());
+        self.render_state.resources_mut().insert_gpu_texture("atlas".to_string(), new_gpu_arc.clone());
 
         let new_bind_group = Arc::new({
-            let layout = self.render_context.resources()
+            let layout = self.render_state.resources()
                 .get_bind_group_layout("Universal")
                 .and_then(|v| v.first())
                 .cloned()
                 .expect("Universal bind group layout missing during atlas rebuild");
-            let sampler = self.render_context.resources()
+            let sampler = self.render_state.resources()
                 .get_sampler("Universal")
                 .expect("Universal sampler missing during atlas rebuild");
-            self.render_context.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            self.render_state.device().create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &layout,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -866,7 +866,7 @@ impl Renderer2D {
                 label: Some("Universal Texture Bind Group (Rebuilt)"),
             })
         });
-        self.render_context.resources_mut().replace_bind_group("Universal".to_string(), 0, new_bind_group);
+        self.render_state.resources_mut().replace_bind_group("Universal".to_string(), 0, new_bind_group);
 
         let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
     }
@@ -879,7 +879,7 @@ impl Renderer2D {
         output_format: Option<wgpu::TextureFormat>,
         load: LoadOp,
         execute: Box<
-            dyn for<'rpass> Fn(String, &mut RenderContext, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup])
+            dyn for<'rpass> Fn(String, &mut RenderState, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup])
                 + Send
                 + Sync,
         >,
@@ -893,13 +893,13 @@ impl Renderer2D {
     ) -> Option<PassOutput> {
         info!("Creating render pass {}", label);
 
-        let shader_module = self.render_context.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+        let shader_module = self.render_state.device().create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(&format!("{} Shader", label)),
             source: wgpu::ShaderSource::Wgsl(shader_path.into()),
         });
 
         let texture_bind_group = Arc::new({
-            let device = self.render_context.device();
+            let device = self.render_state.device();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
                 entries: &[
@@ -917,7 +917,7 @@ impl Renderer2D {
         });
 
         let render_pipeline = {
-            let device = self.render_context.device();
+            let device = self.render_state.device();
 
             let mut bind_layout_refs: Vec<&wgpu::BindGroupLayout> = Vec::new();
             bind_layout_refs.push(&texture_bind_group_layout);
@@ -944,7 +944,7 @@ impl Renderer2D {
                     module: &shader_module,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: self.render_context.config().format,
+                        format: self.render_state.config().format,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent {
                                 src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -981,11 +981,11 @@ impl Renderer2D {
             })
         };
 
-        self.render_context
+        self.render_state
             .insert_pipeline(label.clone(), render_pipeline);
 
         {
-            let resources = self.render_context.resources_mut();
+            let resources = self.render_state.resources_mut();
             resources.insert_bind_group(label.clone(), texture_bind_group);
             for group in bind_groups {
                 resources.insert_bind_group(label.clone(), group);
@@ -998,7 +998,7 @@ impl Renderer2D {
         }
 
         if let Some(camera_layout) = extra_bind_group_layouts.get(0) {
-            let device = self.render_context.device();
+            let device = self.render_state.device();
 
             let identity: [[f32; 4]; 4] = m4::IDENTITY.into();
             let cam_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1017,7 +1017,7 @@ impl Renderer2D {
                     }],
                 }));
 
-            let resources = self.render_context.resources_mut();
+            let resources = self.render_state.resources_mut();
             resources.insert_buffer(label.clone(), Arc::new(cam_buffer));
             resources.insert_bind_group(label.clone(), default_camera_bg);
         } else {
@@ -1033,7 +1033,7 @@ impl Renderer2D {
         self.render_passes
             .push(RenderPass::new(label.clone(), input_names, output, None, output_format, load, None, execute));
 
-        self.render_context
+        self.render_state
             .new_batch(label.clone(), Vec::new(), Vec::new());
         info!("Created render pass {}!", label);
 
@@ -1042,7 +1042,7 @@ impl Renderer2D {
     }
 
     fn add_pass(&mut self, desc: crate::render_commands::PassDescriptor) -> PassOutput {
-        let shader_module = self.render_context.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+        let shader_module = self.render_state.device().create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(&format!("{} Shader", desc.label)),
             source: wgpu::ShaderSource::Wgsl(desc.shader_src.into()),
         });
@@ -1050,7 +1050,7 @@ impl Renderer2D {
         let input_count = desc.inputs.len();
 
         let bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>> = (0..input_count).map(|i| {
-            Arc::new(self.render_context.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            Arc::new(self.render_state.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some(&format!("{} Input {} Layout", desc.label, i)),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
@@ -1073,7 +1073,7 @@ impl Renderer2D {
             }))
         }).collect();
 
-        let sampler = Arc::new(self.render_context.device().create_sampler(&wgpu::SamplerDescriptor {
+        let sampler = Arc::new(self.render_state.device().create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -1084,14 +1084,14 @@ impl Renderer2D {
         }));
 
         let layout_refs: Vec<&wgpu::BindGroupLayout> = bind_group_layouts.iter().map(|l| l.as_ref()).collect();
-        let pipeline_layout = self.render_context.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = self.render_state.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("{} Pipeline Layout", desc.label)),
             bind_group_layouts: &layout_refs,
             push_constant_ranges: &[],
         });
 
-        let output_format = desc.output_format.unwrap_or(self.render_context.config().format);
-        let pipeline = Arc::new(self.render_context.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let output_format = desc.output_format.unwrap_or(self.render_state.config().format);
+        let pipeline = Arc::new(self.render_state.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(&format!("{} Pipeline", desc.label)),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -1127,7 +1127,7 @@ impl Renderer2D {
         }
         let load = if desc.render_target.is_some() { LoadOp::Load } else { desc.load };
 
-        let execute: Box<dyn for<'rpass> Fn(String, &mut RenderContext, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup]) + Send + Sync> = {
+        let execute: Box<dyn for<'rpass> Fn(String, &mut RenderState, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup]) + Send + Sync> = {
             let pipeline = pipeline.clone();
             Box::new(move |_label, _ctx, rpass, input_bind_groups| {
                 rpass.set_pipeline(&pipeline);
@@ -1164,7 +1164,7 @@ impl Renderer2D {
         }) {
             let pass = self.render_passes.remove(pos);
             if let Some(ref name) = pass.output {
-                self.render_context.resources_mut().remove_gpu_texture(name);
+                self.render_state.resources_mut().remove_gpu_texture(name);
             }
         }
         self.graph_dirty = true;
@@ -1185,7 +1185,7 @@ impl Renderer2D {
             return None;
         };
         if let Some(ref old) = pass.output {
-            self.render_context.resources_mut().remove_gpu_texture(old);
+            self.render_state.resources_mut().remove_gpu_texture(old);
         }
         pass.output = output.as_ref().map(|p| p.0.clone());
         if let Some(ref mut cache) = pass.cache {
@@ -1278,7 +1278,7 @@ impl Renderer2D {
         let key = format!("{}@{}::{}", font.index(), size.to_bits(), glyph);
         let fallback_key = format!("{}@{}:: ", font.index(), size.to_bits());
 
-        if let Some(handle) = self.render_context.resources().get_asset_atlas_handle("font_atlas") {
+        if let Some(handle) = self.render_state.resources().get_asset_atlas_handle("font_atlas") {
             self.asset_provider.with(handle, |atlas| {
                 atlas.textures().get(&key).copied()
                     .or_else(|| atlas.textures().get(&fallback_key).copied())
@@ -1318,7 +1318,7 @@ impl Renderer2D {
             color.a as f32,
         ];
 
-        let config = self.render_context.config();
+        let config = self.render_state.config();
         let line_height = line_height_px / config.height as f32;
 
         let screen_position = comet_math::v2::new(
@@ -1392,11 +1392,11 @@ impl Renderer2D {
         texts: Vec<Text2D>,
         referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
     ) {
-        if self.render_context.resources().get_asset_atlas_handle("atlas").is_none() {
+        if self.render_state.resources().get_asset_atlas_handle("atlas").is_none() {
             self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
         }
 
-        if let Some(atlas_handle) = self.render_context.resources().get_asset_atlas_handle("atlas") {
+        if let Some(atlas_handle) = self.render_state.resources().get_asset_atlas_handle("atlas") {
             let any_evicted = self.asset_provider.with_mut(atlas_handle, |atlas| {
                 let mut evicted = false;
                 for handle in &referenced_handles {
@@ -1475,8 +1475,8 @@ impl Renderer2D {
                 ),
             ];
 
-            let inv_width = 1.0 / self.render_context.config().width as f32;
-            let inv_height = 1.0 / self.render_context.config().height as f32;
+            let inv_width = 1.0 / self.render_state.config().width as f32;
+            let inv_height = 1.0 / self.render_state.config().height as f32;
 
             let snapped_screen_corners = [
                 (
@@ -1546,7 +1546,7 @@ impl Renderer2D {
             ]);
         }
 
-        self.render_context.update_batch_buffers(
+        self.render_state.update_batch_buffers(
             "Universal".to_string(),
             vertex_buffer,
             index_buffer,
@@ -1575,7 +1575,7 @@ impl Renderer2D {
                 &mut bounds,
             );
 
-            self.render_context
+            self.render_state
                 .update_batch_buffers("Font".to_string(), vertices, indices);
         }
     }
@@ -1590,7 +1590,7 @@ impl Renderer2D {
         let mut camera_uniform = crate::camera::CameraUniform::new();
         camera_uniform.update_view_proj(&render_camera);
 
-        let buffer = match self.render_context.resources().get_buffer("Universal")
+        let buffer = match self.render_state.resources().get_buffer("Universal")
             .and_then(|v| v.first())
             .cloned()
         {
@@ -1601,7 +1601,7 @@ impl Renderer2D {
             }
         };
 
-        self.render_context.queue().write_buffer(
+        self.render_state.queue().write_buffer(
             &buffer,
             0,
             bytemuck::cast_slice(&[camera_uniform]),
@@ -1619,7 +1619,7 @@ impl Renderer for Renderer2D {
     ) -> Self {
         let asset_provider = comet_assets::AssetProvider::new(comet_assets::AssetManager::new());
         Self {
-            render_context: RenderContext::new(window, clear_color),
+            render_state: RenderState::new(window, clear_color),
             asset_provider,
             render_passes: Vec::new(),
             execution_order: Vec::new(),
@@ -1642,7 +1642,7 @@ impl Renderer for Renderer2D {
         match command {
             Renderer2DCommand::Clear => {}
             Renderer2DCommand::ResolveAtlasRef(path) => {
-                let atlas_ref = self.render_context
+                let atlas_ref = self.render_state
                     .resources()
                     .get_asset_atlas_handle("atlas")
                     .and_then(|handle| {
@@ -1719,23 +1719,23 @@ impl Renderer for Renderer2D {
     }
 
     fn window(&self) -> &Window {
-        self.render_context.window()
+        self.render_state.window()
     }
 
     fn size(&self) -> PhysicalSize<u32> {
-        self.render_context.size()
+        self.render_state.size()
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
-            self.render_context.set_size(new_size);
-            self.render_context.config_mut().width = new_size.width;
-            self.render_context.config_mut().height = new_size.height;
-            self.render_context.configure_surface();
+            self.render_state.set_size(new_size);
+            self.render_state.config_mut().width = new_size.width;
+            self.render_state.config_mut().height = new_size.height;
+            self.render_state.configure_surface();
 
             for pass in &mut self.render_passes {
                 if let Some(ref name) = pass.output {
-                    self.render_context.resources_mut().remove_gpu_texture(name);
+                    self.render_state.resources_mut().remove_gpu_texture(name);
                 }
                 if let Some(ref mut cache) = pass.cache {
                     cache.invalidate();
@@ -1745,11 +1745,11 @@ impl Renderer for Renderer2D {
     }
 
     fn scale_factor(&self) -> f64 {
-        self.render_context.scale_factor()
+        self.render_state.scale_factor()
     }
 
     fn set_scale_factor(&mut self, scale_factor: f64) {
-        self.render_context.set_scale_factor(scale_factor);
+        self.render_state.set_scale_factor(scale_factor);
     }
 
     fn update(&mut self) -> f32 {
@@ -1764,13 +1764,13 @@ impl Renderer for Renderer2D {
             self.build_graph();
         }
 
-        let output = self.render_context.surface().get_current_texture()?;
+        let output = self.render_state.surface().get_current_texture()?;
         let output_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder =
-            self.render_context
+            self.render_state
                 .device()
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Render Encoder"),
@@ -1784,12 +1784,12 @@ impl Renderer for Renderer2D {
             };
 
             if let Some(ref name) = self.render_passes[pass_idx].output.clone() {
-                if self.render_context.resources().get_gpu_texture(name).is_none() {
-                    let w = self.render_context.config().width;
-                    let h = self.render_context.config().height;
+                if self.render_state.resources().get_gpu_texture(name).is_none() {
+                    let w = self.render_state.config().width;
+                    let h = self.render_state.config().height;
                     let format = self.render_passes[pass_idx].output_format
-                        .unwrap_or(self.render_context.config().format);
-                    self.render_context.create_intermediate_texture(name.clone(), w, h, format);
+                        .unwrap_or(self.render_state.config().format);
+                    self.render_state.create_intermediate_texture(name.clone(), w, h, format);
                     if let Some(ref mut cache) = self.render_passes[pass_idx].cache {
                         cache.invalidate();
                     }
@@ -1797,9 +1797,9 @@ impl Renderer for Renderer2D {
             }
 
             let owned_tex = self.render_passes[pass_idx].output.as_ref()
-                .and_then(|name| self.render_context.resources().get_gpu_texture(name).cloned());
+                .and_then(|name| self.render_state.resources().get_gpu_texture(name).cloned());
             let target_tex = self.render_passes[pass_idx].render_target.as_ref()
-                .and_then(|name| self.render_context.resources().get_gpu_texture(name).cloned());
+                .and_then(|name| self.render_state.resources().get_gpu_texture(name).cloned());
 
             let view: &wgpu::TextureView = match target_tex.as_ref().or(owned_tex.as_ref()) {
                 Some(tex) => &tex.view,
@@ -1808,11 +1808,11 @@ impl Renderer for Renderer2D {
 
             if self.render_passes[pass_idx].cache.as_ref().is_some_and(|c| c.bind_groups.is_none()) {
                 let inputs: Vec<Arc<GpuTexture>> = self.render_passes[pass_idx].inputs.iter()
-                    .filter_map(|name| self.render_context.resources().get_gpu_texture(name).cloned())
+                    .filter_map(|name| self.render_state.resources().get_gpu_texture(name).cloned())
                     .collect();
                 if let Some(ref cache) = self.render_passes[pass_idx].cache {
                     let groups: Vec<Arc<wgpu::BindGroup>> = inputs.iter().zip(cache.layouts.iter()).map(|(tex, layout)| {
-                        Arc::new(self.render_context.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                        Arc::new(self.render_state.device().create_bind_group(&wgpu::BindGroupDescriptor {
                             layout,
                             entries: &[
                                 wgpu::BindGroupEntry {
@@ -1839,7 +1839,7 @@ impl Renderer for Renderer2D {
             let group_refs: Vec<&wgpu::BindGroup> = owned_groups.iter().map(|g| g.as_ref()).collect();
 
             let load_op = match &self.render_passes[pass_idx].load {
-                LoadOp::Background => wgpu::LoadOp::Clear(self.render_context.clear_color()),
+                LoadOp::Background => wgpu::LoadOp::Clear(self.render_state.clear_color()),
                 LoadOp::Color(c) => wgpu::LoadOp::Clear(*c),
                 LoadOp::Load => wgpu::LoadOp::Load,
             };
@@ -1856,15 +1856,15 @@ impl Renderer for Renderer2D {
                     occlusion_query_set: None,
                     timestamp_writes: None,
                 });
-                (self.render_passes[pass_idx].execute)(label.clone(), &mut self.render_context, &mut rpass, &group_refs);
+                (self.render_passes[pass_idx].execute)(label.clone(), &mut self.render_state, &mut rpass, &group_refs);
             }
         }
 
-        self.render_context
+        self.render_state
             .queue()
             .submit(std::iter::once(encoder.finish()));
 
-        self.render_context.device().poll(wgpu::Maintain::Poll);
+        self.render_state.device().poll(wgpu::Maintain::Poll);
 
         output.present();
 

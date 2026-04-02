@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::render_context::RenderContext;
+use crate::render_state::RenderState;
 
 #[derive(Debug, Clone)]
 pub struct PassOutput(pub(crate) String);
@@ -42,7 +42,7 @@ pub struct RenderPass {
     pub load: LoadOp,
     pub cache: Option<PassCache>,
     pub execute: Box<
-        dyn for<'rpass> Fn(String, &mut RenderContext, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup])
+        dyn for<'rpass> Fn(String, &mut RenderState, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup])
             + Send
             + Sync,
     >,
@@ -58,7 +58,7 @@ impl RenderPass {
         load: LoadOp,
         cache: Option<PassCache>,
         execute: Box<
-            dyn for<'rpass> Fn(String, &mut RenderContext, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup])
+            dyn for<'rpass> Fn(String, &mut RenderState, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup])
                 + Send
                 + Sync,
         >,
@@ -69,7 +69,7 @@ impl RenderPass {
 
 pub fn universal_execute(
     label: String,
-    ctx: &mut RenderContext,
+    ctx: &mut RenderState,
     rpass: &mut wgpu::RenderPass<'_>,
     _inputs: &[&wgpu::BindGroup],
 ) {
