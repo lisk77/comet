@@ -741,9 +741,6 @@ impl Renderer2D {
     }
 
     fn ensure_image_in_atlas(&mut self, handle: comet_assets::Asset<comet_assets::Image>) -> Option<AtlasRef> {
-        if self.render_state.resources().get_asset_atlas_handle("atlas").is_none() {
-            self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
-        }
         let atlas_handle = self.render_state.resources().get_asset_atlas_handle("atlas")?;
 
         if let Some(region) = self.asset_provider.with(atlas_handle, |atlas| atlas.region_for_handle(handle)).flatten() {
@@ -891,6 +888,7 @@ impl Renderer2D {
         bind_groups: Vec<Arc<wgpu::BindGroup>>,
         extra_bind_group_layouts: &[Arc<wgpu::BindGroupLayout>],
     ) -> Option<PassOutput> {
+        #[cfg(feature = "comet_debug")]
         info!("Creating render pass {}", label);
 
         let shader_module = self.render_state.device().create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1035,6 +1033,7 @@ impl Renderer2D {
 
         self.render_state
             .new_batch(label.clone(), Vec::new(), Vec::new());
+        #[cfg(feature = "comet_debug")]
         info!("Created render pass {}!", label);
 
         self.graph_dirty = true;
@@ -1154,7 +1153,8 @@ impl Renderer2D {
         ));
 
         self.graph_dirty = true;
-        info!("Created post-process pass {}!", desc.label);
+        #[cfg(feature = "comet_debug")]
+        info!("Created pass {}!", desc.label);
         pass_output
     }
 
@@ -1267,7 +1267,6 @@ impl Renderer2D {
 
         self.execution_order = order.into_iter().map(|i| self.render_passes[i].label.clone()).collect();
         self.graph_dirty = false;
-        info!("Render graph built: {:?}", self.execution_order);
     }
 
     fn get_texture_region(&self, texture: AtlasRef) -> TextureRegion {
@@ -1392,10 +1391,6 @@ impl Renderer2D {
         texts: Vec<Text2D>,
         referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
     ) {
-        if self.render_state.resources().get_asset_atlas_handle("atlas").is_none() {
-            self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
-        }
-
         if let Some(atlas_handle) = self.render_state.resources().get_asset_atlas_handle("atlas") {
             let any_evicted = self.asset_provider.with_mut(atlas_handle, |atlas| {
                 let mut evicted = false;
@@ -1636,6 +1631,7 @@ impl Renderer for Renderer2D {
         if app.has_context::<comet_assets::AssetProvider>() {
             self.asset_provider = app.context::<comet_assets::AssetProvider>().clone();
         }
+        self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
     }
 
     fn apply_command(&mut self, command: <Self::Handle as RendererHandle>::Command) {
