@@ -1161,7 +1161,9 @@ impl Renderer2D {
     }
 
     fn remove_render_pass(&mut self, label: &str) {
-        if let Some(pos) = self.render_passes.iter().position(|p| p.label == label) {
+        if let Some(pos) = self.render_passes.iter().position(|p| {
+            p.output.as_deref() == Some(label) || p.label == label
+        }) {
             let pass = self.render_passes.remove(pos);
             if let Some(ref name) = pass.output {
                 self.render_context.resources_mut().remove_gpu_texture(name);
