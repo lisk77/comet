@@ -156,6 +156,7 @@ enum RawInputEvent {
     MouseScrolled(f32, f32),
     CursorEntered,
     CursorLeft,
+    FocusLost,
 }
 
 pub struct GamepadState {
@@ -220,7 +221,7 @@ impl InputState {
 }
 
 pub struct InputModule {
-    queue: Arc<Mutex<Vec<(u64, RawInputEvent)>>>,
+    queue: Arc<Mutex<Vec<RawInputEvent>>>,
     frame_gen: Arc<AtomicU64>,
     last_gen: u64,
     state: InputState,
@@ -260,18 +261,8 @@ impl InputModule {
             }
         }
 
-        let events: Vec<(u64, RawInputEvent)> = self.queue.lock().unwrap().drain(..).collect();
-        for (gen, event) in events {
-            let is_oneshot = matches!(event,
-                RawInputEvent::KeyPressed(_) | RawInputEvent::KeyReleased(_) |
-                RawInputEvent::MousePressed(_) | RawInputEvent::MouseReleased(_) |
-                RawInputEvent::CursorEntered | RawInputEvent::CursorLeft
-            );
-
-            if is_oneshot && gen != current_gen {
-                continue;
-            }
-
+        let events: Vec<RawInputEvent> = self.queue.lock().unwrap().drain(..).collect();
+        for event in events {
             match event {
                 RawInputEvent::KeyPressed(k) => {
                     if self.state.keys_held.insert(k) {
@@ -310,6 +301,14 @@ impl InputModule {
                 RawInputEvent::MouseScrolled(x, y) => {
                     self.state.scroll_delta.0 += x;
                     self.state.scroll_delta.1 += y;
+                }
+                RawInputEvent::FocusLost => {
+                    self.state.keys_held.clear();
+                    self.state.mouse_held.clear();
+                    for gp in self.state.gamepads.values_mut() {
+                        gp.buttons_held.clear();
+                        gp.axes.clear();
+                    }
                 }
             }
         }
@@ -474,7 +473,6 @@ impl Module for InputModule {
                 return;
             }
 
-            let gen = frame_gen.load(Ordering::Relaxed);
             let raw: Option<RawInputEvent> = match event {
                 Event::WindowEvent { event, .. } => match event {
                     WindowEvent::KeyboardInput { event: key_event, .. } => {
@@ -503,6 +501,7 @@ impl Module for InputModule {
                     }
                     WindowEvent::CursorEntered { .. } => Some(RawInputEvent::CursorEntered),
                     WindowEvent::CursorLeft { .. } => Some(RawInputEvent::CursorLeft),
+                    WindowEvent::Focused(false) => Some(RawInputEvent::FocusLost),
                     _ => None,
                 },
                 Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
@@ -512,7 +511,7 @@ impl Module for InputModule {
             };
             if let Some(e) = raw {
                 if let Ok(mut q) = queue.lock() {
-                    q.push((gen, e));
+                    q.push(e);
                 }
             }
         });
