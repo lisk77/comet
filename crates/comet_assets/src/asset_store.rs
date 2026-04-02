@@ -311,7 +311,7 @@ impl AssetStore {
             1 => Some(Asset::new(matches[0].1, matches[0].2)),
             _ => {
                 let paths: Vec<_> = matches.iter().map(|(p, _, _)| *p).collect();
-                error!("Ambiguous stem '{}' matches multiple assets: {:?} — name your files better", stem, paths);
+                error!("Ambiguous stem '{}' matches multiple assets: {:?}: name your files better", stem, paths);
                 None
             }
         }

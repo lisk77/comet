@@ -1,4 +1,5 @@
 use comet_assets::AtlasRef;
+use crate::render_pass::LoadOp;
 
 #[derive(Clone, Copy, Debug)]
 pub struct CameraPacket2D {
@@ -36,7 +37,7 @@ pub struct PassDescriptor {
     pub render_target: Option<String>,
     pub output_format: Option<wgpu::TextureFormat>,
     pub shader_src: String,
-    pub clear: Option<wgpu::Color>,
+    pub load: LoadOp,
 }
 
 pub enum Renderer2DCommand {

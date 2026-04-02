@@ -354,7 +354,7 @@ impl AssetProvider {
             .unwrap_or(LoadState::Failed)
     }
 
-    /// Returns (assets_ready, assets_queued) — useful for a loading screen progress bar.
+    /// Returns how many assets are ready and how many are queued.
     pub fn load_progress(&self) -> (usize, usize) {
         (self.ready.load(Ordering::Relaxed), self.queued.load(Ordering::Relaxed))
     }

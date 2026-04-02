@@ -4,7 +4,7 @@ use crate::{
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_context::RenderContext,
     render_events::Renderer2DEvent,
-    render_pass::{universal_clear_execute, universal_load_execute, PassCache, PassOutput, RenderPass},
+    render_pass::{universal_execute, PassCache, LoadOp, PassOutput, RenderPass},
     Vertex,
 };
 use comet_colors::Color;
@@ -217,7 +217,7 @@ impl RenderHandle2D {
         render_target: Option<&PassOutput>,
         output_format: Option<wgpu::TextureFormat>,
         shader_src: String,
-        clear: Option<wgpu::Color>,
+        load: LoadOp,
     ) -> Option<PassOutput> {
         let desc = crate::render_commands::PassDescriptor {
             label,
@@ -226,7 +226,7 @@ impl RenderHandle2D {
             render_target: render_target.map(|p| p.0.clone()),
             output_format,
             shader_src,
-            clear,
+            load,
         };
         let _ = self.command_sender.send(Renderer2DCommand::AddRenderPass(desc));
         self.recv_matching_event(Duration::from_millis(5000), |e| {
@@ -516,7 +516,8 @@ impl Renderer2D {
             vec![],
             None,
             None,
-            Box::new(universal_clear_execute),
+            LoadOp::Background,
+            Box::new(universal_execute),
             BASE_2D_SHADER_SRC,
             None,
             &(*gpu_texture_arc),
@@ -583,7 +584,7 @@ impl Renderer2D {
         let font_data = match self.asset_provider.with(handle, |f| f.clone()) {
             Some(f) => f,
             None => {
-                error!("Font handle {:?} not ready — skipping rasterization", handle);
+                error!("Font handle {:?} not read: skipping rasterization", handle);
                 return;
             }
         };
@@ -715,7 +716,8 @@ impl Renderer2D {
                 vec![],
                 None,
                 None,
-                Box::new(universal_load_execute),
+                LoadOp::Load,
+                Box::new(universal_execute),
                 BASE_2D_SHADER_SRC,
                 None,
                 &(*font_texture_arc),
@@ -790,7 +792,7 @@ impl Renderer2D {
             .unwrap_or((512, 512));
 
         let new_size = (old_w * 2).max(old_h * 2).min(8192);
-        info!("Atlas full — rebuilding {}x{} → {}x{}", old_w, old_h, new_size, new_size);
+        info!("Atlas full: rebuilding {}x{} → {}x{}", old_w, old_h, new_size, new_size);
 
         self.asset_provider.with_mut(atlas_handle, |atlas| {
             atlas.reset_for_rebuild(new_size, new_size);
@@ -877,8 +879,9 @@ impl Renderer2D {
         inputs: Vec<&PassOutput>,
         output: Option<String>,
         output_format: Option<wgpu::TextureFormat>,
+        load: LoadOp,
         execute: Box<
-            dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[&wgpu::BindGroup])
+            dyn for<'rpass> Fn(String, &mut RenderContext, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup])
                 + Send
                 + Sync,
         >,
@@ -1021,7 +1024,7 @@ impl Renderer2D {
             resources.insert_bind_group(label.clone(), default_camera_bg);
         } else {
             warn!(
-                    "Render pass '{}' created without camera layout — skipping default camera bind group",
+                    "Render pass '{}' created without camera layout: skipping default camera bind group",
                     label
                 );
         }
@@ -1030,7 +1033,7 @@ impl Renderer2D {
         let pass_output = output.as_ref().map(|name| PassOutput(name.clone()));
 
         self.render_passes
-            .push(RenderPass::new(label.clone(), input_names, output, None, output_format, None, execute));
+            .push(RenderPass::new(label.clone(), input_names, output, None, output_format, load, None, execute));
 
         self.render_context
             .new_batch(label.clone(), Vec::new(), Vec::new());
@@ -1119,26 +1122,16 @@ impl Renderer2D {
             cache: None,
         }));
 
-        let load_op = match desc.clear {
-            Some(color) => wgpu::LoadOp::Clear(color),
-            None => wgpu::LoadOp::Load,
-        };
+        if desc.render_target.is_some() {
+            if let LoadOp::Color(_) | LoadOp::Background = desc.load {
+                warn!("pass '{}': render_target with non-Load op, forcing Load", desc.label);
+            }
+        }
+        let load = if desc.render_target.is_some() { LoadOp::Load } else { desc.load };
 
-        let execute: Box<dyn Fn(String, &mut RenderContext, &mut wgpu::CommandEncoder, &wgpu::TextureView, &[&wgpu::BindGroup]) + Send + Sync> = {
+        let execute: Box<dyn for<'rpass> Fn(String, &mut RenderContext, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup]) + Send + Sync> = {
             let pipeline = pipeline.clone();
-            Box::new(move |label, ctx, encoder, view, input_bind_groups| {
-                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some(&format!("{} Render Pass", label)),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations { load: load_op, store: wgpu::StoreOp::Store },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-
+            Box::new(move |_label, _ctx, rpass, input_bind_groups| {
                 rpass.set_pipeline(&pipeline);
                 for (i, bg) in input_bind_groups.iter().enumerate() {
                     rpass.set_bind_group(i as u32, bg, &[]);
@@ -1157,6 +1150,7 @@ impl Renderer2D {
             desc.output,
             desc.render_target,
             desc.output_format,
+            load,
             Some(cache),
             execute,
         ));
@@ -1212,18 +1206,28 @@ impl Renderer2D {
         let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
 
         for (i, pass) in self.render_passes.iter().enumerate() {
+            let mut seen_producers: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
             for input in &pass.inputs {
                 if let Some(&producer) = output_map.get(input.as_str()) {
-                    adj[producer].push(i);
-                    in_degree[i] += 1;
+                    if seen_producers.insert(producer) {
+                        adj[producer].push(i);
+                        in_degree[i] += 1;
+                    } else {
+                        error!("pass '{}': duplicate dependency '{}'", pass.label, input);
+                    }
                 } else {
                     error!("Render pass '{}' declares input '{}' but no pass produces it", pass.label, input);
                 }
             }
             if let Some(ref target) = pass.render_target {
                 if let Some(&producer) = output_map.get(target.as_str()) {
-                    adj[producer].push(i);
-                    in_degree[i] += 1;
+                    if seen_producers.insert(producer) {
+                        adj[producer].push(i);
+                        in_degree[i] += 1;
+                    } else {
+                        error!("pass '{}': render_target '{}' already an input", pass.label, target);
+                    }
                 } else {
                     error!("Render pass '{}' declares render_target '{}' but no pass produces it", pass.label, target);
                 }
@@ -1823,7 +1827,26 @@ impl Renderer for Renderer2D {
                 .unwrap_or_default();
             let group_refs: Vec<&wgpu::BindGroup> = owned_groups.iter().map(|g| g.as_ref()).collect();
 
-            (self.render_passes[pass_idx].execute)(label.clone(), &mut self.render_context, &mut encoder, view, &group_refs);
+            let load_op = match &self.render_passes[pass_idx].load {
+                LoadOp::Background => wgpu::LoadOp::Clear(self.render_context.clear_color()),
+                LoadOp::Color(c) => wgpu::LoadOp::Clear(*c),
+                LoadOp::Load => wgpu::LoadOp::Load,
+            };
+
+            {
+                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some(&format!("{} Render Pass", label)),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: wgpu::Operations { load: load_op, store: wgpu::StoreOp::Store },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                (self.render_passes[pass_idx].execute)(label.clone(), &mut self.render_context, &mut rpass, &group_refs);
+            }
         }
 
         self.render_context
