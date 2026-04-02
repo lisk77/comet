@@ -1192,9 +1192,19 @@ impl Renderer2D {
     }
 
     fn build_graph(&mut self) {
-        use std::collections::{HashMap, VecDeque};
+        use std::collections::{HashMap, HashSet, VecDeque};
 
         let n = self.render_passes.len();
+
+        let mut seen_outputs: HashSet<&str> = HashSet::new();
+        for pass in &self.render_passes {
+            if let Some(ref name) = pass.output {
+                if !seen_outputs.insert(name.as_str()) {
+                    error!("duplicate output name '{}': only one pass may declare each output", name);
+                }
+            }
+        }
+
         let output_map: HashMap<&str, usize> = self.render_passes.iter().enumerate()
             .filter_map(|(i, p)| p.output.as_deref().map(|name| (name, i)))
             .collect();
