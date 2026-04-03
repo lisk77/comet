@@ -1728,14 +1728,14 @@ mod tests {
     #[test]
     fn normalized_components_are_order_independent_and_deduplicated() {
         let components_abab = Scene::normalized_components(&[
-            std::any::TypeId::of::<A>(),
-            std::any::TypeId::of::<B>(),
-            std::any::TypeId::of::<A>(),
-            std::any::TypeId::of::<B>(),
+            A::type_id(),
+            B::type_id(),
+            A::type_id(),
+            B::type_id(),
         ]);
         let components_ba = Scene::normalized_components(&[
-            std::any::TypeId::of::<B>(),
-            std::any::TypeId::of::<A>(),
+            B::type_id(),
+            A::type_id(),
         ]);
 
         assert_eq!(components_abab, components_ba);

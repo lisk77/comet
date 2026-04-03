@@ -29,7 +29,7 @@ impl ErasedComponent {
         }
 
         Self {
-            type_id: TypeId::of::<C>(),
+            type_id: C::type_id(),
             push_fn: push::<C>,
             set_fn: set::<C>,
             value: Box::new(value),
