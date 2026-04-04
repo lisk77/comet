@@ -74,7 +74,7 @@ macro_rules! define_tuple_types_arity {
         }
 
         pub struct $builder_mut<'a, $first_ty, $($ty),+, Filters = ()> {
-            pub(super) scene: &'a mut Scene,
+            pub(super) scene: &'a Scene,
             pub(super) state: QueryFilterState,
             pub(super) _marker: PhantomData<($first_ty, $($ty),+, Filters)>,
         }
@@ -90,7 +90,7 @@ macro_rules! define_tuple_types_arity {
         }
 
         impl<'a, $first_ty, $($ty),+, Filters> $builder_mut<'a, $first_ty, $($ty),+, Filters> {
-            pub(super) fn from_state(scene: &'a mut Scene, state: QueryFilterState) -> Self {
+            pub(super) fn from_state(scene: &'a Scene, state: QueryFilterState) -> Self {
                 Self {
                     scene,
                     state,
@@ -178,7 +178,7 @@ macro_rules! define_entity_tuple_types_arity {
         }
 
         pub struct $builder_mut<'a, $first_ty $(, $ty)*, Filters = ()> {
-            pub(super) scene: &'a mut Scene,
+            pub(super) scene: &'a Scene,
             pub(super) state: QueryFilterState,
             pub(super) _marker: PhantomData<($first_ty $(, $ty)*, Filters)>,
         }
@@ -194,7 +194,7 @@ macro_rules! define_entity_tuple_types_arity {
         }
 
         impl<'a, $first_ty $(, $ty)*, Filters> $builder_mut<'a, $first_ty $(, $ty)*, Filters> {
-            pub(super) fn from_state(scene: &'a mut Scene, state: QueryFilterState) -> Self {
+            pub(super) fn from_state(scene: &'a Scene, state: QueryFilterState) -> Self {
                 Self {
                     scene,
                     state,

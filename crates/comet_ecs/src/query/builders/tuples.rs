@@ -33,7 +33,7 @@ macro_rules! impl_tuple_builders_arity {
         impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+, Filters: QueryFilterSet> QuerySpecMut<'a> for crate::query::QueryParam<($first_ty, $($ty,)+), Filters> {
             type Builder = $builder_mut<'a, $first_ty, $($ty),+, Filters>;
 
-            fn build(scene: &'a mut Scene) -> Self::Builder {
+            fn build(scene: &'a Scene) -> Self::Builder {
                 $builder_mut::from_state(scene, typed_filters::<Filters>(scene))
             }
         }
@@ -41,7 +41,7 @@ macro_rules! impl_tuple_builders_arity {
         impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+> QuerySpecMut<'a> for ($first_ty, $($ty,)+) {
             type Builder = $builder_mut<'a, $first_ty, $($ty),+, ()>;
 
-            fn build(scene: &'a mut Scene) -> Self::Builder {
+            fn build(scene: &'a Scene) -> Self::Builder {
                 $builder_mut::from_state(scene, QueryFilterState::empty())
             }
         }
@@ -119,7 +119,7 @@ macro_rules! impl_tuple_builders_arity {
                     }
                 )+
                 for_each_matching_archetype_mut(self.scene, &self.state, $first_ty::type_id(), &required, |scene_ref, arch_id, first_idx| {
-                    let arch = scene_ref.archetypes_mut().get_mut(arch_id);
+                    let arch = scene_ref.archetypes().get(arch_id);
                     $(
                         let $idx = match arch.column_index($ty::type_id()) {
                             Some(idx) => Some(idx),
@@ -128,16 +128,16 @@ macro_rules! impl_tuple_builders_arity {
                         };
                     )+
                     let len = arch.len();
-                    let cols = arch.columns_mut();
-                    let $first_col = &mut cols[first_idx] as *mut _;
+                    let cols = arch.columns();
+                    let $first_col = &cols[first_idx] as *const _ as *mut _;
                     $(
                         let $col = match $idx {
-                            Some(idx) => &mut cols[idx] as *mut _,
+                            Some(idx) => &cols[idx] as *const _ as *mut _,
                             None => ptr::null_mut(),
                         };
                     )+
                     let entities = arch.entities().as_ptr();
-                    let scene = scene_ref as *mut Scene;
+                    let scene = scene_ref as *const Scene as *mut Scene;
                     accesses.push($access_mut {
                         entities,
                         $first_col,
@@ -202,7 +202,7 @@ macro_rules! impl_entity_tuple_builders_arity {
         impl<'a, $first_ty: WriteFetch<'a> + 'a $(, $ty: WriteFetch<'a> + 'a)*, Filters: QueryFilterSet> QuerySpecMut<'a> for crate::query::QueryParam<(Entity, $first_ty $(, $ty)*), Filters> {
             type Builder = $builder_mut<'a, $first_ty $(, $ty)*, Filters>;
 
-            fn build(scene: &'a mut Scene) -> Self::Builder {
+            fn build(scene: &'a Scene) -> Self::Builder {
                 $builder_mut::from_state(scene, typed_filters::<Filters>(scene))
             }
         }
@@ -210,7 +210,7 @@ macro_rules! impl_entity_tuple_builders_arity {
         impl<'a, $first_ty: WriteFetch<'a> + 'a $(, $ty: WriteFetch<'a> + 'a)*> QuerySpecMut<'a> for (Entity, $first_ty $(, $ty)*) {
             type Builder = $builder_mut<'a, $first_ty $(, $ty)*, ()>;
 
-            fn build(scene: &'a mut Scene) -> Self::Builder {
+            fn build(scene: &'a Scene) -> Self::Builder {
                 $builder_mut::from_state(scene, QueryFilterState::empty())
             }
         }
@@ -288,7 +288,7 @@ macro_rules! impl_entity_tuple_builders_arity {
                     }
                 )*
                 for_each_matching_archetype_mut(self.scene, &self.state, $first_ty::type_id(), &required, |scene_ref, arch_id, first_idx| {
-                    let arch = scene_ref.archetypes_mut().get_mut(arch_id);
+                    let arch = scene_ref.archetypes().get(arch_id);
                     $(
                         let $idx = match arch.column_index($ty::type_id()) {
                             Some(idx) => Some(idx),
@@ -297,16 +297,16 @@ macro_rules! impl_entity_tuple_builders_arity {
                         };
                     )*
                     let len = arch.len();
-                    let cols = arch.columns_mut();
-                    let $first_col = &mut cols[first_idx] as *mut _;
+                    let cols = arch.columns();
+                    let $first_col = &cols[first_idx] as *const _ as *mut _;
                     $(
                         let $col = match $idx {
-                            Some(idx) => &mut cols[idx] as *mut _,
+                            Some(idx) => &cols[idx] as *const _ as *mut _,
                             None => ptr::null_mut(),
                         };
                     )*
                     let entities = arch.entities().as_ptr();
-                    let scene = scene_ref as *mut Scene;
+                    let scene = scene_ref as *const Scene as *mut Scene;
                     accesses.push($access_mut {
                         entities,
                         $first_col,

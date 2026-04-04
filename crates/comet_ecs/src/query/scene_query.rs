@@ -11,7 +11,7 @@ impl Scene {
     }
 
     pub fn query_mut<'a, Data, Filters>(
-        &'a mut self,
+        &'a self,
     ) -> <crate::query::QueryParam<Data, Filters> as QuerySpecMut<'a>>::Builder
     where
         crate::query::QueryParam<Data, Filters>: QuerySpecMut<'a>,

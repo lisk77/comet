@@ -31,5 +31,5 @@ pub trait QuerySpec<'a> {
 /// Builds a mutable query value from a [`Scene`].
 pub trait QuerySpecMut<'a> {
     type Builder;
-    fn build(scene: &'a mut Scene) -> Self::Builder;
+    fn build(scene: &'a Scene) -> Self::Builder;
 }

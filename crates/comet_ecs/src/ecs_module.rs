@@ -68,7 +68,7 @@ pub trait EcsModuleExt {
     fn apply_deferred_commands(&mut self);
     fn queued_deferred_command_count(&self) -> usize;
 
-    fn query<'a, Data, Filters>(&'a mut self) -> <QueryParam<Data, Filters> as QuerySpecMut<'a>>::Builder
+    fn query<'a, Data, Filters>(&'a self) -> <QueryParam<Data, Filters> as QuerySpecMut<'a>>::Builder
     where
         QueryParam<Data, Filters>: QuerySpecMut<'a>;
 
@@ -182,11 +182,11 @@ impl EcsModuleExt for App {
         self.get_module::<EcsModule>().scene.queued_command_count()
     }
 
-    fn query<'a, Data, Filters>(&'a mut self) -> <QueryParam<Data, Filters> as QuerySpecMut<'a>>::Builder
+    fn query<'a, Data, Filters>(&'a self) -> <QueryParam<Data, Filters> as QuerySpecMut<'a>>::Builder
     where
         QueryParam<Data, Filters>: QuerySpecMut<'a>,
     {
-        self.get_module_mut::<EcsModule>().scene.query_mut::<Data, Filters>()
+        self.get_module::<EcsModule>().scene.query_mut::<Data, Filters>()
     }
 
     fn new_entity(&mut self) -> Entity {

@@ -1133,10 +1133,6 @@ impl Scene {
         &self.archetypes
     }
 
-    pub(crate) fn archetypes_mut(&mut self) -> &mut crate::archetypes::Archetypes {
-        &mut self.archetypes
-    }
-
     pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
         let component_types = components.type_ids();
         self.__spawn_bundle_typed(

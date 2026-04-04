@@ -54,13 +54,13 @@ impl<'a, P: ReadFetch<'a> + 'a, Filters> QueryBuilder<'a, P, Filters> {
 }
 
 impl<'a, P: WriteFetch<'a> + 'a, Filters> Query<'a, P, Filters> {
-    fn new(scene: &'a mut Scene) -> Self {
+    fn new(scene: &'a Scene) -> Self {
         Self::from_state(scene, QueryFilterState::empty())
     }
 
-    fn from_state(scene: &'a mut Scene, state: QueryFilterState) -> Self {
+    fn from_state(scene: &'a Scene, state: QueryFilterState) -> Self {
         Self {
-            scene,
+            scene: scene as *const Scene as *mut Scene,
             state,
             _marker: PhantomData,
         }
@@ -191,7 +191,7 @@ impl<'a, P: ReadFetch<'a> + 'a, Filters: QueryFilterSet> QuerySpec<'a>
 impl<'a, P: WriteFetch<'a> + 'a> QuerySpecMut<'a> for P {
     type Builder = Query<'a, P, ()>;
 
-    fn build(scene: &'a mut Scene) -> Self::Builder {
+    fn build(scene: &'a Scene) -> Self::Builder {
         Query::new(scene)
     }
 }
@@ -201,7 +201,7 @@ impl<'a, P: WriteFetch<'a> + 'a, Filters: QueryFilterSet> QuerySpecMut<'a>
 {
     type Builder = Query<'a, P, Filters>;
 
-    fn build(scene: &'a mut Scene) -> Self::Builder {
+    fn build(scene: &'a Scene) -> Self::Builder {
         Query::from_state(scene, typed_filters::<Filters>(scene))
     }
 }

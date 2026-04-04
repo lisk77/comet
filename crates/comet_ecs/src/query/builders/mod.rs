@@ -207,11 +207,11 @@ fn for_each_matching_archetype(
 }
 
 fn for_each_matching_archetype_mut(
-    scene: &mut Scene,
+    scene: &Scene,
     state: &QueryFilterState,
     primary_type: TypeId,
     required_types: &[TypeId],
-    mut f: impl FnMut(&mut Scene, usize, usize),
+    mut f: impl FnMut(&Scene, usize, usize),
 ) {
     assert_unique_query_types(required_types);
     for (arch_id, first_idx) in cached_single_plan_for(scene, state, primary_type) {
@@ -251,21 +251,21 @@ fn build_single_write_accesses<'a, P: WriteFetch<'a>>(
     state: &QueryFilterState,
 ) -> Vec<QueryMutAccess> {
     let mut accesses = Vec::new();
-    let scene_mut = unsafe { &mut *scene };
+    let scene_ref = unsafe { &*scene };
     for_each_matching_archetype_mut(
-        scene_mut,
+        scene_ref,
         state,
         P::type_id(),
         &[P::type_id()],
         |scene, arch_id, col_idx| {
-            let arch = scene.archetypes_mut().get_mut(arch_id);
+            let arch = scene.archetypes().get(arch_id);
             let len = arch.len();
-            let col = &mut arch.columns_mut()[col_idx] as *mut _;
+            let col = &arch.columns()[col_idx] as *const _ as *mut _;
             let entities = arch.entities().as_ptr();
             accesses.push(QueryMutAccess {
                 entities,
                 col,
-                scene: scene as *mut Scene,
+                scene: scene as *const Scene as *mut Scene,
                 len,
                 row: 0,
             });
