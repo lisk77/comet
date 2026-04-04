@@ -74,6 +74,59 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+const GIZMO_SHADER_SRC: &str = r#"
+struct CameraUniform {
+    view_proj: mat4x4<f32>,
+};
+
+@group(0) @binding(0)
+var<uniform> camera: CameraUniform;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) tex_coords: vec2<f32>,
+    @location(2) color: vec4<f32>,
+}
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(model: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.color = model.color;
+    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return in.color;
+}
+"#;
+
+pub fn gizmo_execute(
+    label: String,
+    ctx: &mut RenderState,
+    rpass: &mut wgpu::RenderPass<'_>,
+    _inputs: &[&wgpu::BindGroup],
+) {
+    let Some(pipeline) = ctx.get_pipeline(label.clone()) else { return };
+    let Some(groups) = ctx.resources().get_bind_groups(&label) else { return };
+    let Some(batch) = ctx.get_batch(label.clone()) else { return };
+    if batch.num_indices() == 0 { return }
+
+    rpass.set_pipeline(pipeline);
+    for (i, group) in groups.iter().enumerate() {
+        rpass.set_bind_group(i as u32, group, &[]);
+    }
+    rpass.set_vertex_buffer(0, batch.vertex_buffer().slice(..));
+    rpass.set_index_buffer(batch.index_buffer().slice(..), wgpu::IndexFormat::Uint16);
+    rpass.draw_indexed(0..batch.num_indices(), 0, 0..1);
+}
+
 pub struct Renderer2D {
     render_state: RenderState,
     asset_provider: comet_assets::AssetProvider,
@@ -1392,13 +1445,129 @@ impl Renderer2D {
         (vertex_data, index_data)
     }
 
+    fn setup_gizmo_pipeline(&mut self) {
+        let camera_bind_group_layout =
+            Arc::new(self.render_state.device().create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Gizmo Camera Bind Group Layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                },
+            ));
+
+        let shader_module = self.render_state.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Gizmo Shader"),
+            source: wgpu::ShaderSource::Wgsl(GIZMO_SHADER_SRC.into()),
+        });
+
+        let pipeline_layout = self.render_state.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Gizmo Pipeline Layout"),
+            bind_group_layouts: &[&camera_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let render_pipeline = self.render_state.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Gizmo Render Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: "vs_main",
+                buffers: &[Vertex::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: self.render_state.config().format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
+        self.render_state.insert_pipeline("Gizmo".to_string(), render_pipeline);
+
+        let identity: [[f32; 4]; 4] = m4::IDENTITY.into();
+        let cam_buffer = self.render_state.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Gizmo Default Camera Buffer"),
+            contents: bytemuck::cast_slice(&[identity]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bg = Arc::new(self.render_state.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Gizmo Default Camera Bind Group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: cam_buffer.as_entire_binding(),
+            }],
+        }));
+
+        let resources = self.render_state.resources_mut();
+        resources.insert_buffer("Gizmo".to_string(), Arc::new(cam_buffer));
+        resources.insert_bind_group("Gizmo".to_string(), camera_bg);
+        resources.insert_bind_group_layout("Gizmo".to_string(), camera_bind_group_layout);
+
+        self.render_passes.push(RenderPass::new(
+            "Gizmo".to_string(),
+            vec![],
+            None,
+            None,
+            None,
+            LoadOp::Load,
+            None,
+            Box::new(gizmo_execute),
+        ));
+
+        self.render_state.new_batch("Gizmo".to_string(), Vec::new(), Vec::new());
+        self.graph_dirty = true;
+    }
+
     pub fn submit_frame(
         &mut self,
         camera: CameraPacket2D,
         mut draws: Vec<Draw2D>,
         texts: Vec<Text2D>,
         referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
-        _gizmo_shapes: Vec<GizmoShape>,
+        gizmo_shapes: Vec<GizmoShape>,
     ) {
         if let Some(atlas_handle) = self.render_state.resources().get_asset_atlas_handle("atlas") {
             let any_evicted = self.asset_provider.with_mut(atlas_handle, |atlas| {
@@ -1589,6 +1758,70 @@ impl Renderer2D {
 
         self.render_state
             .update_batch_buffers("Font".to_string(), font_vertex_buffer, font_index_buffer);
+
+        let mut gizmo_verts: Vec<Vertex> = Vec::new();
+        let mut gizmo_indices: Vec<u16> = Vec::new();
+
+        for shape in gizmo_shapes {
+            match shape {
+                GizmoShape::Line { a, b, color } => {
+                    let c = [color.red(), color.green(), color.blue(), color.alpha()];
+                    let base = gizmo_verts.len() as u16;
+                    gizmo_verts.push(Vertex::new([a.x(), a.y(), a.z()], [0.0, 0.0], c));
+                    gizmo_verts.push(Vertex::new([b.x(), b.y(), b.z()], [0.0, 0.0], c));
+                    gizmo_indices.extend_from_slice(&[base, base + 1]);
+                }
+                GizmoShape::Rect { position, size, color } => {
+                    let c = [color.red(), color.green(), color.blue(), color.alpha()];
+                    let hx = size.x() * 0.5;
+                    let hy = size.y() * 0.5;
+                    let base = gizmo_verts.len() as u16;
+                    let corners = [
+                        [position.x() - hx, position.y() + hy, position.z()],
+                        [position.x() + hx, position.y() + hy, position.z()],
+                        [position.x() + hx, position.y() - hy, position.z()],
+                        [position.x() - hx, position.y() - hy, position.z()],
+                    ];
+                    for corner in &corners {
+                        gizmo_verts.push(Vertex::new(*corner, [0.0, 0.0], c));
+                    }
+                    gizmo_indices.extend_from_slice(&[
+                        base, base + 1,
+                        base + 1, base + 2,
+                        base + 2, base + 3,
+                        base + 3, base,
+                    ]);
+                }
+                GizmoShape::Circle { position, radius, color } => {
+                    let c = [color.red(), color.green(), color.blue(), color.alpha()];
+                    let segments = 32u32;
+                    let base = gizmo_verts.len() as u16;
+                    for i in 0..segments {
+                        let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+                        let x = position.x() + radius * angle.cos();
+                        let y = position.y() + radius * angle.sin();
+                        gizmo_verts.push(Vertex::new([x, y, position.z()], [0.0, 0.0], c));
+                        let next = (i + 1) % segments;
+                        gizmo_indices.extend_from_slice(&[base + i as u16, base + next as u16]);
+                    }
+                }
+                GizmoShape::NGon { position, radius, vertices, color } => {
+                    let c = [color.red(), color.green(), color.blue(), color.alpha()];
+                    let n = vertices.max(3);
+                    let base = gizmo_verts.len() as u16;
+                    for i in 0..n {
+                        let angle = (i as f32 / n as f32) * std::f32::consts::TAU;
+                        let x = position.x() + radius * angle.cos();
+                        let y = position.y() + radius * angle.sin();
+                        gizmo_verts.push(Vertex::new([x, y, position.z()], [0.0, 0.0], c));
+                        let next = (i + 1) % n;
+                        gizmo_indices.extend_from_slice(&[base + i as u16, base + next as u16]);
+                    }
+                }
+            }
+        }
+
+        self.render_state.update_batch_buffers("Gizmo".to_string(), gizmo_verts, gizmo_indices);
     }
 
     fn setup_camera_from_packet(&mut self, camera: CameraPacket2D) {
@@ -1617,6 +1850,14 @@ impl Renderer2D {
             0,
             bytemuck::cast_slice(&[camera_uniform]),
         );
+
+        if let Some(gizmo_buffer) = self.render_state.resources().get_buffer("Gizmo").and_then(|v| v.first()).cloned() {
+            self.render_state.queue().write_buffer(
+                &gizmo_buffer,
+                0,
+                bytemuck::cast_slice(&[camera_uniform]),
+            );
+        }
     }
 }
 
@@ -1648,6 +1889,7 @@ impl Renderer for Renderer2D {
             self.asset_provider = app.context::<comet_assets::AssetProvider>().clone();
         }
         self.setup_atlas_pipeline(comet_assets::TextureAtlas::with_capacity(512));
+        self.setup_gizmo_pipeline();
     }
 
     fn apply_command(&mut self, command: <Self::Handle as RendererHandle>::Command) {
