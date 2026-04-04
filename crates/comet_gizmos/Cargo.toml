@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 comet_ecs = { workspace = true }
-comet_renderer = { workspace = true }
 comet_math = { workspace = true }
 comet_colors = { workspace = true }
 comet_app = { workspace = true }

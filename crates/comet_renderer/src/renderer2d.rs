@@ -8,6 +8,7 @@ use crate::{
     Vertex,
 };
 use comet_colors::Color;
+use comet_gizmos::{GizmoBuffer, GizmoShape};
 use comet_app::{App, Module};
 use comet_ecs::EcsModuleExt;
 use comet_macros::module;
@@ -91,6 +92,7 @@ pub struct RenderHandle2D {
     event_receiver: flume::Receiver<Renderer2DEvent>,
     last_size: Option<PhysicalSize<u32>>,
     pending_atlas_rebuild: bool,
+    gizmo_buffer: GizmoBuffer,
 }
 
 #[module]
@@ -383,9 +385,15 @@ impl RenderHandle2D {
             priority: camera_priority,
         };
 
+        let gizmo_shapes = std::mem::take(&mut self.gizmo_buffer.shapes);
+
         let _ =
             self.command_sender
-                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts, referenced_handles));
+                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts, referenced_handles, gizmo_shapes));
+    }
+
+    pub fn gizmos(&mut self) -> &mut GizmoBuffer {
+        &mut self.gizmo_buffer
     }
 }
 
@@ -399,6 +407,7 @@ impl RendererHandle for RenderHandle2D {
             event_receiver: receiver,
             last_size: None,
             pending_atlas_rebuild: false,
+            gizmo_buffer: GizmoBuffer::new(),
         }
     }
 
@@ -1389,6 +1398,7 @@ impl Renderer2D {
         mut draws: Vec<Draw2D>,
         texts: Vec<Text2D>,
         referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
+        _gizmo_shapes: Vec<GizmoShape>,
     ) {
         if let Some(atlas_handle) = self.render_state.resources().get_asset_atlas_handle("atlas") {
             let any_evicted = self.asset_provider.with_mut(atlas_handle, |atlas| {
@@ -1698,8 +1708,8 @@ impl Renderer for Renderer2D {
                         height: bounds.y(),
                     });
             }
-            Renderer2DCommand::SubmitFrame(camera, draws, texts, referenced_handles) => {
-                self.submit_frame(camera, draws, texts, referenced_handles)
+            Renderer2DCommand::SubmitFrame(camera, draws, texts, referenced_handles, gizmo_shapes) => {
+                self.submit_frame(camera, draws, texts, referenced_handles, gizmo_shapes)
             }
             Renderer2DCommand::AddRenderPass(desc) => {
                 let pass_output = self.add_pass(desc);

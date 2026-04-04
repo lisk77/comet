@@ -1,4 +1,5 @@
 use comet_assets::AtlasRef;
+use comet_gizmos::GizmoShape;
 use crate::render_pass::LoadOp;
 
 #[derive(Clone, Copy, Debug)]
@@ -51,7 +52,7 @@ pub enum Renderer2DCommand {
         font: comet_assets::Asset<comet_assets::Font>,
         font_size: f32,
     },
-    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>, Vec<comet_assets::Asset<comet_assets::Image>>),
+    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>, Vec<comet_assets::Asset<comet_assets::Image>>, Vec<GizmoShape>),
     AddRenderPass(PassDescriptor),
     RemoveRenderPass(String),
     SetPassOutput(String, Option<crate::render_pass::PassOutput>),

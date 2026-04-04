@@ -10,6 +10,7 @@ comet_debug = []
 [dependencies]
 comet_app = { workspace = true }
 comet_macros = { workspace = true }
+comet_gizmos = { workspace = true }
 comet_window = { workspace = true }
 comet_ecs = { workspace = true }
 comet_math = { workspace = true }
