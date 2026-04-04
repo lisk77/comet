@@ -12,7 +12,6 @@ pub struct Column {
     len: usize,
     capacity: usize,
 
-    // Critical: stride (size padded up to alignment)
     stride: usize,
 
     swap_scratch: NonNull<u8>,
@@ -28,7 +27,6 @@ impl Column {
         drop_fn: unsafe fn(*mut u8),
         capacity: usize,
     ) -> Self {
-        // ZST: no allocation, capacity effectively infinite
         if item_layout.size() == 0 {
             return Self {
                 type_id,
@@ -67,7 +65,6 @@ impl Column {
         let drop_fn = |ptr: *mut u8| unsafe { ptr::drop_in_place(ptr as *mut T) };
         let type_id = TypeId::of::<T>();
 
-        // ZST
         if item_layout.size() == 0 {
             return Self {
                 type_id,
@@ -215,8 +212,6 @@ impl Column {
         }
     }
 
-    /// # Safety
-    /// Caller must guarantee that `T` matches this column's component type.
     #[inline(always)]
     pub unsafe fn push_unchecked<T: 'static>(&mut self, item: T) {
         if self.item_layout.size() == 0 {
@@ -236,9 +231,6 @@ impl Column {
         }
     }
 
-    /// # Safety
-    /// Caller must guarantee that `T` matches this column's component type and
-    /// that capacity has already been reserved for one additional element.
     #[inline(always)]
     pub unsafe fn push_unchecked_reserved<T: 'static>(&mut self, item: T) {
         if self.item_layout.size() == 0 {
@@ -368,7 +360,6 @@ impl Column {
 
         dst.push_raw_from(src_ptr);
 
-        // Treat the source slot as moved-from by reducing len.
         self.len -= 1;
 
         Some(())

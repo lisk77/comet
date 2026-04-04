@@ -78,6 +78,14 @@ impl v2 {
     pub fn set_y(&mut self, new_y: f32) {
         self.y = new_y;
     }
+
+    pub fn as_v3(&self) -> v3 {
+        v3 {
+            x: self.x,
+            y: self.y,
+            z: 0.0,
+        }
+    }
 }
 
 impl Add<v2> for v2 {
@@ -182,6 +190,16 @@ impl Into<v2> for [f32; 2] {
         v2 {
             x: self[0],
             y: self[1],
+        }
+    }
+}
+
+impl Into<v3> for v2 {
+    fn into(self) -> v3 {
+        v3 {
+            x: self.x,
+            y: self.y,
+            z: 0.0,
         }
     }
 }

@@ -8,7 +8,6 @@ use crate::{
     Vertex,
 };
 use comet_colors::Color;
-use comet_ecs::Render;
 use comet_app::{App, Module};
 use comet_ecs::EcsModuleExt;
 use comet_macros::module;
@@ -274,7 +273,7 @@ impl RenderHandle2D {
         if self.pending_atlas_rebuild {
             self.pending_atlas_rebuild = false;
             for (_, render) in scene
-                .query_mut::<(&comet_ecs::Transform2D, &mut comet_ecs::Render2D), ()>()
+                .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
                 .iter()
             {
                 if let ImageRef::ResolvedHandle(h, _) = render.texture() {
@@ -285,7 +284,7 @@ impl RenderHandle2D {
 
         let mut selected_camera: Option<([f32; 2], f32, f32, [f32; 2], u8)> = None;
         for (transform, camera) in scene
-            .query::<(&comet_ecs::Transform2D, &comet_ecs::Camera2D), ()>()
+            .query::<(&comet_ecs::Transform, &comet_ecs::Camera2d), ()>()
             .iter()
         {
             let should_replace = selected_camera
@@ -294,7 +293,7 @@ impl RenderHandle2D {
             if should_replace {
                 selected_camera = Some((
                     [transform.position().x(), transform.position().y()],
-                    transform.rotation().to_degrees(),
+                    transform.rotation().z().to_degrees(),
                     camera.zoom(),
                     [camera.dimensions().x(), camera.dimensions().y()],
                     camera.priority(),
@@ -310,7 +309,7 @@ impl RenderHandle2D {
         let mut draws = Vec::new();
         let mut referenced_handles = Vec::new();
         for (transform, render) in scene
-            .query_mut::<(&comet_ecs::Transform2D, &mut comet_ecs::Render2D), ()>()
+            .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
             .iter()
         {
             let atlas_ref = match render.texture() {
@@ -343,8 +342,8 @@ impl RenderHandle2D {
 
             draws.push(Draw2D {
                 position: [transform.position().x(), transform.position().y()],
-                rotation_deg: transform.rotation().to_degrees(),
-                scale: [1.0, 1.0],
+                rotation_deg: transform.rotation().z().to_degrees(),
+                scale: [transform.scale().x(), transform.scale().y()],
                 texture: atlas_ref,
                 draw_index: render.draw_index(),
                 visible: render.is_visible(),
@@ -354,7 +353,7 @@ impl RenderHandle2D {
 
         let mut texts = Vec::new();
         for (transform, text) in scene
-            .query::<(&comet_ecs::Transform2D, &comet_ecs::Text), ()>()
+            .query::<(&comet_ecs::Transform, &comet_ecs::Text), ()>()
             .iter()
         {
             if !text.is_visible() {

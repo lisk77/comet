@@ -5,28 +5,28 @@ use comet::prelude::*;
 struct Player;
 
 bundle!(Camera {
-    transform: Transform2D,
-    camera: Camera2D
+    transform: Transform,
+    camera: Camera2d
 });
 
 bundle!(Comet {
     player: Player,
-    transform: Transform2D,
-    render: Render2D
+    transform: Transform,
+    render: Sprite
 });
 
 fn setup(app: &mut App) {
     app.register_component::<Player>();
 
     app.spawn_bundle(Camera {
-        transform: Transform2D::new(),
-        camera: Camera2D::new(v2::new(2.0, 2.0), 1.0, 1),
+        transform: Transform::new(),
+        camera: Camera2d::new(v2::new(2.0, 2.0), 1.0, 1),
     });
 
     app.spawn_bundle(Comet {
         player: Player,
-        transform: Transform2D::new(),
-        render: Render2D::with_texture("res://textures/comet_icon.png"),
+        transform: Transform::new(),
+        render: Sprite::with_texture("res://textures/comet_icon.png"),
     });
 }
 
@@ -42,10 +42,10 @@ fn handle_input(app: &mut App, dt: f32) {
     if app.key_held(Key::KeyD) { direction += v2::X; }
 
     if direction != v2::ZERO {
-        app.query::<&mut Transform2D, With<Player>>().for_each(|t| {
+        app.query::<&mut Transform, With<Player>>().for_each(|t| {
             let normalized_dir = direction.normalize();
             let displacement = normalized_dir * 777.7 * dt;
-            t.translate(displacement);
+            t.translate(displacement.into());
         });
     }
 }
