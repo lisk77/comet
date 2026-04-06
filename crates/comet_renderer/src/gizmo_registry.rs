@@ -39,6 +39,7 @@ impl GizmoRegistry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_enabled<C: Component + Gizmo + 'static>(&self, entity: Entity) -> bool {
         self.enabled
             .get(&C::type_id())

@@ -11,7 +11,7 @@ fn setup(app: &mut App) {
         app,
         "camera",
         Transform::new(),
-        Camera2d::new(v2::new(2.0, 2.0), 1.0, 1)
+        Camera::new(1.0, 1, Projection::Orthographic)
     );
 
     register_prefab!(
@@ -19,7 +19,7 @@ fn setup(app: &mut App) {
         "player",
         Player,
         Transform::new(),
-        Sprite::with_texture("res://textures/comet_icon.png")
+        Sprite::with_texture("res://textures/comet-128.png")
     );
 
     app.spawn_prefab("camera");

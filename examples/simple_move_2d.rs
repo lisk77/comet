@@ -7,12 +7,12 @@ struct Player;
 fn setup(app: &mut App) {
     app.register_component::<Player>();
 
-    app.spawn((Transform::new(), Camera2d::new(v2::new(2.0, 2.0), 1.0, 1)));
+    app.spawn_bundle(Camera2d::new(1.0, 1));
 
     app.spawn((
         Player,
         Transform::new(),
-        Sprite::with_texture("res://textures/comet_icon.png"),
+        Sprite::with_texture("res://textures/comet-128.png"),
     ));
 }
 
