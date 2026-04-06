@@ -1,4 +1,5 @@
 use comet_assets::AtlasRef;
+use comet_ecs::Projection;
 use comet_gizmos::GizmoShape;
 use crate::render_pass::LoadOp;
 
@@ -7,8 +8,8 @@ pub struct CameraPacket2D {
     pub position: [f32; 2],
     pub rotation_deg: f32,
     pub zoom: f32,
-    pub dimensions: [f32; 2],
     pub priority: u8,
+    pub projection: Projection,
 }
 
 #[derive(Clone, Copy, Debug)]

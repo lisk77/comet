@@ -12,7 +12,7 @@ trait LinearTransformation {
 
 /// Representation of a 2x2 matrix.
 #[repr(C)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 #[allow(non_camel_case_types)]
 pub struct m2 {
     x00: f32,
@@ -209,7 +209,7 @@ impl Into<[[f32; 2]; 2]> for m2 {
 
 /// Representation of a 3x3 matrix.
 #[repr(C)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 #[allow(non_camel_case_types)]
 pub struct m3 {
     x00: f32,
@@ -499,7 +499,7 @@ impl Into<[[f32; 3]; 3]> for m3 {
 
 /// Representation of a 4x4 matrix.
 #[repr(C)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 #[allow(non_camel_case_types)]
 pub struct m4 {
     x00: f32,

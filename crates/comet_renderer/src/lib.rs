@@ -1,4 +1,5 @@
 pub(crate) mod batch;
+pub(crate) mod gizmo_registry;
 mod camera;
 pub mod gpu_texture;
 pub mod render_commands;

@@ -17,6 +17,7 @@ comet_ecs = { workspace = true }
 comet_input = { workspace = true }
 comet_log = { workspace = true }
 comet_audio = { workspace = true }
+comet_gizmos = { workspace = true }
 
 [build-dependencies]
 anyhow = "1.0"

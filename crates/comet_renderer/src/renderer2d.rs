@@ -9,7 +9,9 @@ use crate::{
     Vertex,
 };
 use comet_colors::Color;
-use comet_gizmos::{GizmoBuffer, GizmoShape};
+use comet_gizmos::{Gizmo, GizmoBuffer, GizmoShape};
+use crate::gizmo_registry::GizmoRegistry;
+use comet_ecs::Component;
 use comet_app::{App, Module};
 use comet_ecs::EcsModuleExt;
 use comet_macros::module;
@@ -50,6 +52,7 @@ pub struct RenderHandle2D {
     last_size: Option<PhysicalSize<u32>>,
     pending_atlas_rebuild: bool,
     gizmo_buffer: GizmoBuffer,
+    gizmo_registry: GizmoRegistry,
 }
 
 #[module]
@@ -241,25 +244,25 @@ impl RenderHandle2D {
             }
         }
 
-        let mut selected_camera: Option<([f32; 2], f32, f32, [f32; 2], u8)> = None;
+        let mut selected_camera: Option<([f32; 2], f32, f32, u8, comet_ecs::Projection)> = None;
         for (transform, camera) in scene
-            .query::<(&comet_ecs::Transform, &comet_ecs::Camera2d), ()>()
+            .query::<(&comet_ecs::Transform, &comet_ecs::Camera), ()>()
             .iter()
         {
             let should_replace = selected_camera
                 .as_ref()
-                .is_none_or(|(_, _, _, _, current_priority)| camera.priority() < *current_priority);
+                .is_none_or(|(_, _, _, current_priority, _)| camera.priority() < *current_priority);
             if should_replace {
                 selected_camera = Some((
                     [transform.position().x(), transform.position().y()],
                     transform.rotation().z().to_degrees(),
                     camera.zoom(),
-                    [camera.dimensions().x(), camera.dimensions().y()],
                     camera.priority(),
+                    camera.projection().clone(),
                 ));
             }
         }
-        let Some((camera_pos, camera_rot, camera_zoom, camera_dims, camera_priority)) =
+        let Some((camera_pos, camera_rot, camera_zoom, camera_priority, camera_projection)) =
             selected_camera
         else {
             return;
@@ -338,10 +341,11 @@ impl RenderHandle2D {
             position: camera_pos,
             rotation_deg: camera_rot,
             zoom: camera_zoom,
-            dimensions: camera_dims,
             priority: camera_priority,
+            projection: camera_projection,
         };
 
+        self.gizmo_registry.flush(scene, &mut self.gizmo_buffer);
         let gizmo_shapes = std::mem::take(&mut self.gizmo_buffer.shapes);
 
         let _ =
@@ -349,8 +353,12 @@ impl RenderHandle2D {
                 .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts, referenced_handles, gizmo_shapes));
     }
 
-    pub fn gizmos(&mut self) -> &mut GizmoBuffer {
-        &mut self.gizmo_buffer
+    pub fn show_gizmo<C: Component + Gizmo + 'static>(&mut self, entity: comet_ecs::Entity) {
+        self.gizmo_registry.show::<C>(entity);
+    }
+
+    pub fn hide_gizmo<C: Component + Gizmo + 'static>(&mut self, entity: comet_ecs::Entity) {
+        self.gizmo_registry.hide::<C>(entity);
     }
 }
 
@@ -365,6 +373,7 @@ impl RendererHandle for RenderHandle2D {
             last_size: None,
             pending_atlas_rebuild: false,
             gizmo_buffer: GizmoBuffer::new(),
+            gizmo_registry: GizmoRegistry::new(),
         }
     }
 
@@ -965,62 +974,24 @@ impl Renderer2D {
                 ),
             ];
 
-            let inv_width = 1.0 / self.render_state.config().width as f32;
-            let inv_height = 1.0 / self.render_state.config().height as f32;
-
-            let snapped_screen_corners = [
-                (
-                    rotated_world_corners[0].0.round() * inv_width,
-                    rotated_world_corners[0].1.round() * inv_height,
-                ),
-                (
-                    rotated_world_corners[1].0.round() * inv_width,
-                    rotated_world_corners[1].1.round() * inv_height,
-                ),
-                (
-                    rotated_world_corners[2].0.round() * inv_width,
-                    rotated_world_corners[2].1.round() * inv_height,
-                ),
-                (
-                    rotated_world_corners[3].0.round() * inv_width,
-                    rotated_world_corners[3].1.round() * inv_height,
-                ),
-            ];
-
             vertex_buffer.extend_from_slice(&[
                 Vertex::new(
-                    [
-                        snapped_screen_corners[0].0,
-                        snapped_screen_corners[0].1,
-                        0.0,
-                    ],
+                    [rotated_world_corners[0].0, rotated_world_corners[0].1, 0.0],
                     [region.u0(), region.v0()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [
-                        snapped_screen_corners[1].0,
-                        snapped_screen_corners[1].1,
-                        0.0,
-                    ],
+                    [rotated_world_corners[1].0, rotated_world_corners[1].1, 0.0],
                     [region.u0(), region.v1()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [
-                        snapped_screen_corners[2].0,
-                        snapped_screen_corners[2].1,
-                        0.0,
-                    ],
+                    [rotated_world_corners[2].0, rotated_world_corners[2].1, 0.0],
                     [region.u1(), region.v1()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [
-                        snapped_screen_corners[3].0,
-                        snapped_screen_corners[3].1,
-                        0.0,
-                    ],
+                    [rotated_world_corners[3].0, rotated_world_corners[3].1, 0.0],
                     [region.u1(), region.v0()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
@@ -1086,11 +1057,11 @@ impl Renderer2D {
 
         for shape in gizmo_shapes {
             match shape {
-                GizmoShape::Line { a, b, color } => {
+                GizmoShape::Line { start, end, color } => {
                     let c = [color.red(), color.green(), color.blue(), color.alpha()];
                     let base = gizmo_verts.len() as u16;
-                    gizmo_verts.push(Vertex::new([a.x(), a.y(), a.z()], [0.0, 0.0], c));
-                    gizmo_verts.push(Vertex::new([b.x(), b.y(), b.z()], [0.0, 0.0], c));
+                    gizmo_verts.push(Vertex::new([start.x(), start.y(), start.z()], [0.0, 0.0], c));
+                    gizmo_verts.push(Vertex::new([end.x(), end.y(), end.z()], [0.0, 0.0], c));
                     gizmo_indices.extend_from_slice(&[base, base + 1]);
                 }
                 GizmoShape::Rect { position, size, color } => {
@@ -1152,14 +1123,25 @@ impl Renderer2D {
     }
 
     fn setup_camera_from_packet(&mut self, camera: CameraPacket2D) {
-        let render_camera = RenderCamera::new(
-            camera.zoom,
-            v2::new(camera.dimensions[0], camera.dimensions[1]),
-            v3::new(camera.position[0], camera.position[1], 0.0),
-        );
+        use comet_ecs::Projection;
+
+        let width = self.render_state.config().width as f32;
+        let height = self.render_state.config().height as f32;
+
+        let view_proj: [[f32; 4]; 4] = match camera.projection {
+            Projection::Custom { matrix } => matrix.into(),
+            _ => {
+                let render_camera = RenderCamera::new(
+                    camera.zoom,
+                    v2::new(width, height),
+                    v3::new(camera.position[0], camera.position[1], 0.0),
+                );
+                render_camera.build_view_projection_matrix().into()
+            }
+        };
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&render_camera);
+        camera_uniform.set_view_proj(view_proj);
 
         let queue = self.render_state.queue();
 
