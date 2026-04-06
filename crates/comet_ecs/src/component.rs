@@ -3,10 +3,9 @@
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2d)
 // They are intended to work with the base suite of systems provided by the engine.
+use comet_gizmos::{Gizmo, GizmoBuffer};
 use crate::math::{v2, v3, v4, m4};
-use crate::{Entity, Scene};
 use comet_colors::{Color, LinearRgba};
-use comet_log::*;
 use comet_assets::{Asset, Image, ImageRef};
 use component_derive::Component;
 
@@ -27,9 +26,15 @@ pub trait Component: Send + Sync + 'static {
     }
 }
 
-pub trait Camera {
-    fn get_visible_entities(&self, camera_position: &v3, scene: &Scene) -> Vec<Entity>;
-    fn get_projection_matrix(&self) -> m4;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Projection {
+    Orthographic,
+    Perspective { fov: f32, near: f32, far: f32 },
+    Custom { matrix: m4 },
+}
+
+impl Default for Projection {
+    fn default() -> Self { Self::Orthographic }
 }
 
 #[derive(Component)]
@@ -246,81 +251,68 @@ impl Sprite {
 }
 
 #[derive(Component)]
+pub struct Camera {
+    pub zoom: f32,
+    pub priority: u8,
+    pub projection: Projection,
+}
+
+impl Camera {
+    pub fn new(zoom: f32, priority: u8, projection: Projection) -> Self {
+        Self { zoom, priority, projection }
+    }
+
+    pub fn zoom(&self) -> f32 { self.zoom }
+    pub fn set_zoom(&mut self, zoom: f32) { self.zoom = zoom; }
+    pub fn priority(&self) -> u8 { self.priority }
+    pub fn set_priority(&mut self, priority: u8) { self.priority = priority; }
+    pub fn projection(&self) -> &Projection { &self.projection }
+    pub fn set_projection(&mut self, projection: Projection) { self.projection = projection; }
+}
+
 pub struct Camera2d {
-    zoom: f32,
-    dimensions: v2,
-    priority: u8,
+    pub transform: Transform,
+    pub camera: Camera,
 }
 
 impl Camera2d {
-    pub fn new(dimensions: v2, zoom: f32, priority: u8) -> Self {
+    pub fn new(zoom: f32, priority: u8) -> Self {
         Self {
-            dimensions,
-            zoom,
-            priority,
+            transform: Transform::new(),
+            camera: Camera::new(zoom, priority, Projection::Orthographic),
         }
-    }
-
-    pub fn zoom(&self) -> f32 {
-        self.zoom
-    }
-
-    pub fn set_zoom(&mut self, zoom: f32) {
-        self.zoom = zoom;
-    }
-
-    pub fn dimensions(&self) -> v2 {
-        self.dimensions
-    }
-
-    pub fn set_dimensions(&mut self, dimensions: v2) {
-        self.dimensions = dimensions;
-    }
-
-    pub fn priority(&self) -> u8 {
-        self.priority
-    }
-
-    pub fn set_priority(&mut self, priority: u8) {
-        self.priority = priority;
-    }
-
-    pub fn in_view_frustum(&self, camera_pos: &v3, entity_pos: &v3) -> bool {
-        let left = camera_pos.x() - self.zoom;
-        let right = camera_pos.x() + self.zoom;
-        let bottom = camera_pos.y() - self.zoom;
-        let top = camera_pos.y() + self.zoom;
-
-        entity_pos.x() < right && entity_pos.x() > left && entity_pos.y() < top && entity_pos.y() > bottom
     }
 }
 
-impl Camera for Camera2d {
-    fn get_visible_entities(&self, camera_position: &v3, scene: &Scene) -> Vec<Entity> {
-        let entities = scene.entities();
-        let mut visible_entities = Vec::new();
-        for entity in entities {
-            if let Some(ent) = entity.clone() {
-                let id = ent.id();
-                if let Some(transform) = scene.get_component::<Transform>(id) {
-                    if self.in_view_frustum(camera_position, &transform.position()) {
-                        visible_entities.push(ent);
-                    }
-                } else {
-                    error!("Entity {} missing Transform", id.index);
-                }
-            }
-        }
-        visible_entities
+impl crate::Bundle for Camera2d {
+    fn into_components(self) -> Vec<crate::prefabs::ErasedComponent> {
+        vec![
+            crate::prefabs::ErasedComponent::new(self.transform),
+            crate::prefabs::ErasedComponent::new(self.camera),
+        ]
     }
+}
 
-    fn get_projection_matrix(&self) -> m4 {
-        let left = -self.dimensions.x() / 2.0;
-        let right = self.dimensions.x() / 2.0;
-        let bottom = -self.dimensions.y() / 2.0;
-        let top = self.dimensions.y() / 2.0;
+pub struct Camera3d {
+    pub transform: Transform,
+    pub camera: Camera,
+}
 
-        m4::OPENGL_CONV * m4::orthographic_projection(left, right, bottom, top, 1.0, 0.0)
+impl Camera3d {
+    pub fn new(fov: f32, near: f32, far: f32, priority: u8) -> Self {
+        Self {
+            transform: Transform::new(),
+            camera: Camera::new(1.0, priority, Projection::Perspective { fov, near, far }),
+        }
+    }
+}
+
+impl crate::Bundle for Camera3d {
+    fn into_components(self) -> Vec<crate::prefabs::ErasedComponent> {
+        vec![
+            crate::prefabs::ErasedComponent::new(self.transform),
+            crate::prefabs::ErasedComponent::new(self.camera),
+        ]
     }
 }
 
@@ -423,5 +415,31 @@ impl Timer {
     pub fn reset(&mut self) {
         self.time_stack = 0.0;
         self.done = false;
+    }
+}
+
+impl Gizmo for Collider {
+    fn draw_gizmo(&self, position: v3, _rotation: v3, _scale: v3, buffer: &mut GizmoBuffer) {
+        use comet_colors::LinearRgba;
+        let color = LinearRgba::new(0.0, 1.0, 0.0, 1.0);
+        match self {
+            Collider::Rectangle { size } => {
+                buffer.draw_rect(position, v3::new(size.x(), size.y(), 0.0), color);
+            }
+            Collider::Circle { radius } => {
+                buffer.draw_circle(position, *radius, color);
+            }
+            Collider::Box { size } => {
+                buffer.draw_rect(position, *size, color);
+            }
+            Collider::Sphere { radius } => {
+                buffer.draw_circle(position, *radius, color);
+            }
+            Collider::Capsule { height, radius } => {
+                buffer.draw_rect(position, v3::new(*radius * 2.0, *height, 0.0), color);
+                buffer.draw_circle(v3::new(position.x(), position.y() + height * 0.5, position.z()), *radius, color);
+                buffer.draw_circle(v3::new(position.x(), position.y() - height * 0.5, position.z()), *radius, color);
+            }
+        }
     }
 }

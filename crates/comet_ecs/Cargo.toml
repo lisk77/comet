@@ -11,4 +11,5 @@ comet_log = { workspace = true }
 comet_assets = { workspace = true }
 comet_structs = { workspace = true }
 comet_colors = { workspace = true }
+comet_gizmos = { workspace = true }
 wgpu = { workspace = true }
