@@ -227,6 +227,14 @@ impl RenderHandle2D {
         });
     }
 
+    pub fn show_gizmo<C: Component + Gizmo + 'static>(&mut self, entity: comet_ecs::Entity) {
+        self.gizmo_registry.show::<C>(entity);
+    }
+
+    pub fn hide_gizmo<C: Component + Gizmo + 'static>(&mut self, entity: comet_ecs::Entity) {
+        self.gizmo_registry.hide::<C>(entity);
+    }
+
 }
 
 impl RenderHandle2D {
@@ -353,13 +361,6 @@ impl RenderHandle2D {
                 .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts, referenced_handles, gizmo_shapes));
     }
 
-    pub fn show_gizmo<C: Component + Gizmo + 'static>(&mut self, entity: comet_ecs::Entity) {
-        self.gizmo_registry.show::<C>(entity);
-    }
-
-    pub fn hide_gizmo<C: Component + Gizmo + 'static>(&mut self, entity: comet_ecs::Entity) {
-        self.gizmo_registry.hide::<C>(entity);
-    }
 }
 
 impl RendererHandle for RenderHandle2D {

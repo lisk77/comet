@@ -97,13 +97,22 @@ pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
         let generics = &sig.generics;
         let where_clause = &sig.generics.where_clause;
 
+        let type_params: Vec<_> = sig.generics.params.iter().filter_map(|p| {
+            if let syn::GenericParam::Type(tp) = p { Some(&tp.ident) } else { None }
+        }).collect();
+        let turbofish = if type_params.is_empty() {
+            quote! { #method_name }
+        } else {
+            quote! { #method_name::<#(#type_params),*> }
+        };
+
         if is_builder {
             trait_methods.push(quote! {
                 fn #method_name #generics (self, #(#params),*) -> Self #where_clause;
             });
             impl_methods.push(quote! {
                 fn #method_name #generics (mut self, #(#params),*) -> Self #where_clause {
-                    self.get_module_mut::<#ty>().#method_name(#(#param_names),*);
+                    self.get_module_mut::<#ty>().#turbofish(#(#param_names),*);
                     self
                 }
             });
@@ -125,7 +134,7 @@ pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
             });
             impl_methods.push(quote! {
                 fn #method_name #generics (#self_ref, #(#params),*) #output #where_clause {
-                    #accessor.#method_name(#(#param_names),*)
+                    #accessor.#turbofish(#(#param_names),*)
                 }
             });
         }
