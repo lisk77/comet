@@ -235,6 +235,14 @@ impl RenderHandle2D {
         self.gizmo_registry.hide::<C>(entity);
     }
 
+    pub fn show_all_gizmos<C: Component + Gizmo + 'static>(&mut self) {
+        self.gizmo_registry.show_all::<C>();
+    }
+
+    pub fn hide_all_gizmos<C: Component + Gizmo + 'static>(&mut self) {
+        self.gizmo_registry.hide_all::<C>();
+    }
+
 }
 
 impl RenderHandle2D {
