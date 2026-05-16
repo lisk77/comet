@@ -36,6 +36,7 @@
 //! | `comet_math` | Includes mathematical utilities and data structures. |
 //! | `comet_renderer` | Implements a simple 2D renderer for drawing graphics and text. |
 //! | `comet_assets` | Manages resources such as textures, shaders and fonts. |
+pub use comet_gizmos as gizmos;
 pub use comet_app as app;
 pub use comet_window as window;
 pub use comet_colors as colors;
@@ -114,8 +115,9 @@ pub mod prelude {
     pub use comet_math::*;
     pub use comet_renderer::{
         renderer2d::{RenderHandle2D, RenderHandle2DExt, Renderer2D},
-        PassCache, LoadOp, PassDescriptor, PassOutput, Renderer2DModule,
+        LoadOp, PassDescriptor, PassOutput, Renderer2DModule,
     };
     pub use comet_audio::{AudioModule, AudioModuleExt, KiraAudio};
+    pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use crate::{AppPreset, AppPresets, App2D, App3D, Headless};
 }

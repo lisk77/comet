@@ -1,23 +1,34 @@
 use comet::prelude::*;
 
-// Zero sized components are also called tags in the documentation
 #[derive(Component)]
-struct Player;
+struct Hitbox {
+    dimensions: v3,
+}
+
+impl Gizmo for Hitbox {
+    fn draw_gizmo(&self, position: v3, _rotation: v3, _scale: v3, buffer: &mut GizmoBuffer) {
+        buffer.draw_rect(position, self.dimensions, LinearRgba::new(0.0, 1.0, 0.0, 1.0));
+    }
+}
 
 fn setup(app: &mut App) {
-    app.register_component::<Player>();
+    app.register_component::<Hitbox>();
 
     app.spawn_bundle(Camera2d::new(1.0, 1));
 
-    app.spawn((
-        Player,
-        Transform::new(),
-        Sprite::with_texture("res://textures/comet-128.png"),
+    let e = app.spawn((
+        Transform::with_position(v3::new(0.0, 0.0, 0.0)),
+        Hitbox { dimensions: v3::new(64.0, 64.0, 0.0) },
+        Sprite::with_texture("res://textures/comet-64.png"),  
     ));
+
+    app.show_gizmo::<Hitbox>(e);
 }
 
 fn update(app: &mut App, dt: f32) {
     handle_input(app, dt);
+    let (entity, _) = app.query::<(Entity, &Hitbox), ()>().iter().next().unwrap();
+    app.show_gizmo::<Hitbox>(entity);
 }
 
 fn handle_input(app: &mut App, dt: f32) {
@@ -28,7 +39,7 @@ fn handle_input(app: &mut App, dt: f32) {
     if app.key_held(Key::KeyD) { direction += v2::X; }
 
     if direction != v2::ZERO {
-        app.query::<&mut Transform, With<Player>>().for_each(|t| {
+        app.query::<&mut Transform, With<Hitbox>>().for_each(|t| {
             let normalized_dir = direction.normalize();
             let displacement = normalized_dir * 777.7 * dt;
             t.translate(displacement.into());
@@ -38,6 +49,6 @@ fn handle_input(app: &mut App, dt: f32) {
 
 fn main() {
     App::with_preset(App2D)
-        .with_title("Simple Move 2D")
+        .with_title("Gizmos")
         .run(setup, update);
 }

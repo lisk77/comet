@@ -1,10 +1,10 @@
 use comet::prelude::*;
 
 fn setup(app: &mut App) {
-    app.spawn((Transform2D::new(), Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)));
+    app.spawn_bundle(Camera2d::new(1.0, 1));
 
     app.spawn((
-        Transform2D::new(),
+        Transform::new(),
         Text::new(
             "comet",
             app.load("res://fonts/PublicPixel.ttf"),
@@ -23,9 +23,9 @@ fn update(app: &mut App, _dt: f32) {
 }
 
 fn text_update(app: &mut App, size: v2) {
-    if let Some((transform, _)) = app.query::<(&mut Transform2D, &Text), ()>().iter().next() {
-        transform.position_mut().set_x(-((size.x() - 50.0) as f32));
-        transform.position_mut().set_y((size.y() - 100.0) as f32);
+    if let Some((transform, _)) = app.query::<(&mut Transform, &Text), ()>().iter().next() {
+        transform.set_x(-((size.x() - 50.0) as f32));
+        transform.set_y((size.y() - 100.0) as f32);
     }
 }
 

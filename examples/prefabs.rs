@@ -10,16 +10,16 @@ fn setup(app: &mut App) {
     register_prefab!(
         app,
         "camera",
-        Transform2D::new(),
-        Camera2D::new(v2::new(2.0, 2.0), 1.0, 1)
+        Transform::new(),
+        Camera::new(1.0, 1, Projection::Orthographic)
     );
 
     register_prefab!(
         app,
         "player",
         Player,
-        Transform2D::new(),
-        Render2D::with_texture("res://textures/comet_icon.png")
+        Transform::new(),
+        Sprite::with_texture("res://textures/comet-128.png")
     );
 
     app.spawn_prefab("camera");
@@ -38,8 +38,10 @@ fn handle_input(app: &mut App, dt: f32) {
     if app.key_held(Key::KeyD) { direction += v2::X; }
 
     if direction != v2::ZERO {
-        app.query::<&mut Transform2D, With<Player>>().for_each(|t| {
-            t.translate(direction.normalize() * 777.7 * dt);
+        app.query::<&mut Transform, With<Player>>().for_each(|t| {
+            let normalized_dir = direction.normalize();
+            let displacement = normalized_dir * 777.7 * dt;
+            t.translate(displacement.into());
         });
     }
 }

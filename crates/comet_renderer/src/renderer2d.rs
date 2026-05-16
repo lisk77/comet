@@ -1,20 +1,23 @@
 use crate::{
-    camera::RenderCamera,
+    camera::{CameraUniform, RenderCamera},
     gpu_texture::GpuTexture,
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_state::RenderState,
     render_events::Renderer2DEvent,
-    render_pass::{universal_execute, PassCache, LoadOp, PassOutput, RenderPass},
+    render_pass::{LoadOp, PassOutput},
+    render_graph::{RenderGraph, nodes::{PassNode, PostProcessNode}},
     Vertex,
 };
 use comet_colors::Color;
-use comet_ecs::Render;
+use comet_gizmos::{Gizmo, GizmoBuffer, GizmoShape};
+use crate::gizmo_registry::GizmoRegistry;
+use comet_ecs::Component;
 use comet_app::{App, Module};
 use comet_ecs::EcsModuleExt;
 use comet_macros::module;
 use comet_window::renderer::{Renderer, RendererHandle};
 use comet_log::*;
-use comet_math::{m4, v2, v3};
+use comet_math::{v2, v3};
 use comet_assets::{
     AtlasRef, ImageRef,
     texture_atlas::*,
@@ -30,56 +33,12 @@ struct FontKey {
     generation: u32,
     size_bits: u32,
 }
-use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
-
-const BASE_2D_SHADER_SRC: &str = r#"
-struct CameraUniform {
-    view_proj: mat4x4<f32>,
-};
-
-@group(1) @binding(0)
-var<uniform> camera: CameraUniform;
-
-struct VertexInput {
-    @location(0) position: vec3<f32>,
-    @location(1) tex_coords: vec2<f32>,
-    @location(2) color: vec4<f32>,
-}
-
-struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
-    @location(0) tex_coords: vec2<f32>,
-    @location(1) color: vec4<f32>,
-}
-
-@vertex
-fn vs_main(model: VertexInput) -> VertexOutput {
-    var out: VertexOutput;
-    out.tex_coords = model.tex_coords;
-    out.color = model.color;
-    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
-    return out;
-}
-
-@group(0) @binding(0)
-var t_diffuse: texture_2d<f32>;
-@group(0) @binding(1)
-var s_diffuse: sampler;
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let sample_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
-    return sample_color * in.color;
-}
-"#;
 
 pub struct Renderer2D {
     render_state: RenderState,
     asset_provider: comet_assets::AssetProvider,
-    render_passes: Vec<RenderPass>,
-    execution_order: Vec<String>,
-    graph_dirty: bool,
+    graph: RenderGraph,
     last_frame_time: std::time::Instant,
     delta_time: f32,
     event_sender: flume::Sender<Renderer2DEvent>,
@@ -92,6 +51,8 @@ pub struct RenderHandle2D {
     event_receiver: flume::Receiver<Renderer2DEvent>,
     last_size: Option<PhysicalSize<u32>>,
     pending_atlas_rebuild: bool,
+    gizmo_buffer: GizmoBuffer,
+    gizmo_registry: GizmoRegistry,
 }
 
 #[module]
@@ -266,6 +227,22 @@ impl RenderHandle2D {
         });
     }
 
+    pub fn show_gizmo<C: Component + Gizmo + 'static>(&mut self, entity: comet_ecs::Entity) {
+        self.gizmo_registry.show::<C>(entity);
+    }
+
+    pub fn hide_gizmo<C: Component + Gizmo + 'static>(&mut self, entity: comet_ecs::Entity) {
+        self.gizmo_registry.hide::<C>(entity);
+    }
+
+    pub fn show_all_gizmos<C: Component + Gizmo + 'static>(&mut self) {
+        self.gizmo_registry.show_all::<C>();
+    }
+
+    pub fn hide_all_gizmos<C: Component + Gizmo + 'static>(&mut self) {
+        self.gizmo_registry.hide_all::<C>();
+    }
+
 }
 
 impl RenderHandle2D {
@@ -274,7 +251,7 @@ impl RenderHandle2D {
         if self.pending_atlas_rebuild {
             self.pending_atlas_rebuild = false;
             for (_, render) in scene
-                .query_mut::<(&comet_ecs::Transform2D, &mut comet_ecs::Render2D), ()>()
+                .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
                 .iter()
             {
                 if let ImageRef::ResolvedHandle(h, _) = render.texture() {
@@ -283,25 +260,25 @@ impl RenderHandle2D {
             }
         }
 
-        let mut selected_camera: Option<([f32; 2], f32, f32, [f32; 2], u8)> = None;
+        let mut selected_camera: Option<([f32; 2], f32, f32, u8, comet_ecs::Projection)> = None;
         for (transform, camera) in scene
-            .query::<(&comet_ecs::Transform2D, &comet_ecs::Camera2D), ()>()
+            .query::<(&comet_ecs::Transform, &comet_ecs::Camera), ()>()
             .iter()
         {
             let should_replace = selected_camera
                 .as_ref()
-                .is_none_or(|(_, _, _, _, current_priority)| camera.priority() < *current_priority);
+                .is_none_or(|(_, _, _, current_priority, _)| camera.priority() < *current_priority);
             if should_replace {
                 selected_camera = Some((
                     [transform.position().x(), transform.position().y()],
-                    transform.rotation().to_degrees(),
+                    transform.rotation().z().to_degrees(),
                     camera.zoom(),
-                    [camera.dimensions().x(), camera.dimensions().y()],
                     camera.priority(),
+                    camera.projection().clone(),
                 ));
             }
         }
-        let Some((camera_pos, camera_rot, camera_zoom, camera_dims, camera_priority)) =
+        let Some((camera_pos, camera_rot, camera_zoom, camera_priority, camera_projection)) =
             selected_camera
         else {
             return;
@@ -310,7 +287,7 @@ impl RenderHandle2D {
         let mut draws = Vec::new();
         let mut referenced_handles = Vec::new();
         for (transform, render) in scene
-            .query_mut::<(&comet_ecs::Transform2D, &mut comet_ecs::Render2D), ()>()
+            .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
             .iter()
         {
             let atlas_ref = match render.texture() {
@@ -343,8 +320,8 @@ impl RenderHandle2D {
 
             draws.push(Draw2D {
                 position: [transform.position().x(), transform.position().y()],
-                rotation_deg: transform.rotation().to_degrees(),
-                scale: [1.0, 1.0],
+                rotation_deg: transform.rotation().z().to_degrees(),
+                scale: [transform.scale().x(), transform.scale().y()],
                 texture: atlas_ref,
                 draw_index: render.draw_index(),
                 visible: render.is_visible(),
@@ -354,7 +331,7 @@ impl RenderHandle2D {
 
         let mut texts = Vec::new();
         for (transform, text) in scene
-            .query::<(&comet_ecs::Transform2D, &comet_ecs::Text), ()>()
+            .query::<(&comet_ecs::Transform, &comet_ecs::Text), ()>()
             .iter()
         {
             if !text.is_visible() {
@@ -380,14 +357,18 @@ impl RenderHandle2D {
             position: camera_pos,
             rotation_deg: camera_rot,
             zoom: camera_zoom,
-            dimensions: camera_dims,
             priority: camera_priority,
+            projection: camera_projection,
         };
+
+        self.gizmo_registry.flush(scene, &mut self.gizmo_buffer);
+        let gizmo_shapes = std::mem::take(&mut self.gizmo_buffer.shapes);
 
         let _ =
             self.command_sender
-                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts, referenced_handles));
+                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts, referenced_handles, gizmo_shapes));
     }
+
 }
 
 impl RendererHandle for RenderHandle2D {
@@ -400,6 +381,8 @@ impl RendererHandle for RenderHandle2D {
             event_receiver: receiver,
             last_size: None,
             pending_atlas_rebuild: false,
+            gizmo_buffer: GizmoBuffer::new(),
+            gizmo_registry: GizmoRegistry::new(),
         }
     }
 
@@ -425,6 +408,80 @@ impl comet_app::Module for RenderHandle2D {
         });
     }
 }
+
+const SPRITE_SHADER: &str = r#"
+struct CameraUniform {
+    view_proj: mat4x4<f32>,
+};
+
+@group(1) @binding(0)
+var<uniform> camera: CameraUniform;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) tex_coords: vec2<f32>,
+    @location(2) color: vec4<f32>,
+}
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) tex_coords: vec2<f32>,
+    @location(1) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(model: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.tex_coords = model.tex_coords;
+    out.color = model.color;
+    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
+    return out;
+}
+
+@group(0) @binding(0)
+var t_diffuse: texture_2d<f32>;
+@group(0) @binding(1)
+var s_diffuse: sampler;
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let sample_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    return sample_color * in.color;
+}
+"#;
+
+const GIZMO_SHADER: &str = r#"
+struct CameraUniform {
+    view_proj: mat4x4<f32>,
+};
+
+@group(0) @binding(0)
+var<uniform> camera: CameraUniform;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) tex_coords: vec2<f32>,
+    @location(2) color: vec4<f32>,
+}
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(model: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.color = model.color;
+    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return in.color;
+}
+"#;
 
 impl Renderer2D {
     fn setup_atlas_pipeline(&mut self, mut atlas: comet_assets::TextureAtlas) {
@@ -455,122 +512,27 @@ impl Renderer2D {
             .resources_mut()
             .insert_gpu_texture("atlas".to_string(), gpu_texture_arc.clone());
 
-        let texture_bind_group_layout =
-            Arc::new(self.render_state.device().create_bind_group_layout(
-                &wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Texture Bind Group Layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                },
-            ));
+        let format = self.render_state.config().format;
+        let width = self.render_state.config().width;
+        let height = self.render_state.config().height;
 
-        let texture_sampler =
-            self.render_state
-                .device()
-                .create_sampler(&wgpu::SamplerDescriptor {
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Nearest,
-                    min_filter: wgpu::FilterMode::Nearest,
-                    mipmap_filter: wgpu::FilterMode::Nearest,
-                    lod_min_clamp: 0.0,
-                    lod_max_clamp: 100.0,
-                    compare: None,
-                    anisotropy_clamp: 1,
-                    border_color: None,
-                    ..Default::default()
-                });
-
-        let camera_bind_group_layout =
-            Arc::new(self.render_state.device().create_bind_group_layout(
-                &wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Camera Bind Group Layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
-                },
-            ));
-        self.new_render_pass(
-            "Universal".to_string(),
-            vec![],
-            None,
-            None,
-            LoadOp::Background,
-            Box::new(universal_execute),
-            BASE_2D_SHADER_SRC,
-            None,
-            &(*gpu_texture_arc),
-            texture_bind_group_layout.clone(),
-            texture_sampler,
-            Vec::new(),
-            &[camera_bind_group_layout],
+        self.graph.add_node(
+            PassNode::new("Universal", SPRITE_SHADER, wgpu::PrimitiveTopology::TriangleList, Some(gpu_texture_arc), vec![], LoadOp::Background),
+            self.render_state.device(),
+            self.render_state.queue(),
+            format,
+            width,
+            height,
         );
 
-        let new_bind_group = Arc::new({
-            let device = self.render_state.device();
-            let sampler = self.render_state.resources().get_sampler("Universal")
-                .expect("Universal sampler missing after new_render_pass");
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&gpu_texture_arc.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(sampler),
-                    },
-                ],
-                label: Some("Universal Texture Bind Group (Updated)"),
-            })
-        });
-
-        self.render_state.resources_mut().replace_bind_group(
-            "Universal".to_string(),
-            0,
-            new_bind_group,
+        self.graph.add_node(
+            PassNode::new("Gizmo", GIZMO_SHADER, wgpu::PrimitiveTopology::LineList, None, vec!["Universal", "Font"], LoadOp::Load),
+            self.render_state.device(),
+            self.render_state.queue(),
+            format,
+            width,
+            height,
         );
-
-        let camera_group = self.render_state.resources()
-            .get_bind_groups("Universal")
-            .and_then(|groups| groups.get(1))
-            .cloned();
-        if let Some(cg) = camera_group {
-            let resources = self.render_state.resources_mut();
-            if resources.get_bind_groups("Font").is_some() {
-                let font_groups = resources.get_bind_groups("Font").map(|v| v.len()).unwrap_or(0);
-                if font_groups > 1 {
-                    resources.replace_bind_group("Font".into(), 1, cg);
-                } else {
-                    resources.insert_bind_group("Font".into(), cg);
-                }
-            }
-        }
     }
 
     fn ensure_font_initialized(&mut self, handle: comet_assets::Asset<comet_assets::Font>, size: f32) {
@@ -628,115 +590,24 @@ impl Renderer2D {
         }
         self.render_state.resources_mut().insert_gpu_texture("font_atlas".to_string(), font_texture_arc.clone());
 
-        let font_pass_exists = self.render_state.resources().get_bind_group_layout("Font").is_some();
-
-        if font_pass_exists {
-            let texture_bind_group_layout = self.render_state.resources()
-                .get_bind_group_layout("Font")
-                .and_then(|v| v.first())
-                .cloned()
-                .expect("Font bind group layout missing");
-
-            let sampler = self.render_state.resources().get_sampler("Font")
-                .expect("Font sampler missing");
-            let new_bind_group = Arc::new(self.render_state.device().create_bind_group(
-                &wgpu::BindGroupDescriptor {
-                    layout: &texture_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&font_texture_arc.view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(sampler),
-                        },
-                    ],
-                    label: Some("Font Texture Bind Group (Updated)"),
-                },
-            ));
-            self.render_state.resources_mut().replace_bind_group("Font".into(), 0, new_bind_group);
+        if self.graph.has_node("Font") {
+            let device = self.render_state.device();
+            self.graph
+                .get_node_mut::<PassNode>("Font")
+                .unwrap()
+                .set_texture(font_texture_arc, device);
         } else {
-            let texture_bind_group_layout =
-                Arc::new(self.render_state.device().create_bind_group_layout(
-                    &wgpu::BindGroupLayoutDescriptor {
-                        label: Some("Font Texture Bind Group Layout"),
-                        entries: &[
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 0,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Texture {
-                                    multisampled: false,
-                                    view_dimension: wgpu::TextureViewDimension::D2,
-                                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                },
-                                count: None,
-                            },
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 1,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                                count: None,
-                            },
-                        ],
-                    },
-                ));
-
-            let texture_sampler = self.render_state.device().create_sampler(&wgpu::SamplerDescriptor {
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-                address_mode_w: wgpu::AddressMode::ClampToEdge,
-                mag_filter: wgpu::FilterMode::Nearest,
-                min_filter: wgpu::FilterMode::Nearest,
-                mipmap_filter: wgpu::FilterMode::Nearest,
-                ..Default::default()
-            });
-
-            let camera_bind_group_layout =
-                Arc::new(self.render_state.device().create_bind_group_layout(
-                    &wgpu::BindGroupLayoutDescriptor {
-                        label: Some("Font Camera Bind Group Layout"),
-                        entries: &[wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::VERTEX,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        }],
-                    },
-                ));
-
-            self.new_render_pass(
-                "Font".to_string(),
-                vec![],
-                None,
-                None,
-                LoadOp::Load,
-                Box::new(universal_execute),
-                BASE_2D_SHADER_SRC,
-                None,
-                &(*font_texture_arc),
-                texture_bind_group_layout,
-                texture_sampler,
-                vec![],
-                &[camera_bind_group_layout],
+            let format = self.render_state.config().format;
+            let width = self.render_state.config().width;
+            let height = self.render_state.config().height;
+            self.graph.add_node(
+                PassNode::new("Font", SPRITE_SHADER, wgpu::PrimitiveTopology::TriangleList, Some(font_texture_arc), vec!["Universal"], LoadOp::Load),
+                self.render_state.device(),
+                self.render_state.queue(),
+                format,
+                width,
+                height,
             );
-
-            let camera_group = self.render_state.resources()
-                .get_bind_groups("Universal")
-                .and_then(|groups| groups.get(1))
-                .cloned();
-            if let Some(cg) = camera_group {
-                let resources = self.render_state.resources_mut();
-                if resources.get_bind_groups("Font").map(|v| v.len() > 1).unwrap_or(false) {
-                    resources.replace_bind_group("Font".into(), 1, cg);
-                } else {
-                    resources.insert_bind_group("Font".into(), cg);
-                }
-            }
         }
     }
 
@@ -839,434 +710,75 @@ impl Renderer2D {
         let new_gpu_arc = Arc::new(new_gpu);
         self.render_state.resources_mut().insert_gpu_texture("atlas".to_string(), new_gpu_arc.clone());
 
-        let new_bind_group = Arc::new({
-            let layout = self.render_state.resources()
-                .get_bind_group_layout("Universal")
-                .and_then(|v| v.first())
-                .cloned()
-                .expect("Universal bind group layout missing during atlas rebuild");
-            let sampler = self.render_state.resources()
-                .get_sampler("Universal")
-                .expect("Universal sampler missing during atlas rebuild");
-            self.render_state.device().create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&new_gpu_arc.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(sampler),
-                    },
-                ],
-                label: Some("Universal Texture Bind Group (Rebuilt)"),
-            })
-        });
-        self.render_state.resources_mut().replace_bind_group("Universal".to_string(), 0, new_bind_group);
+        let device = self.render_state.device();
+        if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
+            node.set_texture(new_gpu_arc, device);
+        }
 
         let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
     }
 
-    pub fn new_render_pass(
-        &mut self,
-        label: String,
-        inputs: Vec<&PassOutput>,
-        output: Option<String>,
-        output_format: Option<wgpu::TextureFormat>,
-        load: LoadOp,
-        execute: Box<
-            dyn for<'rpass> Fn(String, &mut RenderState, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup])
-                + Send
-                + Sync,
-        >,
-        shader_path: &str,
-        _shader_stage: Option<wgpu::naga::ShaderStage>,
-        texture: &GpuTexture,
-        texture_bind_group_layout: Arc<wgpu::BindGroupLayout>,
-        texture_sampler: wgpu::Sampler,
-        bind_groups: Vec<Arc<wgpu::BindGroup>>,
-        extra_bind_group_layouts: &[Arc<wgpu::BindGroupLayout>],
-    ) -> Option<PassOutput> {
-        #[cfg(feature = "comet_debug")]
-        info!("Creating render pass {}", label);
-
-        let shader_module = self.render_state.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(&format!("{} Shader", label)),
-            source: wgpu::ShaderSource::Wgsl(shader_path.into()),
-        });
-
-        let texture_bind_group = Arc::new({
-            let device = self.render_state.device();
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture_sampler),
-                    },
-                ],
-                label: Some(&format!("{} Texture Bind Group", label)),
-            })
-        });
-
-        let render_pipeline = {
-            let device = self.render_state.device();
-
-            let mut bind_layout_refs: Vec<&wgpu::BindGroupLayout> = Vec::new();
-            bind_layout_refs.push(&texture_bind_group_layout);
-            for layout in extra_bind_group_layouts {
-                bind_layout_refs.push(layout);
-            }
-
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some(&format!("{} Pipeline Layout", label)),
-                bind_group_layouts: &bind_layout_refs,
-                push_constant_ranges: &[],
-            });
-
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(&format!("{} Render Pipeline", label)),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader_module,
-                    entry_point: "vs_main",
-                    buffers: &[Vertex::desc()],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader_module,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: self.render_state.config().format,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                        }),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview: None,
-                cache: None,
-            })
-        };
-
-        self.render_state
-            .insert_pipeline(label.clone(), render_pipeline);
-
-        {
-            let resources = self.render_state.resources_mut();
-            resources.insert_bind_group(label.clone(), texture_bind_group);
-            for group in bind_groups {
-                resources.insert_bind_group(label.clone(), group);
-            }
-            resources.insert_bind_group_layout(label.clone(), texture_bind_group_layout);
-            for layout in extra_bind_group_layouts {
-                resources.insert_bind_group_layout(label.clone(), layout.clone());
-            }
-            resources.insert_sampler(label.clone(), texture_sampler);
-        }
-
-        if let Some(camera_layout) = extra_bind_group_layouts.get(0) {
-            let device = self.render_state.device();
-
-            let identity: [[f32; 4]; 4] = m4::IDENTITY.into();
-            let cam_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("{} Default Camera Buffer", label)),
-                contents: bytemuck::cast_slice(&[identity]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
-
-            let default_camera_bg =
-                Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some(&format!("{} Default Camera Bind Group", label)),
-                    layout: camera_layout,
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: cam_buffer.as_entire_binding(),
-                    }],
-                }));
-
-            let resources = self.render_state.resources_mut();
-            resources.insert_buffer(label.clone(), Arc::new(cam_buffer));
-            resources.insert_bind_group(label.clone(), default_camera_bg);
-        } else {
-            warn!(
-                    "Render pass '{}' created without camera layout: skipping default camera bind group",
-                    label
-                );
-        }
-
-        let input_names: Vec<String> = inputs.iter().map(|p| p.0.clone()).collect();
-        let pass_output = output.as_ref().map(|name| PassOutput(name.clone()));
-
-        self.render_passes
-            .push(RenderPass::new(label.clone(), input_names, output, None, output_format, load, None, execute));
-
-        self.render_state
-            .new_batch(label.clone(), Vec::new(), Vec::new());
-        #[cfg(feature = "comet_debug")]
-        info!("Created render pass {}!", label);
-
-        self.graph_dirty = true;
-        pass_output
-    }
-
     fn add_pass(&mut self, desc: crate::render_commands::PassDescriptor) -> PassOutput {
-        let shader_module = self.render_state.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(&format!("{} Shader", desc.label)),
-            source: wgpu::ShaderSource::Wgsl(desc.shader_src.into()),
-        });
-
-        let input_count = desc.inputs.len();
-
-        let bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>> = (0..input_count).map(|i| {
-            Arc::new(self.render_state.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some(&format!("{} Input {} Layout", desc.label, i)),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            }))
-        }).collect();
-
-        let sampler = Arc::new(self.render_state.device().create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        }));
-
-        let layout_refs: Vec<&wgpu::BindGroupLayout> = bind_group_layouts.iter().map(|l| l.as_ref()).collect();
-        let pipeline_layout = self.render_state.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some(&format!("{} Pipeline Layout", desc.label)),
-            bind_group_layouts: &layout_refs,
-            push_constant_ranges: &[],
-        });
-
-        let output_format = desc.output_format.unwrap_or(self.render_state.config().format);
-        let pipeline = Arc::new(self.render_state.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some(&format!("{} Pipeline", desc.label)),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader_module,
-                entry_point: "vs_main",
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: output_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        }));
-
-        if desc.render_target.is_some() {
+        let load = if desc.render_target.is_some() {
             if let LoadOp::Color(_) | LoadOp::Background = desc.load {
                 warn!("pass '{}': render_target with non-Load op, forcing Load", desc.label);
             }
-        }
-        let load = if desc.render_target.is_some() { LoadOp::Load } else { desc.load };
-
-        let execute: Box<dyn for<'rpass> Fn(String, &mut RenderState, &mut wgpu::RenderPass<'rpass>, &[&wgpu::BindGroup]) + Send + Sync> = {
-            let pipeline = pipeline.clone();
-            Box::new(move |_label, _ctx, rpass, input_bind_groups| {
-                rpass.set_pipeline(&pipeline);
-                for (i, bg) in input_bind_groups.iter().enumerate() {
-                    rpass.set_bind_group(i as u32, bg, &[]);
-                }
-                rpass.draw(0..3, 0..1);
-            })
+            LoadOp::Load
+        } else {
+            desc.load
         };
 
         let pass_output = PassOutput(desc.output.clone().unwrap_or_else(|| desc.label.clone()));
-        let input_names = desc.inputs;
-        let cache = PassCache::new(bind_group_layouts, sampler);
 
-        self.render_passes.push(RenderPass::new(
-            desc.label.clone(),
-            input_names,
-            desc.output,
-            desc.render_target,
-            desc.output_format,
-            load,
-            Some(cache),
-            execute,
-        ));
+        let format = self.render_state.config().format;
+        let width = self.render_state.config().width;
+        let height = self.render_state.config().height;
 
-        self.graph_dirty = true;
+        self.graph.add_node(
+            PostProcessNode::new(
+                desc.label,
+                desc.inputs,
+                desc.output,
+                desc.render_target,
+                desc.output_format,
+                load,
+                desc.shader_src,
+            ),
+            self.render_state.device(),
+            self.render_state.queue(),
+            format,
+            width,
+            height,
+        );
+
         #[cfg(feature = "comet_debug")]
-        info!("Created pass {}!", desc.label);
+        info!("Created pass {}!", pass_output.name());
         pass_output
     }
 
-    fn remove_render_pass(&mut self, label: &str) {
-        if let Some(pos) = self.render_passes.iter().position(|p| {
-            p.output.as_deref() == Some(label) || p.label == label
-        }) {
-            let pass = self.render_passes.remove(pos);
-            if let Some(ref name) = pass.output {
-                self.render_state.resources_mut().remove_gpu_texture(name);
-            }
-        }
-        self.graph_dirty = true;
+    fn remove_pass(&mut self, label: &str) {
+        self.graph.remove_node(label);
     }
 
     fn set_pass_render_target(&mut self, label: &str, render_target: Option<String>) {
-        let Some(pass) = self.render_passes.iter_mut().find(|p| p.label == label) else {
-            error!("set_pass_render_target: no pass '{}'", label);
-            return;
-        };
-        pass.render_target = render_target;
-        self.graph_dirty = true;
+        if let Some(node) = self.graph.get_node_mut::<PostProcessNode>(label) {
+            node.set_render_target(render_target);
+            self.graph.mark_dirty();
+        } else {
+            error!("set_pass_render_target: no PostProcessNode '{}'", label);
+        }
     }
 
     fn set_pass_output(&mut self, label: &str, output: Option<PassOutput>) -> Option<PassOutput> {
-        let Some(pass) = self.render_passes.iter_mut().find(|p| p.label == label) else {
-            error!("set_pass_output: no pass '{}'", label);
-            return None;
-        };
-        if let Some(ref old) = pass.output {
-            self.render_state.resources_mut().remove_gpu_texture(old);
+        if let Some(node) = self.graph.get_node_mut::<PostProcessNode>(label) {
+            let result = output.clone();
+            node.set_output(output.map(|p| p.0));
+            self.graph.mark_dirty();
+            result
+        } else {
+            error!("set_pass_output: no PostProcessNode '{}'", label);
+            None
         }
-        pass.output = output.as_ref().map(|p| p.0.clone());
-        if let Some(ref mut cache) = pass.cache {
-            cache.invalidate();
-        }
-        self.graph_dirty = true;
-        output
-    }
-
-    fn build_graph(&mut self) {
-        use std::collections::{HashMap, HashSet, VecDeque};
-
-        let n = self.render_passes.len();
-
-        let mut seen_outputs: HashSet<&str> = HashSet::new();
-        for pass in &self.render_passes {
-            if let Some(ref name) = pass.output {
-                if !seen_outputs.insert(name.as_str()) {
-                    error!("duplicate output name '{}': only one pass may declare each output", name);
-                }
-            }
-        }
-
-        let output_map: HashMap<&str, usize> = self.render_passes.iter().enumerate()
-            .filter_map(|(i, p)| p.output.as_deref().map(|name| (name, i)))
-            .collect();
-
-        let mut in_degree = vec![0usize; n];
-        let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
-
-        for (i, pass) in self.render_passes.iter().enumerate() {
-            let mut seen_producers: std::collections::HashSet<usize> = std::collections::HashSet::new();
-
-            for input in &pass.inputs {
-                if let Some(&producer) = output_map.get(input.as_str()) {
-                    if seen_producers.insert(producer) {
-                        adj[producer].push(i);
-                        in_degree[i] += 1;
-                    } else {
-                        error!("pass '{}': duplicate dependency '{}'", pass.label, input);
-                    }
-                } else {
-                    error!("Render pass '{}' declares input '{}' but no pass produces it", pass.label, input);
-                }
-            }
-            if let Some(ref target) = pass.render_target {
-                if let Some(&producer) = output_map.get(target.as_str()) {
-                    if seen_producers.insert(producer) {
-                        adj[producer].push(i);
-                        in_degree[i] += 1;
-                    } else {
-                        error!("pass '{}': render_target '{}' already an input", pass.label, target);
-                    }
-                } else {
-                    error!("Render pass '{}' declares render_target '{}' but no pass produces it", pass.label, target);
-                }
-            }
-        }
-
-        let mut queue: VecDeque<usize> = in_degree.iter().enumerate()
-            .filter(|(_, &d)| d == 0)
-            .map(|(i, _)| i)
-            .collect();
-
-        let mut order = Vec::with_capacity(n);
-        while let Some(i) = queue.pop_front() {
-            order.push(i);
-            for &dep in &adj[i] {
-                in_degree[dep] -= 1;
-                if in_degree[dep] == 0 {
-                    queue.push_back(dep);
-                }
-            }
-        }
-
-        if order.len() != n {
-            fatal!("Render graph contains a cycle");
-        }
-
-        self.execution_order = order.into_iter().map(|i| self.render_passes[i].label.clone()).collect();
-        self.graph_dirty = false;
     }
 
     fn get_texture_region(&self, texture: AtlasRef) -> TextureRegion {
@@ -1390,6 +902,7 @@ impl Renderer2D {
         mut draws: Vec<Draw2D>,
         texts: Vec<Text2D>,
         referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
+        gizmo_shapes: Vec<GizmoShape>,
     ) {
         if let Some(atlas_handle) = self.render_state.resources().get_asset_atlas_handle("atlas") {
             let any_evicted = self.asset_provider.with_mut(atlas_handle, |atlas| {
@@ -1470,62 +983,24 @@ impl Renderer2D {
                 ),
             ];
 
-            let inv_width = 1.0 / self.render_state.config().width as f32;
-            let inv_height = 1.0 / self.render_state.config().height as f32;
-
-            let snapped_screen_corners = [
-                (
-                    rotated_world_corners[0].0.round() * inv_width,
-                    rotated_world_corners[0].1.round() * inv_height,
-                ),
-                (
-                    rotated_world_corners[1].0.round() * inv_width,
-                    rotated_world_corners[1].1.round() * inv_height,
-                ),
-                (
-                    rotated_world_corners[2].0.round() * inv_width,
-                    rotated_world_corners[2].1.round() * inv_height,
-                ),
-                (
-                    rotated_world_corners[3].0.round() * inv_width,
-                    rotated_world_corners[3].1.round() * inv_height,
-                ),
-            ];
-
             vertex_buffer.extend_from_slice(&[
                 Vertex::new(
-                    [
-                        snapped_screen_corners[0].0,
-                        snapped_screen_corners[0].1,
-                        0.0,
-                    ],
+                    [rotated_world_corners[0].0, rotated_world_corners[0].1, 0.0],
                     [region.u0(), region.v0()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [
-                        snapped_screen_corners[1].0,
-                        snapped_screen_corners[1].1,
-                        0.0,
-                    ],
+                    [rotated_world_corners[1].0, rotated_world_corners[1].1, 0.0],
                     [region.u0(), region.v1()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [
-                        snapped_screen_corners[2].0,
-                        snapped_screen_corners[2].1,
-                        0.0,
-                    ],
+                    [rotated_world_corners[2].0, rotated_world_corners[2].1, 0.0],
                     [region.u1(), region.v1()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
                 Vertex::new(
-                    [
-                        snapped_screen_corners[3].0,
-                        snapped_screen_corners[3].1,
-                        0.0,
-                    ],
+                    [rotated_world_corners[3].0, rotated_world_corners[3].1, 0.0],
                     [region.u1(), region.v0()],
                     [1.0, 1.0, 1.0, 1.0],
                 ),
@@ -1541,11 +1016,12 @@ impl Renderer2D {
             ]);
         }
 
-        self.render_state.update_batch_buffers(
-            "Universal".to_string(),
-            vertex_buffer,
-            index_buffer,
-        );
+        let device = self.render_state.device();
+        let queue = self.render_state.queue();
+
+        if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
+            node.set_geometry(vertex_buffer, index_buffer, device, queue);
+        }
 
         let mut font_vertex_buffer: Vec<Vertex> = Vec::new();
         let mut font_index_buffer: Vec<u16> = Vec::new();
@@ -1578,36 +1054,115 @@ impl Renderer2D {
             font_index_buffer.extend(indices.iter().map(|i| i + offset));
         }
 
-        self.render_state
-            .update_batch_buffers("Font".to_string(), font_vertex_buffer, font_index_buffer);
+        let device = self.render_state.device();
+        let queue = self.render_state.queue();
+
+        if let Some(node) = self.graph.get_node_mut::<PassNode>("Font") {
+            node.set_geometry(font_vertex_buffer, font_index_buffer, device, queue);
+        }
+
+        let mut gizmo_verts: Vec<Vertex> = Vec::new();
+        let mut gizmo_indices: Vec<u16> = Vec::new();
+
+        for shape in gizmo_shapes {
+            match shape {
+                GizmoShape::Line { start, end, color } => {
+                    let c = [color.red(), color.green(), color.blue(), color.alpha()];
+                    let base = gizmo_verts.len() as u16;
+                    gizmo_verts.push(Vertex::new([start.x(), start.y(), start.z()], [0.0, 0.0], c));
+                    gizmo_verts.push(Vertex::new([end.x(), end.y(), end.z()], [0.0, 0.0], c));
+                    gizmo_indices.extend_from_slice(&[base, base + 1]);
+                }
+                GizmoShape::Rect { position, size, color } => {
+                    let c = [color.red(), color.green(), color.blue(), color.alpha()];
+                    let hx = size.x() * 0.5;
+                    let hy = size.y() * 0.5;
+                    let base = gizmo_verts.len() as u16;
+                    let corners = [
+                        [position.x() - hx, position.y() + hy, position.z()],
+                        [position.x() + hx, position.y() + hy, position.z()],
+                        [position.x() + hx, position.y() - hy, position.z()],
+                        [position.x() - hx, position.y() - hy, position.z()],
+                    ];
+                    for corner in &corners {
+                        gizmo_verts.push(Vertex::new(*corner, [0.0, 0.0], c));
+                    }
+                    gizmo_indices.extend_from_slice(&[
+                        base, base + 1,
+                        base + 1, base + 2,
+                        base + 2, base + 3,
+                        base + 3, base,
+                    ]);
+                }
+                GizmoShape::Circle { position, radius, color } => {
+                    let c = [color.red(), color.green(), color.blue(), color.alpha()];
+                    let segments = 32u32;
+                    let base = gizmo_verts.len() as u16;
+                    for i in 0..segments {
+                        let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+                        let x = position.x() + radius * angle.cos();
+                        let y = position.y() + radius * angle.sin();
+                        gizmo_verts.push(Vertex::new([x, y, position.z()], [0.0, 0.0], c));
+                        let next = (i + 1) % segments;
+                        gizmo_indices.extend_from_slice(&[base + i as u16, base + next as u16]);
+                    }
+                }
+                GizmoShape::NGon { position, radius, vertices, color } => {
+                    let c = [color.red(), color.green(), color.blue(), color.alpha()];
+                    let n = vertices.max(3);
+                    let base = gizmo_verts.len() as u16;
+                    for i in 0..n {
+                        let angle = (i as f32 / n as f32) * std::f32::consts::TAU;
+                        let x = position.x() + radius * angle.cos();
+                        let y = position.y() + radius * angle.sin();
+                        gizmo_verts.push(Vertex::new([x, y, position.z()], [0.0, 0.0], c));
+                        let next = (i + 1) % n;
+                        gizmo_indices.extend_from_slice(&[base + i as u16, base + next as u16]);
+                    }
+                }
+            }
+        }
+
+        let device = self.render_state.device();
+        let queue = self.render_state.queue();
+
+        if let Some(node) = self.graph.get_node_mut::<PassNode>("Gizmo") {
+            node.set_geometry(gizmo_verts, gizmo_indices, device, queue);
+        }
     }
 
     fn setup_camera_from_packet(&mut self, camera: CameraPacket2D) {
-        let render_camera = RenderCamera::new(
-            camera.zoom,
-            v2::new(camera.dimensions[0], camera.dimensions[1]),
-            v3::new(camera.position[0], camera.position[1], 0.0),
-        );
+        use comet_ecs::Projection;
 
-        let mut camera_uniform = crate::camera::CameraUniform::new();
-        camera_uniform.update_view_proj(&render_camera);
+        let width = self.render_state.config().width as f32;
+        let height = self.render_state.config().height as f32;
 
-        let buffer = match self.render_state.resources().get_buffer("Universal")
-            .and_then(|v| v.first())
-            .cloned()
-        {
-            Some(b) => b,
-            None => {
-                error!("Camera buffer missing for 'Universal' pass.");
-                return;
+        let view_proj: [[f32; 4]; 4] = match camera.projection {
+            Projection::Custom { matrix } => matrix.into(),
+            _ => {
+                let render_camera = RenderCamera::new(
+                    camera.zoom,
+                    v2::new(width, height),
+                    v3::new(camera.position[0], camera.position[1], 0.0),
+                );
+                render_camera.build_view_projection_matrix().into()
             }
         };
 
-        self.render_state.queue().write_buffer(
-            &buffer,
-            0,
-            bytemuck::cast_slice(&[camera_uniform]),
-        );
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.set_view_proj(view_proj);
+
+        let queue = self.render_state.queue();
+
+        if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
+            node.set_camera(&camera_uniform, queue);
+        }
+        if let Some(node) = self.graph.get_node_mut::<PassNode>("Font") {
+            node.set_camera(&camera_uniform, queue);
+        }
+        if let Some(node) = self.graph.get_node_mut::<PassNode>("Gizmo") {
+            node.set_camera(&camera_uniform, queue);
+        }
     }
 }
 
@@ -1623,9 +1178,7 @@ impl Renderer for Renderer2D {
         Self {
             render_state: RenderState::new(window, clear_color),
             asset_provider,
-            render_passes: Vec::new(),
-            execution_order: Vec::new(),
-            graph_dirty: true,
+            graph: RenderGraph::new(),
             last_frame_time: std::time::Instant::now(),
             delta_time: 0.0,
             event_sender,
@@ -1699,15 +1252,15 @@ impl Renderer for Renderer2D {
                         height: bounds.y(),
                     });
             }
-            Renderer2DCommand::SubmitFrame(camera, draws, texts, referenced_handles) => {
-                self.submit_frame(camera, draws, texts, referenced_handles)
+            Renderer2DCommand::SubmitFrame(camera, draws, texts, referenced_handles, gizmo_shapes) => {
+                self.submit_frame(camera, draws, texts, referenced_handles, gizmo_shapes)
             }
             Renderer2DCommand::AddRenderPass(desc) => {
                 let pass_output = self.add_pass(desc);
                 let _ = self.event_sender.send(Renderer2DEvent::PassAdded(pass_output));
             }
             Renderer2DCommand::RemoveRenderPass(label) => {
-                self.remove_render_pass(&label);
+                self.remove_pass(&label);
                 let _ = self.event_sender.send(Renderer2DEvent::PassRemoved);
             }
             Renderer2DCommand::SetPassOutput(label, output) => {
@@ -1735,15 +1288,12 @@ impl Renderer for Renderer2D {
             self.render_state.config_mut().width = new_size.width;
             self.render_state.config_mut().height = new_size.height;
             self.render_state.configure_surface();
-
-            for pass in &mut self.render_passes {
-                if let Some(ref name) = pass.output {
-                    self.render_state.resources_mut().remove_gpu_texture(name);
-                }
-                if let Some(ref mut cache) = pass.cache {
-                    cache.invalidate();
-                }
-            }
+            self.graph.on_resize(
+                self.render_state.device(),
+                self.render_state.queue(),
+                new_size.width,
+                new_size.height,
+            );
         }
     }
 
@@ -1763,111 +1313,25 @@ impl Renderer for Renderer2D {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        if self.graph_dirty {
-            self.build_graph();
-        }
-
         let output = self.render_state.surface().get_current_texture()?;
         let output_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder =
-            self.render_state
-                .device()
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
+        let clear_color = self.render_state.clear_color();
+        let format = self.render_state.config().format;
+        let width = self.render_state.config().width;
+        let height = self.render_state.config().height;
 
-        let labels: Vec<String> = self.execution_order.clone();
-        for label in labels {
-            let pass_idx = match self.render_passes.iter().position(|p| p.label == label) {
-                Some(i) => i,
-                None => continue,
-            };
-
-            if let Some(ref name) = self.render_passes[pass_idx].output.clone() {
-                if self.render_state.resources().get_gpu_texture(name).is_none() {
-                    let w = self.render_state.config().width;
-                    let h = self.render_state.config().height;
-                    let format = self.render_passes[pass_idx].output_format
-                        .unwrap_or(self.render_state.config().format);
-                    self.render_state.create_intermediate_texture(name.clone(), w, h, format);
-                    if let Some(ref mut cache) = self.render_passes[pass_idx].cache {
-                        cache.invalidate();
-                    }
-                }
-            }
-
-            let owned_tex = self.render_passes[pass_idx].output.as_ref()
-                .and_then(|name| self.render_state.resources().get_gpu_texture(name).cloned());
-            let target_tex = self.render_passes[pass_idx].render_target.as_ref()
-                .and_then(|name| self.render_state.resources().get_gpu_texture(name).cloned());
-
-            let view: &wgpu::TextureView = match target_tex.as_ref().or(owned_tex.as_ref()) {
-                Some(tex) => &tex.view,
-                None => &output_view,
-            };
-
-            if self.render_passes[pass_idx].cache.as_ref().is_some_and(|c| c.bind_groups.is_none()) {
-                let inputs: Vec<Arc<GpuTexture>> = self.render_passes[pass_idx].inputs.iter()
-                    .filter_map(|name| self.render_state.resources().get_gpu_texture(name).cloned())
-                    .collect();
-                if let Some(ref cache) = self.render_passes[pass_idx].cache {
-                    let groups: Vec<Arc<wgpu::BindGroup>> = inputs.iter().zip(cache.layouts.iter()).map(|(tex, layout)| {
-                        Arc::new(self.render_state.device().create_bind_group(&wgpu::BindGroupDescriptor {
-                            layout,
-                            entries: &[
-                                wgpu::BindGroupEntry {
-                                    binding: 0,
-                                    resource: wgpu::BindingResource::TextureView(&tex.view),
-                                },
-                                wgpu::BindGroupEntry {
-                                    binding: 1,
-                                    resource: wgpu::BindingResource::Sampler(&cache.sampler),
-                                },
-                            ],
-                            label: Some(&format!("{} Bind Group", label)),
-                        }))
-                    }).collect();
-                    self.render_passes[pass_idx].cache.as_mut().unwrap().bind_groups = Some(groups);
-                }
-            }
-
-            let owned_groups: Vec<Arc<wgpu::BindGroup>> = self.render_passes[pass_idx].cache
-                .as_ref()
-                .and_then(|c| c.bind_groups.as_ref())
-                .map(|v| v.clone())
-                .unwrap_or_default();
-            let group_refs: Vec<&wgpu::BindGroup> = owned_groups.iter().map(|g| g.as_ref()).collect();
-
-            let load_op = match &self.render_passes[pass_idx].load {
-                LoadOp::Background => wgpu::LoadOp::Clear(self.render_state.clear_color()),
-                LoadOp::Color(c) => wgpu::LoadOp::Clear(*c),
-                LoadOp::Load => wgpu::LoadOp::Load,
-            };
-
-            {
-                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some(&format!("{} Render Pass", label)),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations { load: load_op, store: wgpu::StoreOp::Store },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-                (self.render_passes[pass_idx].execute)(label.clone(), &mut self.render_state, &mut rpass, &group_refs);
-            }
-        }
-
-        self.render_state
-            .queue()
-            .submit(std::iter::once(encoder.finish()));
-
-        self.render_state.device().poll(wgpu::Maintain::Poll);
+        self.graph.execute(
+            self.render_state.device(),
+            self.render_state.queue(),
+            &output_view,
+            clear_color,
+            format,
+            width,
+            height,
+        );
 
         output.present();
 

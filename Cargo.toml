@@ -17,6 +17,7 @@ comet_ecs = { workspace = true }
 comet_input = { workspace = true }
 comet_log = { workspace = true }
 comet_audio = { workspace = true }
+comet_gizmos = { workspace = true }
 
 [build-dependencies]
 anyhow = "1.0"
@@ -37,7 +38,8 @@ members = [
     "./crates/comet_audio",
     "./crates/comet_structs",
     "./crates/comet_macros",
-    "./crates/comet_window"
+    "./crates/comet_window",
+    "./crates/comet_gizmos"
 ]
 
 [workspace.dependencies]
@@ -53,6 +55,7 @@ comet_structs = { path = "./crates/comet_structs" }
 comet_audio = { path = "./crates/comet_audio" }
 comet_macros = { path = "./crates/comet_macros" }
 comet_window = { path = "./crates/comet_window" }
+comet_gizmos = { path = "./crates/comet_gizmos" }
 
 anyhow = "1.0"
 bytemuck = { version = "1.16", features = ["derive"] }

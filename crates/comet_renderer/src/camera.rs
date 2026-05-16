@@ -1,4 +1,4 @@
-use comet_ecs::{Camera2D, Transform2D};
+use comet_ecs::{Camera, Transform};
 use comet_math::{m4, v2, v3};
 
 #[allow(unused)]
@@ -30,15 +30,15 @@ impl CameraManager {
         let mut cameras_with_priority: Vec<(RenderCamera, u8)> = Vec::new();
 
         for entity in camera_entities {
-            let camera_component = scene.get_component::<Camera2D>(entity).unwrap();
-            let transform_component = scene.get_component::<Transform2D>(entity).unwrap();
+            let camera_component = scene.get_component::<Camera>(entity).unwrap();
+            let transform_component = scene.get_component::<Transform>(entity).unwrap();
 
             let render_cam = RenderCamera::new(
                 camera_component.zoom(),
-                camera_component.dimensions(),
+                v2::new(0.0, 0.0),
                 v3::new(
-                    transform_component.position().as_vec().x(),
-                    transform_component.position().as_vec().y(),
+                    transform_component.position().x(),
+                    transform_component.position().y(),
                     0.0,
                 ),
             );
@@ -107,5 +107,9 @@ impl CameraUniform {
 
     pub fn update_view_proj(&mut self, camera: &RenderCamera) {
         self.view_proj = camera.build_view_projection_matrix().into();
+    }
+
+    pub fn set_view_proj(&mut self, mat: [[f32; 4]; 4]) {
+        self.view_proj = mat;
     }
 }
