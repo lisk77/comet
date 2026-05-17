@@ -7,7 +7,7 @@ struct Player;
 fn setup(app: &mut App) {
     app.register_component::<Player>();
 
-    app.spawn_bundle(Camera2d::new(1.0, 1));
+    app.spawn(Camera2d::new(1.0, 1));
 
     app.spawn((
         Player,

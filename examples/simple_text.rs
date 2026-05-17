@@ -1,7 +1,7 @@
 use comet::prelude::*;
 
 fn setup(app: &mut App) {
-    app.spawn_bundle(Camera2d::new(1.0, 1));
+    app.spawn(Camera2d::new(1.0, 1));
 
     app.spawn((
         Transform::new(),
