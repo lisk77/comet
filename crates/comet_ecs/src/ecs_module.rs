@@ -1,7 +1,7 @@
 use std::any::TypeId;
 use comet_app::{App, Module};
 use crate::{
-    Bundle, Camera, Component, ComponentTuple, ComponentValueTuple, Entity, PrefabFactory, QueryParam, QuerySpecMut, Collider, Sprite, Scene, Text, Transform
+    Bundle, Camera, Component, ComponentTuple, Entity, PrefabFactory, QueryParam, QuerySpecMut, Collider, Sprite, Scene, Text, Transform
 };
 
 pub struct EcsModule {
@@ -49,12 +49,14 @@ pub trait EcsModuleExt {
     fn spawn_batch<B: Bundle + 'static>(&mut self, bundles: Vec<B>) -> Vec<Entity>;
     
     fn deferred_spawn_empty(&mut self);
+    fn deferred_spawn<B: Bundle>(&mut self, bundle: B);
+    fn deferred_spawn_batch<B: Bundle>(&mut self, batch: Vec<B>);
     fn deferred_delete_entity(&mut self, entity: Entity);
     fn deferred_register_component<C: Component>(&mut self);
     fn deferred_register_components<T: ComponentTuple>(&mut self);
     fn deferred_deregister_component<C: Component>(&mut self);
     fn deferred_add_component<C: Component>(&mut self, entity: Entity, component: C);
-    fn deferred_add_components<V: ComponentValueTuple>(&mut self, entity: Entity, components: V);
+    fn deferred_add_components<B: Bundle>(&mut self, entity: Entity, components: B);
     fn deferred_remove_component<C: Component>(&mut self, entity: Entity);
     fn deferred_remove_components<T: ComponentTuple>(&mut self, entity: Entity);
     fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>);
@@ -76,7 +78,7 @@ pub trait EcsModuleExt {
     fn register_components<T: ComponentTuple>(&mut self);
     fn deregister_component<C: Component>(&mut self);
     fn add_component<C: Component>(&mut self, entity_id: Entity, component: C);
-    fn add_components<V: ComponentValueTuple>(&mut self, entity_id: Entity, components: V);
+    fn add_components<B: Bundle>(&mut self, entity_id: Entity, components: B);
     fn remove_component<C: Component>(&mut self, entity_id: Entity);
     fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity);
     fn get_component<C: Component>(&self, entity_id: Entity) -> Option<&C>;
@@ -110,6 +112,14 @@ impl EcsModuleExt for App {
         self.get_module_mut::<EcsModule>().scene.deferred_spawn_empty();
     }
 
+    fn deferred_spawn<B: Bundle>(&mut self, bundle: B) {
+        self.get_module_mut::<EcsModule>().scene.deferred_spawn(bundle);
+    }
+
+    fn deferred_spawn_batch<B: Bundle>(&mut self, batch: Vec<B>) {
+        self.get_module_mut::<EcsModule>().scene.deferred_spawn_batch(batch);
+    }
+
     fn deferred_delete_entity(&mut self, entity: Entity) {
         self.get_module_mut::<EcsModule>().scene.deferred_delete_entity(entity);
     }
@@ -130,7 +140,7 @@ impl EcsModuleExt for App {
         self.get_module_mut::<EcsModule>().scene.deferred_add_component::<C>(entity, component);
     }
 
-    fn deferred_add_components<V: ComponentValueTuple>(&mut self, entity: Entity, components: V) {
+    fn deferred_add_components<B: Bundle>(&mut self, entity: Entity, components: B) {
         self.get_module_mut::<EcsModule>().scene.deferred_add_components(entity, components);
     }
 
@@ -197,7 +207,7 @@ impl EcsModuleExt for App {
         self.get_module_mut::<EcsModule>().scene.add_component(entity_id, component);
     }
 
-    fn add_components<V: ComponentValueTuple>(&mut self, entity_id: Entity, components: V) {
+    fn add_components<B: Bundle>(&mut self, entity_id: Entity, components: B) {
         self.get_module_mut::<EcsModule>().scene.add_components(entity_id, components);
     }
 

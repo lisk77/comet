@@ -8,18 +8,6 @@ pub trait ComponentTuple {
     fn deferred_register_all(commands: &mut SceneCommands);
 }
 
-pub trait ComponentValueTuple {
-    fn type_ids(&self) -> Vec<TypeId>;
-    fn into_components(self) -> Vec<ErasedComponent>;
-    fn write_components(self, columns: &mut [Column], column_indices: &[usize], row: usize);
-    fn write_components_reserved(
-        self,
-        columns: &mut [Column],
-        column_indices: &[usize],
-        row: usize,
-    );
-}
-
 impl ComponentTuple for () {
     fn type_ids() -> Vec<TypeId> {
         Vec::new()

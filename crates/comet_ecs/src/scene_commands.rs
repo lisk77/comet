@@ -42,10 +42,6 @@ pub enum SceneCommand {
     SpawnBundleBatch {
         bundles: Vec<Vec<ErasedComponent>>,
     },
-    AddBundle {
-        entity: Entity,
-        components: Vec<ErasedComponent>,
-    },
     Spawn {
         components: Vec<ErasedComponent>,
     },
@@ -181,14 +177,6 @@ impl SceneCommands {
         self.push(SceneCommand::SpawnBundleBatch { bundles });
     }
 
-    /// Queues adding a bundle to an entity.
-    pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.push(SceneCommand::AddBundle {
-            entity,
-            components: bundle.into_components(),
-        });
-    }
-
     /// Applies all queued commands in FIFO order.
     pub fn apply(&mut self, scene: &mut Scene) {
         let queued = std::mem::take(&mut self.queue);
@@ -242,9 +230,6 @@ impl SceneCommands {
                 for components in bundles {
                     let _ = scene.spawn_with_components_immediate(components);
                 }
-            }
-            SceneCommand::AddBundle { entity, components } => {
-                scene.add_with_components_immediate(entity, components);
             }
             SceneCommand::Spawn { components } => {
                 let _ = scene.spawn_with_components_immediate(components);

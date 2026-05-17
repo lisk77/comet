@@ -2,7 +2,7 @@ pub use bundles::Bundle;
 pub use comet_math as math;
 pub use component::*;
 pub use component_derive::*;
-pub use component_tuple::{ComponentTuple, ComponentValueTuple};
+pub use component_tuple::ComponentTuple;
 pub use entity::*;
 pub use id::*;
 pub use prefabs::{ErasedComponent, PrefabFactory};

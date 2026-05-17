@@ -5,7 +5,7 @@ use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleSpawnPlan, ComponentChangeState};
 use crate::{
-    Component, ComponentTuple, ComponentValueTuple, Entity, EntityLocation, IdQueue, Tick,
+    Component, ComponentTuple, Entity, EntityLocation, IdQueue, Tick,
 };
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
@@ -113,16 +113,16 @@ impl Scene {
 
     /// Queues spawning an entity with the given components.
     /// The command executes on [`Scene::apply_commands`] or at app tick-end.
-    pub fn deferred_spawn<V: ComponentValueTuple>(&mut self, components: V) {
-        self.commands.spawn(components.into_components());
+    pub fn deferred_spawn<B: Bundle>(&mut self, bundle: B) {
+        self.commands.spawn_bundle(bundle);
     }
 
     /// Queues spawning a batch of entities with the given components.
     /// The command executes on [`Scene::apply_commands`] or at app tick-end.
-    pub fn deferred_spawn_batch<V: ComponentValueTuple>(&mut self, batch: Vec<V>) {
+    pub fn deferred_spawn_batch<B: Bundle>(&mut self, batch: Vec<B>) {
         let entities = batch
             .into_iter()
-            .map(|components| components.into_components())
+            .map(|bundle| bundle.into_components())
             .collect();
         self.commands.spawn_batch(entities);
     }
@@ -153,13 +153,13 @@ impl Scene {
     }
 
     /// Queues adding or setting multiple components on an entity.
-    pub fn deferred_add_components<V: ComponentValueTuple>(
+    pub fn deferred_add_components<B: Bundle>(
         &mut self,
         entity: Entity,
-        components: V,
+        bundle: B,
     ) {
         self.commands
-            .add_components(entity, components.into_components());
+            .add_components(entity, bundle.into_components());
     }
 
     /// Queues removing a component from an entity.
@@ -203,10 +203,7 @@ impl Scene {
     }
 
     /// Queues adding a bundle to an existing entity.
-    pub fn deferred_add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.commands.add_bundle(entity, bundle);
-    }
-
+    
     /// Returns the amount of currently queued deferred commands.
     pub fn queued_command_count(&self) -> usize {
         self.commands.len()
@@ -747,7 +744,7 @@ impl Scene {
         self.add_component_immediate(entity_id, component);
     }
 
-    pub fn add_components<V: ComponentValueTuple>(&mut self, entity_id: Entity, components: V) {
+    pub fn add_components<B: Bundle>(&mut self, entity_id: Entity, components: B) {
         self.add_with_components_immediate(entity_id, components.into_components());
     }
 
@@ -1163,11 +1160,6 @@ impl Scene {
     /// Spawns a batch of bundles immediately.
     pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
         B::spawn_batch(self, bundles)
-    }
-
-    /// Adds a bundle to an existing entity immediately.
-    pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.add_with_components_immediate(entity, bundle.into_components());
     }
 
     pub(crate) fn add_with_components(
