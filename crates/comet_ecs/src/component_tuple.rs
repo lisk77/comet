@@ -74,14 +74,14 @@ impl<C: Component> Bundle for C {
         vec![C::type_id()]
     }
 
-    fn write_components(self, columns: &mut [Column], column_indices: &[usize], row: usize) {
+    fn write_components(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
         let col_idx = column_indices[0];
         unsafe {
             columns[col_idx].push_unchecked::<C>(self);
         }
     }
 
-    fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], row: usize) {
+    fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
         let col_idx = column_indices[0];
         unsafe {
             columns[col_idx].push_unchecked_reserved::<C>(self);
@@ -106,6 +106,7 @@ macro_rules! impl_component_tuple {
         }
 
         impl<$($name: Component),+> Bundle for ($($name,)+) {
+            #[allow(non_snake_case)]
             fn into_components(self) -> Vec<ErasedComponent> {
                 let ($($name,)+) = self;
                 vec![$(ErasedComponent::new($name)),+]
@@ -141,7 +142,8 @@ macro_rules! impl_component_tuple {
                 vec![$(std::any::TypeId::of::<$name>()),+]
             }
 
-            fn write_components(self, columns: &mut [Column], column_indices: &[usize], row: usize) {
+            #[allow(non_snake_case, unused_assignments)]
+            fn write_components(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
                 let ($($name,)+) = self;
                 let mut col_i = 0usize;
                 $(
@@ -155,7 +157,8 @@ macro_rules! impl_component_tuple {
                 )+
             }
 
-            fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], row: usize) {
+            #[allow(non_snake_case, unused_assignments)]
+            fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
                 let ($($name,)+) = self;
                 let mut col_i = 0usize;
                 $(
