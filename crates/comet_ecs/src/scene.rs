@@ -3,7 +3,7 @@ use crate::bundles::Bundle;
 use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
-use crate::scene_internals::{BundleSpawnPlan, ComponentChangeState};
+use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan, ComponentChangeState};
 use crate::{
     Component, ComponentTuple, Entity, EntityLocation, IdQueue, Tick,
 };
@@ -35,6 +35,7 @@ pub struct Scene {
     archetype_version: usize,
     query_plan_cache: RefCell<QueryPlanCache>,
     bundle_spawn_cache: HashMap<TypeId, BundleSpawnPlan>,
+    bundle_add_cache: HashMap<(usize, TypeId), Option<BundleAddPlan>>,
     component_change_state: HashMap<(u32, TypeId), ComponentChangeState>,
     removed_component_events: HashMap<TypeId, Vec<(Entity, Tick)>>,
     prefabs: PrefabManager,
@@ -60,6 +61,7 @@ impl Scene {
             archetype_version: 0,
             query_plan_cache: RefCell::new(QueryPlanCache::default()),
             bundle_spawn_cache: HashMap::new(),
+            bundle_add_cache: HashMap::new(),
             component_change_state: HashMap::new(),
             removed_component_events: HashMap::new(),
             prefabs: PrefabManager::new(),
@@ -654,6 +656,7 @@ impl Scene {
             self.component_index.insert(type_id, index);
         }
         self.bundle_spawn_cache.clear();
+        self.bundle_add_cache.clear();
 
         info!("Registered component: {}", C::type_name());
     }
@@ -684,6 +687,7 @@ impl Scene {
             }
         }
         self.bundle_spawn_cache.clear();
+        self.bundle_add_cache.clear();
         self.component_change_state
             .retain(|(_, tracked_type_id), _| *tracked_type_id != type_id);
         self.removed_component_events.remove(&type_id);
@@ -721,63 +725,58 @@ impl Scene {
         true
     }
 
-    pub fn add_components<B: Bundle>(&mut self, entity_id: Entity, components: B) {
-        self.add_with_components_immediate(entity_id, components.into_components());
-    }
-
-    pub(crate) fn add_component_immediate<C: Component + 'static>(
-        &mut self,
-        entity_id: Entity,
-        component: C,
-    ) {
+    pub fn add_components<B: Bundle + 'static>(&mut self, entity_id: Entity, bundle: B) {
         if !self.is_alive(entity_id) {
-            error!(
-                "Attempted to add component {} to dead entity {}",
-                C::type_name(),
-                entity_id.index
-            );
             return;
         }
-
-        let type_id = C::type_id();
-        if !self.component_info.contains_key(&type_id) {
-            error!(
-                "Component {} not registered, cannot add to entity {}",
-                C::type_name(),
-                entity_id.index
-            );
-            return;
-        }
-
         let loc = match self.get_location(entity_id) {
             Some(loc) => loc,
             None => return,
         };
         let old_arch_id = loc.archetype;
+        let cache_key = (old_arch_id, TypeId::of::<B>());
 
-        if self
-            .archetypes
-            .get(old_arch_id)
-            .column_index(type_id)
-            .is_some()
-        {
-            let arch = self.archetypes.get_mut(old_arch_id);
-            if let Some(col_idx) = arch.column_index(type_id) {
-                let _ = arch.columns_mut()[col_idx].set::<C>(loc.row, component);
+        if !self.bundle_add_cache.contains_key(&cache_key) {
+            let type_ids = bundle.type_ids();
+            if type_ids.is_empty() {
+                return;
             }
-            self.mark_component_changed(entity_id, type_id);
-            return;
+            if !self.validate_type_ids_registered(&type_ids) {
+                return;
+            }
+            let all_new = type_ids.iter()
+                .all(|t| self.archetypes.get(old_arch_id).column_index(*t).is_none());
+
+            if !all_new {
+                self.bundle_add_cache.insert(cache_key, None);
+                self.add_with_components_immediate(entity_id, bundle.into_components());
+                return;
+            }
+
+            let mut component_set = self.archetypes.get(old_arch_id).set().clone();
+            for &type_id in &type_ids {
+                let index = self.component_index[&type_id];
+                component_set.insert(index);
+            }
+            let target_arch = self.ensure_archetype(component_set);
+            let col_indices: Arc<[usize]> = type_ids.iter()
+                .map(|t| self.archetypes.get(target_arch).column_index(*t).unwrap())
+                .collect();
+            self.bundle_add_cache.insert(cache_key, Some(BundleAddPlan {
+                target_arch,
+                col_indices,
+                type_ids: type_ids.into(),
+            }));
         }
 
-        let before = self.archetypes.len();
-        let new_arch_id = self.archetypes.get_or_create_add_edge(
-            old_arch_id,
-            type_id,
-            &self.component_info,
-            &self.component_index,
-            &self.component_registry,
-        );
-        self.bump_archetype_version_if_changed(before);
+        let (target_arch, col_indices, type_ids) =
+            match self.bundle_add_cache.get(&cache_key).unwrap() {
+                None => {
+                    self.add_with_components_immediate(entity_id, bundle.into_components());
+                    return;
+                }
+                Some(plan) => (plan.target_arch, plan.col_indices.clone(), plan.type_ids.clone()),
+            };
 
         let old_len = self.archetypes.get(old_arch_id).len();
         if old_len == 0 {
@@ -793,41 +792,27 @@ impl Scene {
             self.set_location(swapped, old_arch_id, loc.row);
         }
 
-        let (old_arch, new_arch) = self.get_two_archetypes_mut(old_arch_id, new_arch_id);
-        let new_row = new_arch.push_entity(entity_id);
-
-        if let Some(new_idx) = new_arch.column_index(type_id) {
-            new_arch.columns_mut()[new_idx].push::<C>(component);
-        }
-
-        for new_idx in 0..new_arch.types().len() {
-            let t = new_arch.types()[new_idx];
-            if t == type_id {
-                continue;
+        let new_row = {
+            let (old_arch, new_arch) = self.get_two_archetypes_mut(old_arch_id, target_arch);
+            let new_row = new_arch.push_entity(entity_id);
+            for new_idx in 0..new_arch.types().len() {
+                let t = new_arch.types()[new_idx];
+                if let Some(old_idx) = old_arch.column_index(t) {
+                    let _ = old_arch.columns_mut()[old_idx]
+                        .move_last_to(&mut new_arch.columns_mut()[new_idx]);
+                }
             }
-            if let Some(old_idx) = old_arch.column_index(t) {
-                let _ = old_arch.columns_mut()[old_idx]
-                    .move_last_to(&mut new_arch.columns_mut()[new_idx]);
-            }
+            old_arch.pop_entity();
+            bundle.write_components(new_arch.columns_mut(), &col_indices, new_row);
+            new_row
+        };
+
+        self.set_location(entity_id, target_arch, new_row);
+        for &type_id in type_ids.iter() {
+            self.mark_component_added_and_changed(entity_id, type_id);
         }
-
-        for old_idx in 0..old_arch.types().len() {
-            let t = old_arch.types()[old_idx];
-            if new_arch.column_index(t).is_none() {
-                let _ = old_arch.columns_mut()[old_idx].drop_last();
-            }
-        }
-
-        old_arch.pop_entity();
-        self.set_location(entity_id, new_arch_id, new_row);
-        self.mark_component_added_and_changed(entity_id, type_id);
-
-        info!(
-            "Added component {} to entity {}!",
-            C::type_name(),
-            entity_id.index
-        );
     }
+
 
     pub fn remove_component<C: Component + 'static>(&mut self, entity_id: Entity) {
         self.remove_component_immediate::<C>(entity_id);

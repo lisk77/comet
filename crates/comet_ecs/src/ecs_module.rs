@@ -76,7 +76,7 @@ pub trait EcsModuleExt {
     fn register_component<C: Component>(&mut self);
     fn register_components<T: ComponentTuple>(&mut self);
     fn deregister_component<C: Component>(&mut self);
-    fn add_components<B: Bundle>(&mut self, entity_id: Entity, components: B);
+    fn add_components<B: Bundle + 'static>(&mut self, entity_id: Entity, components: B);
     fn remove_component<C: Component>(&mut self, entity_id: Entity);
     fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity);
     fn get_component<C: Component>(&self, entity_id: Entity) -> Option<&C>;
@@ -197,7 +197,7 @@ impl EcsModuleExt for App {
         self.get_module_mut::<EcsModule>().scene.deregister_component::<C>();
     }
 
-    fn add_components<B: Bundle>(&mut self, entity_id: Entity, components: B) {
+    fn add_components<B: Bundle + 'static>(&mut self, entity_id: Entity, components: B) {
         self.get_module_mut::<EcsModule>().scene.add_components(entity_id, components);
     }
 

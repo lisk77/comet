@@ -104,10 +104,6 @@ impl Archetype {
         let _ = self.entities.pop();
     }
 
-    pub fn add_edge(&self, type_id: TypeId) -> Option<usize> {
-        self.add_edges.get(&type_id).copied()
-    }
-
     pub fn remove_edge(&self, type_id: TypeId) -> Option<usize> {
         self.remove_edges.get(&type_id).copied()
     }
@@ -200,33 +196,6 @@ impl Archetypes {
         self.archetypes.push(archetype);
         self.index.insert(set, id);
         id
-    }
-
-    pub fn get_or_create_add_edge(
-        &mut self,
-        from: usize,
-        type_id: TypeId,
-        component_info: &HashMap<TypeId, ComponentInfo>,
-        component_index: &HashMap<TypeId, usize>,
-        component_registry: &[Option<TypeId>],
-    ) -> usize {
-        if let Some(next) = self.archetypes[from].add_edge(type_id) {
-            return next;
-        }
-
-        let index = component_index
-            .get(&type_id)
-            .copied()
-            .unwrap_or_else(|| panic!("Component {:?} missing index", type_id));
-        let mut next_set = self.archetypes[from].set().clone();
-        next_set.insert(index);
-        let to = self.get_or_create(next_set, component_info, component_registry);
-
-        self.archetypes[from].set_add_edge(type_id, to);
-        if from != to {
-            self.archetypes[to].set_remove_edge(type_id, from);
-        }
-        to
     }
 
     pub fn get_or_create_remove_edge(
