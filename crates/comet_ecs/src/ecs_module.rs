@@ -45,10 +45,9 @@ pub trait EcsModuleExt {
     fn scene(&self) -> &Scene;
     fn scene_mut(&mut self) -> &mut Scene;
 
-    fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity;
-    fn spawn_batch<V: ComponentValueTuple + 'static>(&mut self, components_batch: Vec<V>) -> Vec<Entity>;
-    fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> Entity;
-
+    fn spawn<B: Bundle + 'static>(&mut self, bundle: B) -> Entity;
+    fn spawn_batch<B: Bundle + 'static>(&mut self, bundles: Vec<B>) -> Vec<Entity>;
+    
     fn deferred_spawn_empty(&mut self);
     fn deferred_delete_entity(&mut self, entity: Entity);
     fn deferred_register_component<C: Component>(&mut self);
@@ -61,10 +60,7 @@ pub trait EcsModuleExt {
     fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>);
     fn deferred_register_prefab(&mut self, name: impl Into<String>, factory: PrefabFactory);
     fn deferred_spawn_prefab(&mut self, name: impl Into<String>);
-    fn deferred_spawn_bundle<B: Bundle>(&mut self, bundle: B);
-    fn deferred_spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>);
-    fn deferred_add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B);
-
+    
     fn apply_deferred_commands(&mut self);
     fn queued_deferred_command_count(&self) -> usize;
 
@@ -102,16 +98,12 @@ impl EcsModuleExt for App {
         &mut self.get_module_mut::<EcsModule>().scene
     }
 
-    fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
-        self.get_module_mut::<EcsModule>().scene.spawn(components)
-    }
-
-    fn spawn_batch<V: ComponentValueTuple + 'static>(&mut self, components_batch: Vec<V>) -> Vec<Entity> {
-        self.get_module_mut::<EcsModule>().scene.spawn_batch(components_batch)
-    }
-
-    fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> Entity {
+    fn spawn<B: Bundle + 'static>(&mut self, bundle: B) -> Entity {
         self.get_module_mut::<EcsModule>().scene.spawn_bundle(bundle)
+    }
+
+    fn spawn_batch<B: Bundle + 'static>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
+        self.get_module_mut::<EcsModule>().scene.spawn_bundle_batch(bundles)
     }
 
     fn deferred_spawn_empty(&mut self) {
@@ -160,18 +152,6 @@ impl EcsModuleExt for App {
 
     fn deferred_spawn_prefab(&mut self, name: impl Into<String>) {
         self.get_module_mut::<EcsModule>().scene.deferred_spawn_prefab(name);
-    }
-
-    fn deferred_spawn_bundle<B: Bundle>(&mut self, bundle: B) {
-        self.get_module_mut::<EcsModule>().scene.deferred_spawn_bundle(bundle);
-    }
-
-    fn deferred_spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) {
-        self.get_module_mut::<EcsModule>().scene.deferred_spawn_bundle_batch(bundles);
-    }
-
-    fn deferred_add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.get_module_mut::<EcsModule>().scene.deferred_add_bundle(entity, bundle);
     }
 
     fn apply_deferred_commands(&mut self) {

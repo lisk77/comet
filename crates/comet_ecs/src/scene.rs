@@ -1133,30 +1133,23 @@ impl Scene {
         &self.archetypes
     }
 
-    pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
-        let component_types = components.type_ids();
-        self.__spawn_bundle_typed(
-            TypeId::of::<V>(),
-            &component_types,
-            |columns, column_indices, row| {
-                components.write_components(columns, column_indices, row);
-            },
-        )
+    pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {
+        bundle.spawn(self)
     }
 
-    pub fn spawn_batch<V: ComponentValueTuple + 'static>(
+    pub fn spawn_batch<B: Bundle + 'static>(
         &mut self,
-        components_batch: Vec<V>,
+        bundles: Vec<B>,
     ) -> Vec<Entity> {
-        if components_batch.is_empty() {
+        if bundles.is_empty() {
             return Vec::new();
         }
 
-        let component_types = components_batch[0].type_ids();
+        let component_types = bundles[0].type_ids();
         self.__spawn_bundle_typed_batch(
-            TypeId::of::<V>(),
+            TypeId::of::<B>(),
             &component_types,
-            components_batch,
+            bundles,
             |columns, column_indices, row, components| {
                 components.write_components_reserved(columns, column_indices, row);
             },

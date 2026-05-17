@@ -1,3 +1,7 @@
+use std::any::TypeId;
+
+use comet_structs::Column;
+
 use crate::{ErasedComponent, Scene};
 pub trait Bundle {
     fn into_components(self) -> Vec<ErasedComponent>;
@@ -25,6 +29,24 @@ pub trait Bundle {
             .map(|bundle| bundle.spawn(scene))
             .collect()
     }
+
+    fn type_ids(&self) -> Vec<TypeId>;
+
+    fn write_components(self, columns: &mut [Column], column_indices: &[usize], _row: usize)
+    where
+        Self: Sized,
+    {
+        for (i, component) in self.into_components().into_iter().enumerate() {
+            (component.push_fn)(component.value, &mut columns[column_indices[i]]);
+        }
+    }
+
+    fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], row: usize)
+    where
+        Self: Sized,
+    {
+        self.write_components(columns, column_indices, row);
+    }
 }
 
 #[macro_export]
@@ -41,6 +63,10 @@ macro_rules! bundle {
                         $crate::ErasedComponent::new(self.$field),
                     )*
                 ]
+            }
+
+            fn type_ids(&self) -> Vec<std::any::TypeId> {
+                vec![$(std::any::TypeId::of::<$ty>()),*]
             }
 
             fn spawn(self, scene: &mut $crate::Scene) -> $crate::Entity {
