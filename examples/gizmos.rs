@@ -14,7 +14,7 @@ impl Gizmo for Hitbox {
 fn setup(app: &mut App) {
     app.register_component::<Hitbox>();
 
-    app.spawn_bundle(Camera2d::new(1.0, 1));
+    app.spawn(Camera2d::new(1.0, 1));
 
     let e = app.spawn((
         Transform::with_position(v3::new(0.0, 0.0, 0.0)),

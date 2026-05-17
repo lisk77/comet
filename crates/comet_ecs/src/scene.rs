@@ -5,7 +5,7 @@ use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleSpawnPlan, ComponentChangeState};
 use crate::{
-    Component, ComponentTuple, ComponentValueTuple, Entity, EntityLocation, IdQueue, Tick,
+    Component, ComponentTuple, Entity, EntityLocation, IdQueue, Tick,
 };
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
@@ -113,16 +113,16 @@ impl Scene {
 
     /// Queues spawning an entity with the given components.
     /// The command executes on [`Scene::apply_commands`] or at app tick-end.
-    pub fn deferred_spawn<V: ComponentValueTuple>(&mut self, components: V) {
-        self.commands.spawn(components.into_components());
+    pub fn deferred_spawn<B: Bundle>(&mut self, bundle: B) {
+        self.commands.spawn(bundle.into_components());
     }
 
     /// Queues spawning a batch of entities with the given components.
     /// The command executes on [`Scene::apply_commands`] or at app tick-end.
-    pub fn deferred_spawn_batch<V: ComponentValueTuple>(&mut self, batch: Vec<V>) {
+    pub fn deferred_spawn_batch<B: Bundle>(&mut self, batch: Vec<B>) {
         let entities = batch
             .into_iter()
-            .map(|components| components.into_components())
+            .map(|bundle| bundle.into_components())
             .collect();
         self.commands.spawn_batch(entities);
     }
@@ -147,19 +147,14 @@ impl Scene {
         self.commands.deregister_component::<C>();
     }
 
-    /// Queues adding or setting a component on an entity.
-    pub fn deferred_add_component<C: Component + 'static>(&mut self, entity: Entity, component: C) {
-        self.commands.add_component(entity, component);
-    }
-
     /// Queues adding or setting multiple components on an entity.
-    pub fn deferred_add_components<V: ComponentValueTuple>(
+    pub fn deferred_add_components<B: Bundle>(
         &mut self,
         entity: Entity,
-        components: V,
+        bundle: B,
     ) {
         self.commands
-            .add_components(entity, components.into_components());
+            .add_components(entity, bundle.into_components());
     }
 
     /// Queues removing a component from an entity.
@@ -190,21 +185,6 @@ impl Scene {
     /// Queues prefab spawning by name.
     pub fn deferred_spawn_prefab(&mut self, name: impl Into<String>) {
         self.commands.spawn_prefab(name);
-    }
-
-    /// Queues spawning a bundle as a new entity.
-    pub fn deferred_spawn_bundle<B: Bundle>(&mut self, bundle: B) {
-        self.commands.spawn_bundle(bundle);
-    }
-
-    /// Queues batch spawning of bundles.
-    pub fn deferred_spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) {
-        self.commands.spawn_bundle_batch(bundles);
-    }
-
-    /// Queues adding a bundle to an existing entity.
-    pub fn deferred_add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.commands.add_bundle(entity, bundle);
     }
 
     /// Returns the amount of currently queued deferred commands.
@@ -741,13 +721,7 @@ impl Scene {
         true
     }
 
-    /// Adds a component to an entity by its ID and an instance of the component.
-    /// Overwrites the previous component if another component of the same type is added.
-    pub fn add_component<C: Component + 'static>(&mut self, entity_id: Entity, component: C) {
-        self.add_component_immediate(entity_id, component);
-    }
-
-    pub fn add_components<V: ComponentValueTuple>(&mut self, entity_id: Entity, components: V) {
+    pub fn add_components<B: Bundle>(&mut self, entity_id: Entity, components: B) {
         self.add_with_components_immediate(entity_id, components.into_components());
     }
 
@@ -1133,30 +1107,23 @@ impl Scene {
         &self.archetypes
     }
 
-    pub fn spawn<V: ComponentValueTuple + 'static>(&mut self, components: V) -> Entity {
-        let component_types = components.type_ids();
-        self.__spawn_bundle_typed(
-            TypeId::of::<V>(),
-            &component_types,
-            |columns, column_indices, row| {
-                components.write_components(columns, column_indices, row);
-            },
-        )
+    pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {
+        bundle.spawn(self)
     }
 
-    pub fn spawn_batch<V: ComponentValueTuple + 'static>(
+    pub fn spawn_batch<B: Bundle + 'static>(
         &mut self,
-        components_batch: Vec<V>,
+        bundles: Vec<B>,
     ) -> Vec<Entity> {
-        if components_batch.is_empty() {
+        if bundles.is_empty() {
             return Vec::new();
         }
 
-        let component_types = components_batch[0].type_ids();
+        let component_types = bundles[0].type_ids();
         self.__spawn_bundle_typed_batch(
-            TypeId::of::<V>(),
+            TypeId::of::<B>(),
             &component_types,
-            components_batch,
+            bundles,
             |columns, column_indices, row, components| {
                 components.write_components_reserved(columns, column_indices, row);
             },
@@ -1170,11 +1137,6 @@ impl Scene {
     /// Spawns a batch of bundles immediately.
     pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
         B::spawn_batch(self, bundles)
-    }
-
-    /// Adds a bundle to an existing entity immediately.
-    pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.add_with_components_immediate(entity, bundle.into_components());
     }
 
     pub(crate) fn add_with_components(
@@ -1619,12 +1581,12 @@ mod tests {
         scene.register_component::<A>();
 
         let e1 = scene.new_entity();
-        scene.add_component(e1, A);
+        scene.add_components(e1, A);
 
         scene.deregister_component::<A>();
 
         let e2 = scene.new_entity();
-        scene.add_component(e2, A);
+        scene.add_components(e2, A);
 
         assert!(scene.get_component::<A>(e1).is_some());
         assert!(scene.get_component::<A>(e2).is_some());
@@ -1647,7 +1609,7 @@ mod tests {
         scene.register_component::<A>();
 
         let entity = scene.new_entity();
-        scene.add_component(entity, A);
+        scene.add_components(entity, A);
 
         let _ = scene.query_mut::<(&mut A, &mut A), ()>().iter();
     }
@@ -1658,7 +1620,7 @@ mod tests {
         scene.register_component::<Value>();
 
         let e = scene.new_entity();
-        scene.add_component(e, Value(42));
+        scene.add_components(e, Value(42));
 
         let mut iter = scene.query::<(crate::Entity, &Value), ()>().iter();
         let (entity, value) = iter.next().expect("expected one result");
@@ -1673,7 +1635,7 @@ mod tests {
         scene.register_component::<Value>();
 
         let e = scene.new_entity();
-        scene.add_component(e, Value(7));
+        scene.add_components(e, Value(7));
 
         let mut iter = scene.query_mut::<(crate::Entity, &mut Value), ()>().iter();
         let (entity, value) = iter.next().expect("expected one result");
@@ -1692,10 +1654,10 @@ mod tests {
 
         let e1 = scene.new_entity();
         let e2 = scene.new_entity();
-        scene.add_component(e1, Value(10));
-        scene.add_component(e2, Value(20));
+        scene.add_components(e1, Value(10));
+        scene.add_components(e2, Value(20));
 
-        scene.add_component(e1, B);
+        scene.add_components(e1, B);
 
         assert_eq!(scene.get_component::<Value>(e1).map(|v| v.0), Some(10));
         assert!(scene.get_component::<B>(e1).is_some());
@@ -1711,9 +1673,8 @@ mod tests {
         scene.register_component::<Value>();
 
         let entity = scene.new_entity();
-        scene.add_component(entity, A);
-        scene.add_component(entity, B);
-        scene.add_component(entity, Value(10));
+        scene.add_components(entity, (A, B, Value(10)));
+        scene.add_components(entity, (B, Value(10)));
 
         scene.remove_components::<(A, B)>(entity);
 
@@ -1750,13 +1711,13 @@ mod tests {
         scene.register_component::<ExcludeTag>();
 
         let keep = scene.new_entity();
-        scene.add_component(keep, Value(10));
-        scene.add_component(keep, IncludeTag);
+        scene.add_components(keep, Value(10));
+        scene.add_components(keep, IncludeTag);
 
         let filtered_out = scene.new_entity();
-        scene.add_component(filtered_out, Value(20));
-        scene.add_component(filtered_out, IncludeTag);
-        scene.add_component(filtered_out, ExcludeTag);
+        scene.add_components(filtered_out, Value(20));
+        scene.add_components(filtered_out, IncludeTag);
+        scene.add_components(filtered_out, ExcludeTag);
 
         let values: Vec<i32> = scene
             .query::<&Value, (crate::With<IncludeTag>, crate::Without<ExcludeTag>)>()
@@ -1776,14 +1737,14 @@ mod tests {
         scene.register_component::<B>();
 
         let keep = scene.new_entity();
-        scene.add_component(keep, Value(10));
-        scene.add_component(keep, IncludeTag);
+        scene.add_components(keep, Value(10));
+        scene.add_components(keep, IncludeTag);
 
         let filtered_out = scene.new_entity();
-        scene.add_component(filtered_out, Value(20));
-        scene.add_component(filtered_out, IncludeTag);
-        scene.add_component(filtered_out, ExcludeTag);
-        scene.add_component(filtered_out, B);
+        scene.add_components(filtered_out, Value(20));
+        scene.add_components(filtered_out, IncludeTag);
+        scene.add_components(filtered_out, ExcludeTag);
+        scene.add_components(filtered_out, B);
 
         let values: Vec<i32> = scene
             .query::<&Value, (crate::With<IncludeTag>, crate::WithoutAny<(ExcludeTag, B)>)>()
@@ -1802,15 +1763,15 @@ mod tests {
         scene.register_component::<B>();
 
         let include = scene.new_entity();
-        scene.add_component(include, Value(10));
-        scene.add_component(include, IncludeTag);
+        scene.add_components(include, Value(10));
+        scene.add_components(include, IncludeTag);
 
         let b_only = scene.new_entity();
-        scene.add_component(b_only, Value(20));
-        scene.add_component(b_only, B);
+        scene.add_components(b_only, Value(20));
+        scene.add_components(b_only, B);
 
         let neither = scene.new_entity();
-        scene.add_component(neither, Value(30));
+        scene.add_components(neither, Value(30));
 
         let values: Vec<i32> = scene
             .query::<&Value, crate::WithAny<(IncludeTag, B)>>()
@@ -1829,15 +1790,15 @@ mod tests {
         scene.register_component::<B>();
 
         let keep = scene.new_entity();
-        scene.add_component(keep, Value(10));
+        scene.add_components(keep, Value(10));
 
         let exclude_tag = scene.new_entity();
-        scene.add_component(exclude_tag, Value(20));
-        scene.add_component(exclude_tag, ExcludeTag);
+        scene.add_components(exclude_tag, Value(20));
+        scene.add_components(exclude_tag, ExcludeTag);
 
         let exclude_b = scene.new_entity();
-        scene.add_component(exclude_b, Value(30));
-        scene.add_component(exclude_b, B);
+        scene.add_components(exclude_b, Value(30));
+        scene.add_components(exclude_b, B);
 
         let values: Vec<i32> = scene
             .query::<&Value, crate::WithoutAny<(ExcludeTag, B)>>()
@@ -1855,8 +1816,8 @@ mod tests {
         scene.register_component::<IncludeTag>();
 
         let entity = scene.new_entity();
-        scene.add_component(entity, Value(1));
-        scene.add_component(entity, IncludeTag);
+        scene.add_components(entity, Value(1));
+        scene.add_components(entity, IncludeTag);
 
         let mut iter = scene
             .query::<&Value, (crate::With<IncludeTag>, crate::Without<IncludeTag>)>()
@@ -1872,7 +1833,7 @@ mod tests {
 
         scene.set_component_event_tick(10);
         let entity = scene.new_entity();
-        scene.add_component(entity, Value(1));
+        scene.add_components(entity, Value(1));
         assert!(scene.component_added_since::<Value>(entity, 9));
         assert!(scene.component_changed_since::<Value>(entity, 9));
         assert!(!scene.component_changed_since::<Value>(entity, 10));
@@ -1891,7 +1852,7 @@ mod tests {
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(3);
-        scene.add_component(entity, Value(1));
+        scene.add_components(entity, Value(1));
         scene.set_component_event_tick(7);
         scene.remove_component::<Value>(entity);
 
@@ -1906,7 +1867,7 @@ mod tests {
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(10);
-        scene.add_component(entity, Value(1));
+        scene.add_components(entity, Value(1));
 
         scene.set_component_event_tick(20);
         {
@@ -1925,8 +1886,8 @@ mod tests {
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(10);
-        scene.add_component(entity, Value(1));
-        scene.add_component(entity, A);
+        scene.add_components(entity, Value(1));
+        scene.add_components(entity, A);
 
         scene.set_component_event_tick(30);
         {
@@ -1945,7 +1906,7 @@ mod tests {
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(5);
-        scene.add_component(entity, Value(1));
+        scene.add_components(entity, Value(1));
 
         scene.set_default_query_since_tick(4);
         let added_count = scene.query::<&Value, crate::Added<Value>>().iter().count();
@@ -1971,8 +1932,8 @@ mod tests {
 
         scene.set_component_event_tick(5);
         let entity = scene.new_entity();
-        scene.add_component(entity, Value(1));
-        scene.add_component(entity, A);
+        scene.add_components(entity, Value(1));
+        scene.add_components(entity, A);
 
         scene.set_component_event_tick(10);
         if let Some(value) = scene.get_component_mut::<A>(entity) {
@@ -2003,11 +1964,11 @@ mod tests {
         scene.register_component::<A>();
 
         let with_a = scene.new_entity();
-        scene.add_component(with_a, Value(1));
-        scene.add_component(with_a, A);
+        scene.add_components(with_a, Value(1));
+        scene.add_components(with_a, A);
 
         let without_a = scene.new_entity();
-        scene.add_component(without_a, Value(2));
+        scene.add_components(without_a, Value(2));
 
         let results: Vec<(i32, bool)> = scene
             .query::<(&Value, Option<&A>), ()>()
@@ -2028,11 +1989,11 @@ mod tests {
 
         let with_a = scene.new_entity();
         scene.set_component_event_tick(1);
-        scene.add_component(with_a, Value(1));
-        scene.add_component(with_a, A);
+        scene.add_components(with_a, Value(1));
+        scene.add_components(with_a, A);
 
         let without_a = scene.new_entity();
-        scene.add_component(without_a, Value(2));
+        scene.add_components(without_a, Value(2));
 
         scene.set_component_event_tick(10);
         scene

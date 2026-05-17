@@ -1,4 +1,4 @@
-use crate::{Bundle, Component, ComponentTuple, Entity, ErasedComponent, PrefabFactory, Scene};
+use crate::{Component, ComponentTuple, Entity, ErasedComponent, PrefabFactory, Scene};
 use std::any::TypeId;
 
 /// A deferred operation that can be applied to a [`Scene`].
@@ -12,10 +12,6 @@ pub enum SceneCommand {
     DeregisterComponent {
         type_id: TypeId,
         deregister_fn: fn(&mut Scene),
-    },
-    AddComponent {
-        entity: Entity,
-        component: ErasedComponent,
     },
     AddComponents {
         entity: Entity,
@@ -36,16 +32,6 @@ pub enum SceneCommand {
         factory: PrefabFactory,
     },
     SpawnPrefab(String),
-    SpawnBundle {
-        components: Vec<ErasedComponent>,
-    },
-    SpawnBundleBatch {
-        bundles: Vec<Vec<ErasedComponent>>,
-    },
-    AddBundle {
-        entity: Entity,
-        components: Vec<ErasedComponent>,
-    },
     Spawn {
         components: Vec<ErasedComponent>,
     },
@@ -120,14 +106,6 @@ impl SceneCommands {
         });
     }
 
-    /// Queues adding or setting a component on an entity.
-    pub fn add_component<C: Component>(&mut self, entity: Entity, component: C) {
-        self.push(SceneCommand::AddComponent {
-            entity,
-            component: ErasedComponent::new(component),
-        });
-    }
-
     /// Queues adding or setting multiple components on an entity.
     pub fn add_components(&mut self, entity: Entity, components: Vec<ErasedComponent>) {
         self.push(SceneCommand::AddComponents { entity, components });
@@ -165,30 +143,6 @@ impl SceneCommands {
         self.push(SceneCommand::SpawnPrefab(name.into()));
     }
 
-    /// Queues spawning a single bundle.
-    pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) {
-        self.push(SceneCommand::SpawnBundle {
-            components: bundle.into_components(),
-        });
-    }
-
-    /// Queues batch spawning of bundles.
-    pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) {
-        let bundles = bundles
-            .into_iter()
-            .map(Bundle::into_components)
-            .collect::<Vec<_>>();
-        self.push(SceneCommand::SpawnBundleBatch { bundles });
-    }
-
-    /// Queues adding a bundle to an entity.
-    pub fn add_bundle<B: Bundle>(&mut self, entity: Entity, bundle: B) {
-        self.push(SceneCommand::AddBundle {
-            entity,
-            components: bundle.into_components(),
-        });
-    }
-
     /// Applies all queued commands in FIFO order.
     pub fn apply(&mut self, scene: &mut Scene) {
         let queued = std::mem::take(&mut self.queue);
@@ -212,9 +166,6 @@ impl SceneCommands {
                 type_id: _type_id,
                 deregister_fn,
             } => deregister_fn(scene),
-            SceneCommand::AddComponent { entity, component } => {
-                scene.add_with_components_immediate(entity, vec![component]);
-            }
             SceneCommand::AddComponents { entity, components } => {
                 scene.add_with_components_immediate(entity, components);
             }
@@ -234,17 +185,6 @@ impl SceneCommands {
             }
             SceneCommand::SpawnPrefab(name) => {
                 let _ = scene.spawn_prefab_immediate(&name);
-            }
-            SceneCommand::SpawnBundle { components } => {
-                let _ = scene.spawn_with_components_immediate(components);
-            }
-            SceneCommand::SpawnBundleBatch { bundles } => {
-                for components in bundles {
-                    let _ = scene.spawn_with_components_immediate(components);
-                }
-            }
-            SceneCommand::AddBundle { entity, components } => {
-                scene.add_with_components_immediate(entity, components);
             }
             SceneCommand::Spawn { components } => {
                 let _ = scene.spawn_with_components_immediate(components);

@@ -4,6 +4,8 @@ use comet::prelude::*;
 #[derive(Component)]
 struct Player;
 
+// Bundles are a convenient way to name groups of components that are getting
+// reused in code multiple times.
 bundle!(Comet {
     player: Player,
     transform: Transform,
@@ -13,9 +15,10 @@ bundle!(Comet {
 fn setup(app: &mut App) {
     app.register_component::<Player>();
 
-    app.spawn_bundle(Camera2d::new(1.0, 1));
+    app.spawn(Camera2d::new(1.0, 1));
 
-    app.spawn_bundle(Comet {
+    // notice that bundles are being spawned by `spawn` as well
+    app.spawn(Comet {
         player: Player,
         transform: Transform::new(),
         render: Sprite::with_texture("res://textures/comet-128.png"),

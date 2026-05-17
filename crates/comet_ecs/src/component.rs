@@ -291,6 +291,13 @@ impl crate::Bundle for Camera2d {
             crate::prefabs::ErasedComponent::new(self.camera),
         ]
     }
+
+    fn type_ids(&self) -> Vec<std::any::TypeId> {
+        vec![
+            std::any::TypeId::of::<Transform>(),
+            std::any::TypeId::of::<Camera>(),
+        ]
+    }
 }
 
 pub struct Camera3d {
@@ -312,6 +319,13 @@ impl crate::Bundle for Camera3d {
         vec![
             crate::prefabs::ErasedComponent::new(self.transform),
             crate::prefabs::ErasedComponent::new(self.camera),
+        ]
+    }
+
+    fn type_ids(&self) -> Vec<std::any::TypeId> {
+        vec![
+            std::any::TypeId::of::<Transform>(),
+            std::any::TypeId::of::<Camera>(),
         ]
     }
 }

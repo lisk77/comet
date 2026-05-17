@@ -1,4 +1,4 @@
-use crate::{Component, ErasedComponent, Scene, SceneCommands};
+use crate::{Bundle, Component, ErasedComponent, Scene, SceneCommands};
 use comet_structs::Column;
 use std::any::TypeId;
 
@@ -6,18 +6,6 @@ pub trait ComponentTuple {
     fn type_ids() -> Vec<TypeId>;
     fn register_all(scene: &mut Scene);
     fn deferred_register_all(commands: &mut SceneCommands);
-}
-
-pub trait ComponentValueTuple {
-    fn type_ids(&self) -> Vec<TypeId>;
-    fn into_components(self) -> Vec<ErasedComponent>;
-    fn write_components(self, columns: &mut [Column], column_indices: &[usize], row: usize);
-    fn write_components_reserved(
-        self,
-        columns: &mut [Column],
-        column_indices: &[usize],
-        row: usize,
-    );
 }
 
 impl ComponentTuple for () {
@@ -44,33 +32,34 @@ impl<C: Component> ComponentTuple for C {
     }
 }
 
-impl ComponentValueTuple for () {
-    fn type_ids(&self) -> Vec<TypeId> {
+impl Bundle for () {
+    fn into_components(self) -> Vec<ErasedComponent> {
         Vec::new()
     }
 
-    fn into_components(self) -> Vec<ErasedComponent> {
+    fn spawn(self, scene: &mut Scene) -> crate::Entity {
+        scene.new_entity_immediate()
+    }
+
+    fn spawn_batch(scene: &mut Scene, bundles: Vec<Self>) -> Vec<crate::Entity> {
+        bundles.into_iter().map(|_| scene.new_entity_immediate()).collect()
+    }
+
+    fn type_ids(&self) -> Vec<TypeId> {
         Vec::new()
     }
 
     fn write_components(self, _columns: &mut [Column], _column_indices: &[usize], _row: usize) {}
-
-    fn write_components_reserved(
-        self,
-        _columns: &mut [Column],
-        _column_indices: &[usize],
-        _row: usize,
-    ) {
-    }
+    fn write_components_reserved(self, _columns: &mut [Column], _column_indices: &[usize], _row: usize) {}
 }
 
-impl<C: Component> ComponentValueTuple for C {
-    fn type_ids(&self) -> Vec<TypeId> {
-        vec![C::type_id()]
-    }
-
+impl<C: Component> Bundle for C {
     fn into_components(self) -> Vec<ErasedComponent> {
         vec![ErasedComponent::new(self)]
+    }
+
+    fn type_ids(&self) -> Vec<TypeId> {
+        vec![C::type_id()]
     }
 
     fn write_components(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
@@ -80,12 +69,7 @@ impl<C: Component> ComponentValueTuple for C {
         }
     }
 
-    fn write_components_reserved(
-        self,
-        columns: &mut [Column],
-        column_indices: &[usize],
-        _row: usize,
-    ) {
+    fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
         let col_idx = column_indices[0];
         unsafe {
             columns[col_idx].push_unchecked_reserved::<C>(self);
@@ -109,25 +93,51 @@ macro_rules! impl_component_tuple {
             }
         }
 
-        impl<$($name: Component),+> ComponentValueTuple for ($($name,)+) {
-            fn type_ids(&self) -> Vec<TypeId> {
-                vec![$($name::type_id()),+]
-            }
-
+        impl<$($name: Component),+> Bundle for ($($name,)+) {
             #[allow(non_snake_case)]
             fn into_components(self) -> Vec<ErasedComponent> {
                 let ($($name,)+) = self;
                 vec![$(ErasedComponent::new($name)),+]
             }
 
+            fn spawn(self, scene: &mut Scene) -> crate::Entity {
+                let component_types = [$(std::any::TypeId::of::<$name>()),+];
+                scene.__spawn_bundle_typed(
+                    std::any::TypeId::of::<($($name,)+)>(),
+                    &component_types,
+                    move |columns, column_indices, row| {
+                        self.write_components(columns, column_indices, row);
+                    },
+                )
+            }
+
+            fn spawn_batch(scene: &mut Scene, bundles: Vec<Self>) -> Vec<crate::Entity> {
+                if bundles.is_empty() {
+                    return Vec::new();
+                }
+                let component_types = [$(std::any::TypeId::of::<$name>()),+];
+                scene.__spawn_bundle_typed_batch(
+                    std::any::TypeId::of::<($($name,)+)>(),
+                    &component_types,
+                    bundles,
+                    |columns, column_indices, row, bundle| {
+                        bundle.write_components_reserved(columns, column_indices, row);
+                    },
+                )
+            }
+
+            fn type_ids(&self) -> Vec<TypeId> {
+                vec![$(std::any::TypeId::of::<$name>()),+]
+            }
+
             #[allow(non_snake_case, unused_assignments)]
             fn write_components(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
                 let ($($name,)+) = self;
-                let mut component_i = 0usize;
+                let mut col_i = 0usize;
                 $(
                     {
-                        let col_idx = column_indices[component_i];
-                        component_i += 1;
+                        let col_idx = column_indices[col_i];
+                        col_i += 1;
                         unsafe {
                             columns[col_idx].push_unchecked::<$name>($name);
                         }
@@ -136,18 +146,13 @@ macro_rules! impl_component_tuple {
             }
 
             #[allow(non_snake_case, unused_assignments)]
-            fn write_components_reserved(
-                self,
-                columns: &mut [Column],
-                column_indices: &[usize],
-                _row: usize,
-            ) {
+            fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
                 let ($($name,)+) = self;
-                let mut component_i = 0usize;
+                let mut col_i = 0usize;
                 $(
                     {
-                        let col_idx = column_indices[component_i];
-                        component_i += 1;
+                        let col_idx = column_indices[col_i];
+                        col_i += 1;
                         unsafe {
                             columns[col_idx].push_unchecked_reserved::<$name>($name);
                         }
