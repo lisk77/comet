@@ -55,7 +55,6 @@ pub trait EcsModuleExt {
     fn deferred_register_component<C: Component>(&mut self);
     fn deferred_register_components<T: ComponentTuple>(&mut self);
     fn deferred_deregister_component<C: Component>(&mut self);
-    fn deferred_add_component<C: Component>(&mut self, entity: Entity, component: C);
     fn deferred_add_components<B: Bundle>(&mut self, entity: Entity, components: B);
     fn deferred_remove_component<C: Component>(&mut self, entity: Entity);
     fn deferred_remove_components<T: ComponentTuple>(&mut self, entity: Entity);
@@ -77,7 +76,6 @@ pub trait EcsModuleExt {
     fn register_component<C: Component>(&mut self);
     fn register_components<T: ComponentTuple>(&mut self);
     fn deregister_component<C: Component>(&mut self);
-    fn add_component<C: Component>(&mut self, entity_id: Entity, component: C);
     fn add_components<B: Bundle>(&mut self, entity_id: Entity, components: B);
     fn remove_component<C: Component>(&mut self, entity_id: Entity);
     fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity);
@@ -101,11 +99,11 @@ impl EcsModuleExt for App {
     }
 
     fn spawn<B: Bundle + 'static>(&mut self, bundle: B) -> Entity {
-        self.get_module_mut::<EcsModule>().scene.spawn_bundle(bundle)
+        self.get_module_mut::<EcsModule>().scene.spawn(bundle)
     }
 
     fn spawn_batch<B: Bundle + 'static>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
-        self.get_module_mut::<EcsModule>().scene.spawn_bundle_batch(bundles)
+        self.get_module_mut::<EcsModule>().scene.spawn_batch(bundles)
     }
 
     fn deferred_spawn_empty(&mut self) {
@@ -134,10 +132,6 @@ impl EcsModuleExt for App {
 
     fn deferred_deregister_component<C: Component>(&mut self) {
         self.get_module_mut::<EcsModule>().scene.deferred_deregister_component::<C>();
-    }
-
-    fn deferred_add_component<C: Component>(&mut self, entity: Entity, component: C) {
-        self.get_module_mut::<EcsModule>().scene.deferred_add_component::<C>(entity, component);
     }
 
     fn deferred_add_components<B: Bundle>(&mut self, entity: Entity, components: B) {
@@ -201,10 +195,6 @@ impl EcsModuleExt for App {
 
     fn deregister_component<C: Component>(&mut self) {
         self.get_module_mut::<EcsModule>().scene.deregister_component::<C>();
-    }
-
-    fn add_component<C: Component>(&mut self, entity_id: Entity, component: C) {
-        self.get_module_mut::<EcsModule>().scene.add_component(entity_id, component);
     }
 
     fn add_components<B: Bundle>(&mut self, entity_id: Entity, components: B) {

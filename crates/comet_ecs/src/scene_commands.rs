@@ -13,10 +13,6 @@ pub enum SceneCommand {
         type_id: TypeId,
         deregister_fn: fn(&mut Scene),
     },
-    AddComponent {
-        entity: Entity,
-        component: ErasedComponent,
-    },
     AddComponents {
         entity: Entity,
         components: Vec<ErasedComponent>,
@@ -110,14 +106,6 @@ impl SceneCommands {
         });
     }
 
-    /// Queues adding or setting a component on an entity.
-    pub fn add_component<C: Component>(&mut self, entity: Entity, component: C) {
-        self.push(SceneCommand::AddComponent {
-            entity,
-            component: ErasedComponent::new(component),
-        });
-    }
-
     /// Queues adding or setting multiple components on an entity.
     pub fn add_components(&mut self, entity: Entity, components: Vec<ErasedComponent>) {
         self.push(SceneCommand::AddComponents { entity, components });
@@ -178,9 +166,6 @@ impl SceneCommands {
                 type_id: _type_id,
                 deregister_fn,
             } => deregister_fn(scene),
-            SceneCommand::AddComponent { entity, component } => {
-                scene.add_with_components_immediate(entity, vec![component]);
-            }
             SceneCommand::AddComponents { entity, components } => {
                 scene.add_with_components_immediate(entity, components);
             }
