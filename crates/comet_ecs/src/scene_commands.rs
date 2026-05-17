@@ -1,4 +1,4 @@
-use crate::{Bundle, Component, ComponentTuple, Entity, ErasedComponent, PrefabFactory, Scene};
+use crate::{Component, ComponentTuple, Entity, ErasedComponent, PrefabFactory, Scene};
 use std::any::TypeId;
 
 /// A deferred operation that can be applied to a [`Scene`].
@@ -36,12 +36,6 @@ pub enum SceneCommand {
         factory: PrefabFactory,
     },
     SpawnPrefab(String),
-    SpawnBundle {
-        components: Vec<ErasedComponent>,
-    },
-    SpawnBundleBatch {
-        bundles: Vec<Vec<ErasedComponent>>,
-    },
     Spawn {
         components: Vec<ErasedComponent>,
     },
@@ -161,22 +155,6 @@ impl SceneCommands {
         self.push(SceneCommand::SpawnPrefab(name.into()));
     }
 
-    /// Queues spawning a single bundle.
-    pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) {
-        self.push(SceneCommand::SpawnBundle {
-            components: bundle.into_components(),
-        });
-    }
-
-    /// Queues batch spawning of bundles.
-    pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) {
-        let bundles = bundles
-            .into_iter()
-            .map(Bundle::into_components)
-            .collect::<Vec<_>>();
-        self.push(SceneCommand::SpawnBundleBatch { bundles });
-    }
-
     /// Applies all queued commands in FIFO order.
     pub fn apply(&mut self, scene: &mut Scene) {
         let queued = std::mem::take(&mut self.queue);
@@ -222,14 +200,6 @@ impl SceneCommands {
             }
             SceneCommand::SpawnPrefab(name) => {
                 let _ = scene.spawn_prefab_immediate(&name);
-            }
-            SceneCommand::SpawnBundle { components } => {
-                let _ = scene.spawn_with_components_immediate(components);
-            }
-            SceneCommand::SpawnBundleBatch { bundles } => {
-                for components in bundles {
-                    let _ = scene.spawn_with_components_immediate(components);
-                }
             }
             SceneCommand::Spawn { components } => {
                 let _ = scene.spawn_with_components_immediate(components);

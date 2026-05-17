@@ -114,7 +114,7 @@ impl Scene {
     /// Queues spawning an entity with the given components.
     /// The command executes on [`Scene::apply_commands`] or at app tick-end.
     pub fn deferred_spawn<B: Bundle>(&mut self, bundle: B) {
-        self.commands.spawn_bundle(bundle);
+        self.commands.spawn(bundle.into_components());
     }
 
     /// Queues spawning a batch of entities with the given components.
@@ -192,18 +192,6 @@ impl Scene {
         self.commands.spawn_prefab(name);
     }
 
-    /// Queues spawning a bundle as a new entity.
-    pub fn deferred_spawn_bundle<B: Bundle>(&mut self, bundle: B) {
-        self.commands.spawn_bundle(bundle);
-    }
-
-    /// Queues batch spawning of bundles.
-    pub fn deferred_spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) {
-        self.commands.spawn_bundle_batch(bundles);
-    }
-
-    /// Queues adding a bundle to an existing entity.
-    
     /// Returns the amount of currently queued deferred commands.
     pub fn queued_command_count(&self) -> usize {
         self.commands.len()
