@@ -14,7 +14,7 @@ pub mod sprite_instance;
 pub mod vertex;
 
 pub use draw_batch::{
-    DrawCommand, GeometryDescriptor, IndexStreamDescriptor, VertexStreamDescriptor,
+    DrawCommand, DrawStreamError, GeometryDescriptor, IndexStreamDescriptor, VertexStreamDescriptor,
 };
 pub use gpu_texture::*;
 pub use render_commands::PassDescriptor;

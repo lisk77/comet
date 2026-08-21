@@ -45,6 +45,7 @@ pub struct Renderer2D {
     event_sender: flume::Sender<Renderer2DEvent>,
     font_cache: std::collections::HashMap<FontKey, f32>,
     accumulated_font_glyphs: Vec<comet_assets::GlyphData>,
+    sprite_instances: Vec<SpriteInstance>,
 }
 
 pub struct RenderHandle2D {
@@ -661,18 +662,18 @@ impl Renderer2D {
             Vertex::new([1.0, 1.0, 0.0], [1.0, 0.0], [1.0; 4]),
         ];
         let quad_indices = [0u16, 1, 3, 1, 2, 3];
-        let sprite_geometry = GeometryDescriptor {
-            vertex_streams: vec![
+        let sprite_geometry = GeometryDescriptor::new(
+            vec![
                 VertexStreamDescriptor::dynamic("Quad Vertex Buffer", Vertex::desc())
                     .with_initial_data(&quad_vertices),
                 VertexStreamDescriptor::dynamic("Instance Buffer", SpriteInstance::desc())
-                    .with_initial_capacity(4096),
+                    .with_initial_capacity_elements::<SpriteInstance>(1024),
             ],
-            index_stream: Some(
+            Some(
                 IndexStreamDescriptor::dynamic("Quad Index Buffer", wgpu::IndexFormat::Uint16)
-                    .with_initial_data(&quad_indices),
+                    .with_initial_data_u16(&quad_indices),
             ),
-        };
+        );
 
         self.graph.add_node(
             PassNode::with_geometry(
@@ -1298,10 +1299,11 @@ impl Renderer2D {
             }
         }
         let (world_view, screen_view) = self.setup_camera_from_packet(camera);
-
         draws.sort_by_key(|draw| draw.draw_index);
 
-        let mut sprite_instances = Vec::with_capacity(draws.len());
+        let mut sprite_instances = std::mem::take(&mut self.sprite_instances);
+        sprite_instances.clear();
+        sprite_instances.reserve(draws.len());
         for draw in draws {
             if !draw.visible {
                 continue;
@@ -1326,13 +1328,20 @@ impl Renderer2D {
 
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
             let instance_count = sprite_instances.len() as u32;
-            let _ = node.write_vertex_stream(1, &sprite_instances, device, queue);
-            node.set_draw_command(DrawCommand::Indexed {
-                index_count: 6,
-                base_vertex: 0,
-                instance_count,
-            });
+            let update_result = node
+                .write_vertex_stream(1, &sprite_instances, device, queue)
+                .and_then(|()| {
+                    node.set_draw_command(DrawCommand::Indexed {
+                        indices: 0..6,
+                        base_vertex: 0,
+                        instances: 0..instance_count,
+                    })
+                });
+            if let Err(error) = update_result {
+                error!("Failed to update sprite draw batch: {}", error);
+            }
         }
+        self.sprite_instances = sprite_instances;
 
         let mut font_vertex_buffer: Vec<Vertex> = Vec::new();
         let mut font_index_buffer: Vec<u16> = Vec::new();
@@ -1373,7 +1382,11 @@ impl Renderer2D {
             let device = self.render_state.device();
             let queue = self.render_state.queue();
             if let Some(node) = self.graph.get_node_mut::<PassNode>("Font") {
-                node.set_geometry(font_vertex_buffer, font_index_buffer, device, queue);
+                if let Err(error) =
+                    node.set_geometry(font_vertex_buffer, font_index_buffer, device, queue)
+                {
+                    error!("Failed to update font draw batch: {}", error);
+                }
             }
         }
 
@@ -1429,15 +1442,20 @@ impl Renderer2D {
         let device = self.render_state.device();
         let queue = self.render_state.queue();
         if let Some(node) = self.graph.get_node_mut::<PassNode>("ScreenFont") {
-            node.set_geometry(
+            if let Err(error) = node.set_geometry(
                 screen_font_vertex_buffer,
                 screen_font_index_buffer,
                 device,
                 queue,
-            );
+            ) {
+                error!("Failed to update screen font draw batch: {}", error);
+            }
             node.set_camera(&screen_uniform, queue);
             node.set_viewport(Some(screen_view.viewport));
         }
+
+        // Text processing lazily creates the Font pass, so update camera uniforms afterward.
+        self.setup_camera_from_packet(camera);
 
         let mut gizmo_verts: Vec<Vertex> = Vec::new();
         let mut gizmo_indices: Vec<u16> = Vec::new();
@@ -1526,7 +1544,9 @@ impl Renderer2D {
         let queue = self.render_state.queue();
 
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Gizmo") {
-            node.set_geometry(gizmo_verts, gizmo_indices, device, queue);
+            if let Err(error) = node.set_geometry(gizmo_verts, gizmo_indices, device, queue) {
+                error!("Failed to update gizmo draw batch: {}", error);
+            }
         }
     }
 
@@ -1631,6 +1651,7 @@ impl Renderer for Renderer2D {
             event_sender,
             font_cache: std::collections::HashMap::new(),
             accumulated_font_glyphs: Vec::new(),
+            sprite_instances: Vec::new(),
         }
     }
 

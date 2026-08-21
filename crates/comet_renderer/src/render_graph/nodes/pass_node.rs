@@ -1,7 +1,7 @@
 use super::super::node::{BuildContext, NodeState, RenderNode};
 use crate::{
     camera::{CameraUniform, ResolvedViewport},
-    draw_batch::{DrawBatch, DrawCommand, GeometryDescriptor},
+    draw_batch::{DrawBatch, DrawCommand, DrawStreamError, GeometryDescriptor},
     gpu_texture::GpuTexture,
     render_pass::LoadOp,
     Vertex,
@@ -109,16 +109,15 @@ impl PassNode {
         indices: Vec<u16>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) {
-        if let Some(batch) = &mut self.batch {
-            let _ = batch.write_vertex_stream(0, &verts, device, queue);
-            let _ = batch.write_indices(&indices, device, queue);
-            batch.set_command(DrawCommand::Indexed {
-                index_count: indices.len() as u32,
-                base_vertex: 0,
-                instance_count: 1,
-            });
-        }
+    ) -> Result<(), DrawStreamError> {
+        let batch = self.batch.as_mut().ok_or(DrawStreamError::BatchNotBuilt)?;
+        batch.write_vertex_stream(0, &verts, device, queue)?;
+        batch.write_indices_u16(&indices, device, queue)?;
+        batch.set_command(DrawCommand::Indexed {
+            indices: 0..indices.len() as u32,
+            base_vertex: 0,
+            instances: 0..1,
+        })
     }
 
     pub fn write_vertex_stream<T: bytemuck::Pod>(
@@ -127,17 +126,18 @@ impl PassNode {
         data: &[T],
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> Result<(), usize> {
+    ) -> Result<(), DrawStreamError> {
         self.batch
             .as_mut()
-            .ok_or(slot)?
+            .ok_or(DrawStreamError::BatchNotBuilt)?
             .write_vertex_stream(slot, data, device, queue)
     }
 
-    pub fn set_draw_command(&mut self, command: DrawCommand) {
-        if let Some(batch) = &mut self.batch {
-            batch.set_command(command);
-        }
+    pub fn set_draw_command(&mut self, command: DrawCommand) -> Result<(), DrawStreamError> {
+        self.batch
+            .as_mut()
+            .ok_or(DrawStreamError::BatchNotBuilt)?
+            .set_command(command)
     }
 
     pub fn set_camera(&mut self, uniform: &CameraUniform, queue: &wgpu::Queue) {
@@ -296,9 +296,9 @@ impl RenderNode for PassNode {
                 entry_point: "vs_main",
                 buffers: &self
                     .geometry_descriptor
-                    .vertex_streams
+                    .vertex_streams()
                     .iter()
-                    .map(|stream| stream.layout.clone())
+                    .map(|stream| stream.layout().clone())
                     .collect::<Vec<_>>(),
                 compilation_options: Default::default(),
             },
@@ -367,6 +367,14 @@ impl RenderNode for PassNode {
             return;
         };
 
+        if batch.command.is_empty() {
+            return;
+        }
+        if let Err(error) = batch.validate() {
+            comet_log::error!("Skipping invalid draw batch '{}': {}", self.name, error);
+            return;
+        }
+
         rpass.set_pipeline(pipeline);
 
         if let Some(viewport) = self.viewport {
@@ -389,30 +397,30 @@ impl RenderNode for PassNode {
         }
 
         for (slot, stream) in batch.vertex_streams.iter().enumerate() {
-            rpass.set_vertex_buffer(slot as u32, stream.buffer.slice());
+            let Some(slice) = stream.buffer.slice() else {
+                return;
+            };
+            rpass.set_vertex_buffer(slot as u32, slice);
         }
 
         match &batch.command {
             DrawCommand::NonIndexed {
-                vertex_count,
-                instance_count,
-            } => {
-                if *vertex_count > 0 && *instance_count > 0 {
-                    rpass.draw(0..*vertex_count, 0..*instance_count);
-                }
-            }
+                vertices,
+                instances,
+            } => rpass.draw(vertices.clone(), instances.clone()),
             DrawCommand::Indexed {
-                index_count,
+                indices,
                 base_vertex,
-                instance_count,
+                instances,
             } => {
                 let Some(index_stream) = batch.index_stream.as_ref() else {
                     return;
                 };
-                if *index_count > 0 && *instance_count > 0 {
-                    rpass.set_index_buffer(index_stream.buffer.slice(), index_stream.format);
-                    rpass.draw_indexed(0..*index_count, *base_vertex, 0..*instance_count);
-                }
+                let Some(slice) = index_stream.buffer.slice() else {
+                    return;
+                };
+                rpass.set_index_buffer(slice, index_stream.format);
+                rpass.draw_indexed(indices.clone(), *base_vertex, instances.clone());
             }
         }
     }
