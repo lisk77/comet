@@ -1,6 +1,7 @@
 use crate::gizmo_registry::GizmoRegistry;
 use crate::{
     camera::{resolve_camera_viewport, CameraUniform, RenderCamera, ResolvedViewport},
+    draw_batch::{DrawCommand, GeometryDescriptor, IndexStreamDescriptor, VertexStreamDescriptor},
     gpu_texture::GpuTexture,
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, ScreenText2D, Text2D},
     render_events::Renderer2DEvent,
@@ -10,7 +11,7 @@ use crate::{
     },
     render_pass::{LoadOp, PassOutput},
     render_state::RenderState,
-    Vertex,
+    SpriteInstance, Vertex,
 };
 use comet_app::{App, Module};
 use comet_assets::{texture_atlas::*, AssetPath, AtlasRef, ImageRef};
@@ -274,8 +275,8 @@ impl RenderHandle2D {
         self.poll_events();
         if self.pending_atlas_rebuild {
             self.pending_atlas_rebuild = false;
-            for (_, render) in scene
-                .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
+            for (_, render) in
+                scene.query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
             {
                 if let ImageRef::ResolvedHandle(h, _) = render.texture() {
                     render.set_image_ref(ImageRef::Handle(h));
@@ -290,14 +291,13 @@ impl RenderHandle2D {
             comet_ecs::Projection,
             comet_ecs::Screen,
         )> = None;
-        for (transform, camera, projection, screen) in scene
-            .query::<(
-                &comet_ecs::Transform,
-                &comet_ecs::Camera,
-                &comet_ecs::Projection,
-                &comet_ecs::Screen,
-            ), comet_ecs::With<comet_ecs::Camera2d>>()
-        {
+        for (transform, camera, projection, screen) in scene.query::<(
+            &comet_ecs::Transform,
+            &comet_ecs::Camera,
+            &comet_ecs::Projection,
+            &comet_ecs::Screen,
+        ), comet_ecs::With<comet_ecs::Camera2d>>(
+        ) {
             if !camera.is_enabled() {
                 continue;
             }
@@ -320,8 +320,8 @@ impl RenderHandle2D {
 
         let mut draws = Vec::new();
         let mut referenced_handles = Vec::new();
-        for (transform, render) in scene
-            .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
+        for (transform, render) in
+            scene.query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
         {
             let atlas_ref = match render.texture() {
                 ImageRef::Atlas(atlas_ref) => atlas_ref,
@@ -363,13 +363,12 @@ impl RenderHandle2D {
         draws.sort_by_key(|draw| draw.draw_index);
 
         let mut texts = Vec::new();
-        for (transform, text, layout) in scene
-            .query::<(
-                &comet_ecs::Transform,
-                &comet_ecs::Text,
-                Option<&comet_ecs::TextLayout>,
-            ), comet_ecs::Without<comet_ecs::ScreenPosition>>()
-        {
+        for (transform, text, layout) in scene.query::<(
+            &comet_ecs::Transform,
+            &comet_ecs::Text,
+            Option<&comet_ecs::TextLayout>,
+        ), comet_ecs::Without<comet_ecs::ScreenPosition>>(
+        ) {
             if !text.is_visible() {
                 continue;
             }
@@ -397,12 +396,11 @@ impl RenderHandle2D {
 
         let virtual_resolution = screen.virtual_resolution();
         let mut screen_texts = Vec::new();
-        for (position, text, layout) in scene
-            .query::<(
-                &comet_ecs::ScreenPosition,
-                &comet_ecs::Text,
-                Option<&comet_ecs::TextLayout>,
-            ), comet_ecs::Without<comet_ecs::Transform>>()
+        for (position, text, layout) in scene.query::<(
+            &comet_ecs::ScreenPosition,
+            &comet_ecs::Text,
+            Option<&comet_ecs::TextLayout>,
+        ), comet_ecs::Without<comet_ecs::Transform>>()
         {
             if !text.is_visible() {
                 continue;
@@ -496,7 +494,7 @@ impl comet_app::Module for RenderHandle2D {
     }
 }
 
-const SPRITE_SHADER: &str = r#"
+const TEXTURE_SHADER: &str = r#"
 struct CameraUniform {
     view_proj: mat4x4<f32>,
 };
@@ -534,6 +532,57 @@ var s_diffuse: sampler;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let sample_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     return sample_color * in.color;
+}
+"#;
+
+const SPRITE_SHADER: &str = r#"
+struct CameraUniform {
+    view_proj: mat4x4<f32>,
+};
+
+@group(1) @binding(0)
+var<uniform> camera: CameraUniform;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) tex_coords: vec2<f32>,
+    @location(2) vertex_color: vec4<f32>,
+    @location(3) position_size: vec4<f32>,
+    @location(4) rotation: vec2<f32>,
+    @location(5) uv_min: vec2<f32>,
+    @location(6) uv_max: vec2<f32>,
+    @location(7) instance_color: vec4<f32>,
+}
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) tex_coords: vec2<f32>,
+    @location(1) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(model: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    let local = model.position.xy * model.position_size.zw;
+    let rotated = vec2<f32>(
+        local.x * model.rotation.x - local.y * model.rotation.y,
+        local.x * model.rotation.y + local.y * model.rotation.x,
+    );
+    let world_position = model.position_size.xy + rotated;
+    out.clip_position = camera.view_proj * vec4<f32>(world_position, model.position.z, 1.0);
+    out.tex_coords = mix(model.uv_min, model.uv_max, model.tex_coords);
+    out.color = model.vertex_color * model.instance_color;
+    return out;
+}
+
+@group(0) @binding(0)
+var t_diffuse: texture_2d<f32>;
+@group(0) @binding(1)
+var s_diffuse: sampler;
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(t_diffuse, s_diffuse, in.tex_coords) * in.color;
 }
 "#;
 
@@ -605,14 +654,35 @@ impl Renderer2D {
         let width = self.render_state.config().width;
         let height = self.render_state.config().height;
 
+        let quad_vertices = [
+            Vertex::new([-1.0, 1.0, 0.0], [0.0, 0.0], [1.0; 4]),
+            Vertex::new([-1.0, -1.0, 0.0], [0.0, 1.0], [1.0; 4]),
+            Vertex::new([1.0, -1.0, 0.0], [1.0, 1.0], [1.0; 4]),
+            Vertex::new([1.0, 1.0, 0.0], [1.0, 0.0], [1.0; 4]),
+        ];
+        let quad_indices = [0u16, 1, 3, 1, 2, 3];
+        let sprite_geometry = GeometryDescriptor {
+            vertex_streams: vec![
+                VertexStreamDescriptor::dynamic("Quad Vertex Buffer", Vertex::desc())
+                    .with_initial_data(&quad_vertices),
+                VertexStreamDescriptor::dynamic("Instance Buffer", SpriteInstance::desc())
+                    .with_initial_capacity(4096),
+            ],
+            index_stream: Some(
+                IndexStreamDescriptor::dynamic("Quad Index Buffer", wgpu::IndexFormat::Uint16)
+                    .with_initial_data(&quad_indices),
+            ),
+        };
+
         self.graph.add_node(
-            PassNode::new(
+            PassNode::with_geometry(
                 "Universal",
                 SPRITE_SHADER,
                 wgpu::PrimitiveTopology::TriangleList,
                 Some(gpu_texture_arc),
                 vec![],
                 LoadOp::Background,
+                sprite_geometry,
             ),
             self.render_state.device(),
             self.render_state.queue(),
@@ -725,7 +795,7 @@ impl Renderer2D {
             self.graph.add_node(
                 PassNode::new(
                     "Font",
-                    SPRITE_SHADER,
+                    TEXTURE_SHADER,
                     wgpu::PrimitiveTopology::TriangleList,
                     Some(font_texture_arc.clone()),
                     vec!["Universal"],
@@ -1231,102 +1301,37 @@ impl Renderer2D {
 
         draws.sort_by_key(|draw| draw.draw_index);
 
-        let mut vertex_buffer: Vec<Vertex> = Vec::new();
-        let mut index_buffer: Vec<u16> = Vec::new();
-
+        let mut sprite_instances = Vec::with_capacity(draws.len());
         for draw in draws {
             if !draw.visible {
                 continue;
             }
 
             let region = self.get_texture_region(draw.texture);
-
-            let (dim_x, dim_y) = region.dimensions();
-            let half_width = dim_x as f32 * 0.5 * draw.scale[0];
-            let half_height = dim_y as f32 * 0.5 * draw.scale[1];
-
-            let buffer_size = vertex_buffer.len() as u16;
-
-            let world_corners = [
-                (-half_width, half_height),
-                (-half_width, -half_height),
-                (half_width, -half_height),
-                (half_width, half_height),
-            ];
-
-            let rotation_angle = draw.rotation_deg.to_radians();
-            let cos_angle = rotation_angle.cos();
-            let sin_angle = rotation_angle.sin();
-
-            let rotated_world_corners = [
-                (
-                    world_corners[0].0 * cos_angle - world_corners[0].1 * sin_angle
-                        + draw.position[0],
-                    world_corners[0].0 * sin_angle
-                        + world_corners[0].1 * cos_angle
-                        + draw.position[1],
-                ),
-                (
-                    world_corners[1].0 * cos_angle - world_corners[1].1 * sin_angle
-                        + draw.position[0],
-                    world_corners[1].0 * sin_angle
-                        + world_corners[1].1 * cos_angle
-                        + draw.position[1],
-                ),
-                (
-                    world_corners[2].0 * cos_angle - world_corners[2].1 * sin_angle
-                        + draw.position[0],
-                    world_corners[2].0 * sin_angle
-                        + world_corners[2].1 * cos_angle
-                        + draw.position[1],
-                ),
-                (
-                    world_corners[3].0 * cos_angle - world_corners[3].1 * sin_angle
-                        + draw.position[0],
-                    world_corners[3].0 * sin_angle
-                        + world_corners[3].1 * cos_angle
-                        + draw.position[1],
-                ),
-            ];
-
-            vertex_buffer.extend_from_slice(&[
-                Vertex::new(
-                    [rotated_world_corners[0].0, rotated_world_corners[0].1, 0.0],
-                    [region.u0(), region.v0()],
-                    [1.0, 1.0, 1.0, 1.0],
-                ),
-                Vertex::new(
-                    [rotated_world_corners[1].0, rotated_world_corners[1].1, 0.0],
-                    [region.u0(), region.v1()],
-                    [1.0, 1.0, 1.0, 1.0],
-                ),
-                Vertex::new(
-                    [rotated_world_corners[2].0, rotated_world_corners[2].1, 0.0],
-                    [region.u1(), region.v1()],
-                    [1.0, 1.0, 1.0, 1.0],
-                ),
-                Vertex::new(
-                    [rotated_world_corners[3].0, rotated_world_corners[3].1, 0.0],
-                    [region.u1(), region.v0()],
-                    [1.0, 1.0, 1.0, 1.0],
-                ),
-            ]);
-
-            index_buffer.extend_from_slice(&[
-                0 + buffer_size,
-                1 + buffer_size,
-                3 + buffer_size,
-                1 + buffer_size,
-                2 + buffer_size,
-                3 + buffer_size,
-            ]);
+            let (width, height) = region.dimensions();
+            sprite_instances.push(SpriteInstance::new(
+                draw.position,
+                [
+                    width as f32 * 0.5 * draw.scale[0],
+                    height as f32 * 0.5 * draw.scale[1],
+                ],
+                draw.rotation_deg.to_radians(),
+                [region.u0(), region.v0(), region.u1(), region.v1()],
+                [1.0; 4],
+            ));
         }
 
         let device = self.render_state.device();
         let queue = self.render_state.queue();
 
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
-            node.set_geometry(vertex_buffer, index_buffer, device, queue);
+            let instance_count = sprite_instances.len() as u32;
+            let _ = node.write_vertex_stream(1, &sprite_instances, device, queue);
+            node.set_draw_command(DrawCommand::Indexed {
+                index_count: 6,
+                base_vertex: 0,
+                instance_count,
+            });
         }
 
         let mut font_vertex_buffer: Vec<Vertex> = Vec::new();
