@@ -1,27 +1,27 @@
+use crate::gizmo_registry::GizmoRegistry;
 use crate::{
     camera::{CameraUniform, RenderCamera},
     gpu_texture::GpuTexture,
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
-    render_state::RenderState,
     render_events::Renderer2DEvent,
+    render_graph::{
+        nodes::{PassNode, PostProcessNode},
+        RenderGraph,
+    },
     render_pass::{LoadOp, PassOutput},
-    render_graph::{RenderGraph, nodes::{PassNode, PostProcessNode}},
+    render_state::RenderState,
     Vertex,
 };
-use comet_colors::Color;
-use comet_gizmos::{Gizmo, GizmoBuffer, GizmoShape};
-use crate::gizmo_registry::GizmoRegistry;
-use comet_ecs::Component;
 use comet_app::{App, Module};
+use comet_assets::{texture_atlas::*, AtlasRef, ImageRef};
+use comet_colors::Color;
+use comet_ecs::Component;
 use comet_ecs::EcsModuleExt;
-use comet_macros::module;
-use comet_window::renderer::{Renderer, RendererHandle};
+use comet_gizmos::{Gizmo, GizmoBuffer, GizmoShape};
 use comet_log::*;
+use comet_macros::module;
 use comet_math::{v2, v3};
-use comet_assets::{
-    AtlasRef, ImageRef,
-    texture_atlas::*,
-};
+use comet_window::renderer::{Renderer, RendererHandle};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -57,7 +57,10 @@ pub struct RenderHandle2D {
 
 #[module]
 impl RenderHandle2D {
-    fn resolve_atlas_ref(&mut self, path: &'static str) -> Option<(AtlasRef, Option<comet_assets::Asset<comet_assets::Image>>)> {
+    fn resolve_atlas_ref(
+        &mut self,
+        path: &'static str,
+    ) -> Option<(AtlasRef, Option<comet_assets::Asset<comet_assets::Image>>)> {
         let _ = self
             .command_sender
             .send(Renderer2DCommand::ResolveAtlasRef(path));
@@ -65,12 +68,17 @@ impl RenderHandle2D {
             matches!(event, Renderer2DEvent::AtlasRef(..))
         })
         .and_then(|event| match event {
-            Renderer2DEvent::AtlasRef(Some(atlas_ref), image_handle) => Some((atlas_ref, image_handle)),
+            Renderer2DEvent::AtlasRef(Some(atlas_ref), image_handle) => {
+                Some((atlas_ref, image_handle))
+            }
             _ => None,
         })
     }
 
-    fn ensure_handle_in_atlas(&mut self, handle: comet_assets::Asset<comet_assets::Image>) -> Option<AtlasRef> {
+    fn ensure_handle_in_atlas(
+        &mut self,
+        handle: comet_assets::Asset<comet_assets::Image>,
+    ) -> Option<AtlasRef> {
         let _ = self
             .command_sender
             .send(Renderer2DCommand::EnsureHandleInAtlas(handle));
@@ -111,7 +119,12 @@ impl RenderHandle2D {
         .unwrap_or(1.0)
     }
 
-    pub fn precompute_text_bounds(&mut self, text: &str, font: comet_assets::Asset<comet_assets::Font>, font_size: f32) -> v2 {
+    pub fn precompute_text_bounds(
+        &mut self,
+        text: &str,
+        font: comet_assets::Asset<comet_assets::Font>,
+        font_size: f32,
+    ) -> v2 {
         let _ = self
             .command_sender
             .send(Renderer2DCommand::PrecomputedTextBounds {
@@ -189,7 +202,9 @@ impl RenderHandle2D {
             shader_src,
             load,
         };
-        let _ = self.command_sender.send(Renderer2DCommand::AddRenderPass(desc));
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::AddRenderPass(desc));
         self.recv_matching_event(Duration::from_millis(5000), |e| {
             matches!(e, Renderer2DEvent::PassAdded(_))
         })
@@ -200,14 +215,22 @@ impl RenderHandle2D {
     }
 
     pub fn remove_render_pass(&mut self, output: PassOutput) {
-        let _ = self.command_sender.send(Renderer2DCommand::RemoveRenderPass(output.0));
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::RemoveRenderPass(output.0));
         let _ = self.recv_matching_event(Duration::from_millis(5000), |e| {
             matches!(e, Renderer2DEvent::PassRemoved)
         });
     }
 
-    pub fn set_pass_output(&mut self, label: &str, output: Option<PassOutput>) -> Option<PassOutput> {
-        let _ = self.command_sender.send(Renderer2DCommand::SetPassOutput(label.to_string(), output));
+    pub fn set_pass_output(
+        &mut self,
+        label: &str,
+        output: Option<PassOutput>,
+    ) -> Option<PassOutput> {
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::SetPassOutput(label.to_string(), output));
         self.recv_matching_event(Duration::from_millis(5000), |e| {
             matches!(e, Renderer2DEvent::PassOutputSet(_))
         })
@@ -218,10 +241,12 @@ impl RenderHandle2D {
     }
 
     pub fn set_pass_render_target(&mut self, label: &str, render_target: Option<&PassOutput>) {
-        let _ = self.command_sender.send(Renderer2DCommand::SetPassRenderTarget(
-            label.to_string(),
-            render_target.map(|p| p.0.clone()),
-        ));
+        let _ = self
+            .command_sender
+            .send(Renderer2DCommand::SetPassRenderTarget(
+                label.to_string(),
+                render_target.map(|p| p.0.clone()),
+            ));
         let _ = self.recv_matching_event(Duration::from_millis(5000), |e| {
             matches!(e, Renderer2DEvent::PassRenderTargetSet)
         });
@@ -242,7 +267,6 @@ impl RenderHandle2D {
     pub fn hide_all_gizmos<C: Component + Gizmo + 'static>(&mut self) {
         self.gizmo_registry.hide_all::<C>();
     }
-
 }
 
 impl RenderHandle2D {
@@ -364,11 +388,14 @@ impl RenderHandle2D {
         self.gizmo_registry.flush(scene, &mut self.gizmo_buffer);
         let gizmo_shapes = std::mem::take(&mut self.gizmo_buffer.shapes);
 
-        let _ =
-            self.command_sender
-                .send(Renderer2DCommand::SubmitFrame(camera_packet, draws, texts, referenced_handles, gizmo_shapes));
+        let _ = self.command_sender.send(Renderer2DCommand::SubmitFrame(
+            camera_packet,
+            draws,
+            texts,
+            referenced_handles,
+            gizmo_shapes,
+        ));
     }
-
 }
 
 impl RendererHandle for RenderHandle2D {
@@ -392,7 +419,10 @@ impl RendererHandle for RenderHandle2D {
 }
 
 impl comet_app::Module for RenderHandle2D {
-    fn dependencies(app: &mut comet_app::App) where Self: Sized {
+    fn dependencies(app: &mut comet_app::App)
+    where
+        Self: Sized,
+    {
         if !app.has_module::<comet_assets::AssetModule>() {
             app.add_module(comet_assets::AssetModule::new());
         }
@@ -501,7 +531,9 @@ impl Renderer2D {
         atlas.clear_atlas_image();
 
         if let Some(handle) = self.asset_provider.add(atlas) {
-            self.render_state.resources_mut().insert_asset_atlas_handle("atlas".to_string(), handle);
+            self.render_state
+                .resources_mut()
+                .insert_asset_atlas_handle("atlas".to_string(), handle);
         } else {
             error!("Failed to add texture atlas to asset provider");
             return;
@@ -517,7 +549,14 @@ impl Renderer2D {
         let height = self.render_state.config().height;
 
         self.graph.add_node(
-            PassNode::new("Universal", SPRITE_SHADER, wgpu::PrimitiveTopology::TriangleList, Some(gpu_texture_arc), vec![], LoadOp::Background),
+            PassNode::new(
+                "Universal",
+                SPRITE_SHADER,
+                wgpu::PrimitiveTopology::TriangleList,
+                Some(gpu_texture_arc),
+                vec![],
+                LoadOp::Background,
+            ),
             self.render_state.device(),
             self.render_state.queue(),
             format,
@@ -526,7 +565,14 @@ impl Renderer2D {
         );
 
         self.graph.add_node(
-            PassNode::new("Gizmo", GIZMO_SHADER, wgpu::PrimitiveTopology::LineList, None, vec!["Universal", "Font"], LoadOp::Load),
+            PassNode::new(
+                "Gizmo",
+                GIZMO_SHADER,
+                wgpu::PrimitiveTopology::LineList,
+                None,
+                vec!["Universal", "Font"],
+                LoadOp::Load,
+            ),
             self.render_state.device(),
             self.render_state.queue(),
             format,
@@ -535,8 +581,16 @@ impl Renderer2D {
         );
     }
 
-    fn ensure_font_initialized(&mut self, handle: comet_assets::Asset<comet_assets::Font>, size: f32) {
-        let key = FontKey { index: handle.index(), generation: handle.generation(), size_bits: size.to_bits() };
+    fn ensure_font_initialized(
+        &mut self,
+        handle: comet_assets::Asset<comet_assets::Font>,
+        size: f32,
+    ) {
+        let key = FontKey {
+            index: handle.index(),
+            generation: handle.generation(),
+            size_bits: size.to_bits(),
+        };
         if self.font_cache.contains_key(&key) {
             return;
         }
@@ -582,13 +636,21 @@ impl Renderer2D {
         atlas.clear_atlas_image();
         let font_texture_arc = Arc::new(font_texture);
 
-        if let Some(old_handle) = self.render_state.resources().get_asset_atlas_handle("font_atlas") {
+        if let Some(old_handle) = self
+            .render_state
+            .resources()
+            .get_asset_atlas_handle("font_atlas")
+        {
             self.asset_provider.unload(old_handle);
         }
         if let Some(atlas_handle) = self.asset_provider.add(atlas) {
-            self.render_state.resources_mut().insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
+            self.render_state
+                .resources_mut()
+                .insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
         }
-        self.render_state.resources_mut().insert_gpu_texture("font_atlas".to_string(), font_texture_arc.clone());
+        self.render_state
+            .resources_mut()
+            .insert_gpu_texture("font_atlas".to_string(), font_texture_arc.clone());
 
         if self.graph.has_node("Font") {
             let device = self.render_state.device();
@@ -601,7 +663,14 @@ impl Renderer2D {
             let width = self.render_state.config().width;
             let height = self.render_state.config().height;
             self.graph.add_node(
-                PassNode::new("Font", SPRITE_SHADER, wgpu::PrimitiveTopology::TriangleList, Some(font_texture_arc), vec!["Universal"], LoadOp::Load),
+                PassNode::new(
+                    "Font",
+                    SPRITE_SHADER,
+                    wgpu::PrimitiveTopology::TriangleList,
+                    Some(font_texture_arc),
+                    vec!["Universal"],
+                    LoadOp::Load,
+                ),
                 self.render_state.device(),
                 self.render_state.queue(),
                 format,
@@ -611,26 +680,45 @@ impl Renderer2D {
         }
     }
 
-    fn ensure_image_in_atlas(&mut self, handle: comet_assets::Asset<comet_assets::Image>) -> Option<AtlasRef> {
-        let atlas_handle = self.render_state.resources().get_asset_atlas_handle("atlas")?;
+    fn ensure_image_in_atlas(
+        &mut self,
+        handle: comet_assets::Asset<comet_assets::Image>,
+    ) -> Option<AtlasRef> {
+        let atlas_handle = self
+            .render_state
+            .resources()
+            .get_asset_atlas_handle("atlas")?;
 
-        if let Some(region) = self.asset_provider.with(atlas_handle, |atlas| atlas.region_for_handle(handle)).flatten() {
+        if let Some(region) = self
+            .asset_provider
+            .with(atlas_handle, |atlas| atlas.region_for_handle(handle))
+            .flatten()
+        {
             return Some(AtlasRef::new(region, atlas_handle));
         }
 
-        let (w, h) = self.asset_provider.with(handle, |img| (img.width(), img.height()))?;
+        let (w, h) = self
+            .asset_provider
+            .with(handle, |img| (img.width(), img.height()))?;
 
-        let alloc = self.asset_provider.with_mut(atlas_handle, |atlas| {
-            atlas.insert_image_handle(handle, w, h, 1)
-        }).flatten();
+        let alloc = self
+            .asset_provider
+            .with_mut(atlas_handle, |atlas| {
+                atlas.insert_image_handle(handle, w, h, 1)
+            })
+            .flatten();
 
         let (blit_x, blit_y, region) = match alloc {
             Some(r) => r,
             None => {
                 self.rebuild_atlas(atlas_handle);
-                match self.asset_provider.with_mut(atlas_handle, |atlas| {
-                    atlas.insert_image_handle(handle, w, h, 1)
-                }).flatten() {
+                match self
+                    .asset_provider
+                    .with_mut(atlas_handle, |atlas| {
+                        atlas.insert_image_handle(handle, w, h, 1)
+                    })
+                    .flatten()
+                {
                     Some(r) => r,
                     None => {
                         error!("Failed to insert into atlas even after rebuild");
@@ -640,25 +728,35 @@ impl Renderer2D {
             }
         };
 
-        let gpu_texture = self.render_state.resources().get_gpu_texture("atlas")?.clone();
+        let gpu_texture = self
+            .render_state
+            .resources()
+            .get_gpu_texture("atlas")?
+            .clone();
         self.asset_provider.with(handle, |img| {
             gpu_texture.write_region(self.render_state.queue(), blit_x, blit_y, img.data(), w, h);
         });
-        self.asset_provider.with_mut(handle, |img| img.evict_pixels());
+        self.asset_provider
+            .with_mut(handle, |img| img.evict_pixels());
 
         Some(AtlasRef::new(region, atlas_handle))
     }
 
     fn rebuild_atlas(&mut self, atlas_handle: comet_assets::Asset<comet_assets::TextureAtlas>) {
-        let handles = self.asset_provider
+        let handles = self
+            .asset_provider
             .with(atlas_handle, |atlas| atlas.handle_keys())
             .unwrap_or_default();
-        let (old_w, old_h) = self.asset_provider
+        let (old_w, old_h) = self
+            .asset_provider
             .with(atlas_handle, |atlas| (atlas.width(), atlas.height()))
             .unwrap_or((512, 512));
 
         let new_size = (old_w * 2).max(old_h * 2).min(8192);
-        info!("Atlas full: rebuilding {}x{} → {}x{}", old_w, old_h, new_size, new_size);
+        info!(
+            "Atlas full: rebuilding {}x{} → {}x{}",
+            old_w, old_h, new_size, new_size
+        );
 
         self.asset_provider.with_mut(atlas_handle, |atlas| {
             atlas.reset_for_rebuild(new_size, new_size);
@@ -666,7 +764,8 @@ impl Renderer2D {
 
         let new_gpu = GpuTexture::create_2d_texture(
             self.render_state.device(),
-            new_size, new_size,
+            new_size,
+            new_size,
             wgpu::TextureFormat::Rgba8UnormSrgb,
             wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             wgpu::FilterMode::Nearest,
@@ -674,25 +773,42 @@ impl Renderer2D {
         );
 
         for h in handles {
-            let dims = self.asset_provider.with(h, |img| (img.width(), img.height()));
-            let Some((w, h_px)) = dims else { continue; };
+            let dims = self
+                .asset_provider
+                .with(h, |img| (img.width(), img.height()));
+            let Some((w, h_px)) = dims else {
+                continue;
+            };
 
-            let result = self.asset_provider.with_mut(atlas_handle, |atlas| {
-                atlas.insert_image_handle(h, w, h_px, 1)
-            }).flatten();
+            let result = self
+                .asset_provider
+                .with_mut(atlas_handle, |atlas| {
+                    atlas.insert_image_handle(h, w, h_px, 1)
+                })
+                .flatten();
             let Some((blit_x, blit_y, _)) = result else {
                 error!("Failed to re-pack handle during atlas rebuild");
                 continue;
             };
 
-            let uploaded = self.asset_provider.with(h, |img| {
-                if !img.is_evicted() {
-                    new_gpu.write_region(self.render_state.queue(), blit_x, blit_y, img.data(), w, h_px);
-                    true
-                } else {
-                    false
-                }
-            }).unwrap_or(false);
+            let uploaded = self
+                .asset_provider
+                .with(h, |img| {
+                    if !img.is_evicted() {
+                        new_gpu.write_region(
+                            self.render_state.queue(),
+                            blit_x,
+                            blit_y,
+                            img.data(),
+                            w,
+                            h_px,
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
 
             if !uploaded {
                 let path = self.asset_provider.path_for::<comet_assets::Image>(h);
@@ -700,7 +816,14 @@ impl Renderer2D {
                     let fs_path = comet_assets::resolve_asset_path(&path);
                     if let Ok(bytes) = std::fs::read(&fs_path) {
                         if let Ok(img) = comet_assets::Image::from_bytes(&bytes, false) {
-                            new_gpu.write_region(self.render_state.queue(), blit_x, blit_y, img.data(), w, h_px);
+                            new_gpu.write_region(
+                                self.render_state.queue(),
+                                blit_x,
+                                blit_y,
+                                img.data(),
+                                w,
+                                h_px,
+                            );
                         }
                     }
                 }
@@ -708,7 +831,9 @@ impl Renderer2D {
         }
 
         let new_gpu_arc = Arc::new(new_gpu);
-        self.render_state.resources_mut().insert_gpu_texture("atlas".to_string(), new_gpu_arc.clone());
+        self.render_state
+            .resources_mut()
+            .insert_gpu_texture("atlas".to_string(), new_gpu_arc.clone());
 
         let device = self.render_state.device();
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
@@ -721,7 +846,10 @@ impl Renderer2D {
     fn add_pass(&mut self, desc: crate::render_commands::PassDescriptor) -> PassOutput {
         let load = if desc.render_target.is_some() {
             if let LoadOp::Color(_) | LoadOp::Background = desc.load {
-                warn!("pass '{}': render_target with non-Load op, forcing Load", desc.label);
+                warn!(
+                    "pass '{}': render_target with non-Load op, forcing Load",
+                    desc.label
+                );
             }
             LoadOp::Load
         } else {
@@ -785,26 +913,48 @@ impl Renderer2D {
         texture.region()
     }
 
-    fn get_glyph_region(&self, glyph: char, font: comet_assets::Asset<comet_assets::Font>, size: f32) -> TextureRegion {
+    fn get_glyph_region(
+        &self,
+        glyph: char,
+        font: comet_assets::Asset<comet_assets::Font>,
+        size: f32,
+    ) -> TextureRegion {
         let key = format!("{}@{}::{}", font.index(), size.to_bits(), glyph);
         let fallback_key = format!("{}@{}:: ", font.index(), size.to_bits());
 
-        if let Some(handle) = self.render_state.resources().get_asset_atlas_handle("font_atlas") {
-            self.asset_provider.with(handle, |atlas| {
-                atlas.textures().get(&key).copied()
-                    .or_else(|| atlas.textures().get(&fallback_key).copied())
-                    .unwrap_or_else(|| fatal!("No glyph or fallback for '{}' in font atlas", glyph))
-            }).unwrap_or_else(|| {
-                fatal!("Failed to access font atlas from asset provider");
-            })
+        if let Some(handle) = self
+            .render_state
+            .resources()
+            .get_asset_atlas_handle("font_atlas")
+        {
+            self.asset_provider
+                .with(handle, |atlas| {
+                    atlas
+                        .textures()
+                        .get(&key)
+                        .copied()
+                        .or_else(|| atlas.textures().get(&fallback_key).copied())
+                        .unwrap_or_else(|| {
+                            fatal!("No glyph or fallback for '{}' in font atlas", glyph)
+                        })
+                })
+                .unwrap_or_else(|| {
+                    fatal!("Failed to access font atlas from asset provider");
+                })
         } else {
             fatal!("Font atlas not initialized yet");
         }
     }
 
-    pub fn precompute_text_bounds(&mut self, text: &str, font: comet_assets::Asset<comet_assets::Font>, size: f32) -> v2 {
+    pub fn precompute_text_bounds(
+        &mut self,
+        text: &str,
+        font: comet_assets::Asset<comet_assets::Font>,
+        size: f32,
+    ) -> v2 {
         let mut bounds = v2::ZERO;
-        let _ = self.add_text_to_buffers(text, font, size, v2::ZERO, wgpu::Color::WHITE, &mut bounds);
+        let _ =
+            self.add_text_to_buffers(text, font, size, v2::ZERO, wgpu::Color::WHITE, &mut bounds);
         bounds
     }
 
@@ -819,7 +969,11 @@ impl Renderer2D {
     ) -> (Vec<Vertex>, Vec<u16>) {
         self.ensure_font_initialized(font, size);
 
-        let cache_key = FontKey { index: font.index(), generation: font.generation(), size_bits: size.to_bits() };
+        let cache_key = FontKey {
+            index: font.index(),
+            generation: font.generation(),
+            size_bits: size.to_bits(),
+        };
         let line_height_px = self.font_cache.get(&cache_key).copied().unwrap_or(size);
 
         let vert_color = [
@@ -829,13 +983,8 @@ impl Renderer2D {
             color.a as f32,
         ];
 
-        let config = self.render_state.config();
-        let line_height = line_height_px / config.height as f32;
-
-        let screen_position = comet_math::v2::new(
-            position.x() / config.width as f32,
-            position.y() / config.height as f32,
-        );
+        let line_height = line_height_px;
+        let screen_position = position;
 
         let lines: Vec<String> = text
             .split('\n')
@@ -844,7 +993,8 @@ impl Renderer2D {
 
         let mut max_line_width = 0.0f32;
         for line in &lines {
-            let line_width: f32 = line.chars()
+            let line_width: f32 = line
+                .chars()
                 .map(|c| self.get_glyph_region(c, font, size).advance())
                 .sum();
             if line_width > max_line_width {
@@ -864,10 +1014,10 @@ impl Renderer2D {
                 let region = self.get_glyph_region(c, font, size);
 
                 let (dim_x, dim_y) = region.dimensions();
-                let w = dim_x as f32 / config.width as f32;
-                let h = dim_y as f32 / config.height as f32;
-                let offset_x = region.offset_x() / config.width as f32;
-                let offset_y = region.offset_y() / config.height as f32;
+                let w = dim_x as f32;
+                let h = dim_y as f32;
+                let offset_x = region.offset_x();
+                let offset_y = region.offset_y();
 
                 let glyph_left = screen_position.x() + x_offset + offset_x;
                 let glyph_top = screen_position.y() - offset_y - y_offset;
@@ -876,17 +1026,37 @@ impl Renderer2D {
 
                 let buffer_size = vertex_data.len() as u16;
                 vertex_data.extend_from_slice(&[
-                    Vertex::new([glyph_left,  glyph_top,    0.0], [region.u0(), region.v0()], vert_color),
-                    Vertex::new([glyph_left,  glyph_bottom, 0.0], [region.u0(), region.v1()], vert_color),
-                    Vertex::new([glyph_right, glyph_bottom, 0.0], [region.u1(), region.v1()], vert_color),
-                    Vertex::new([glyph_right, glyph_top,    0.0], [region.u1(), region.v0()], vert_color),
+                    Vertex::new(
+                        [glyph_left, glyph_top, 0.0],
+                        [region.u0(), region.v0()],
+                        vert_color,
+                    ),
+                    Vertex::new(
+                        [glyph_left, glyph_bottom, 0.0],
+                        [region.u0(), region.v1()],
+                        vert_color,
+                    ),
+                    Vertex::new(
+                        [glyph_right, glyph_bottom, 0.0],
+                        [region.u1(), region.v1()],
+                        vert_color,
+                    ),
+                    Vertex::new(
+                        [glyph_right, glyph_top, 0.0],
+                        [region.u1(), region.v0()],
+                        vert_color,
+                    ),
                 ]);
                 index_data.extend_from_slice(&[
-                    buffer_size, buffer_size + 1, buffer_size + 3,
-                    buffer_size + 1, buffer_size + 2, buffer_size + 3,
+                    buffer_size,
+                    buffer_size + 1,
+                    buffer_size + 3,
+                    buffer_size + 1,
+                    buffer_size + 2,
+                    buffer_size + 3,
                 ]);
 
-                x_offset += region.advance() / config.width as f32;
+                x_offset += region.advance();
             }
 
             y_offset += line_height;
@@ -904,19 +1074,26 @@ impl Renderer2D {
         referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
         gizmo_shapes: Vec<GizmoShape>,
     ) {
-        if let Some(atlas_handle) = self.render_state.resources().get_asset_atlas_handle("atlas") {
-            let any_evicted = self.asset_provider.with_mut(atlas_handle, |atlas| {
-                let mut evicted = false;
-                for handle in &referenced_handles {
-                    if atlas.region_for_handle(*handle).is_some() {
-                        atlas.mark_used(*handle);
-                    } else {
-                        evicted = true;
+        if let Some(atlas_handle) = self
+            .render_state
+            .resources()
+            .get_asset_atlas_handle("atlas")
+        {
+            let any_evicted = self
+                .asset_provider
+                .with_mut(atlas_handle, |atlas| {
+                    let mut evicted = false;
+                    for handle in &referenced_handles {
+                        if atlas.region_for_handle(*handle).is_some() {
+                            atlas.mark_used(*handle);
+                        } else {
+                            evicted = true;
+                        }
                     }
-                }
-                atlas.evict_stale(120);
-                evicted
-            }).unwrap_or(false);
+                    atlas.evict_stale(120);
+                    evicted
+                })
+                .unwrap_or(false);
             if any_evicted {
                 let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
             }
@@ -1069,11 +1246,19 @@ impl Renderer2D {
                 GizmoShape::Line { start, end, color } => {
                     let c = [color.red(), color.green(), color.blue(), color.alpha()];
                     let base = gizmo_verts.len() as u16;
-                    gizmo_verts.push(Vertex::new([start.x(), start.y(), start.z()], [0.0, 0.0], c));
+                    gizmo_verts.push(Vertex::new(
+                        [start.x(), start.y(), start.z()],
+                        [0.0, 0.0],
+                        c,
+                    ));
                     gizmo_verts.push(Vertex::new([end.x(), end.y(), end.z()], [0.0, 0.0], c));
                     gizmo_indices.extend_from_slice(&[base, base + 1]);
                 }
-                GizmoShape::Rect { position, size, color } => {
+                GizmoShape::Rect {
+                    position,
+                    size,
+                    color,
+                } => {
                     let c = [color.red(), color.green(), color.blue(), color.alpha()];
                     let hx = size.x() * 0.5;
                     let hy = size.y() * 0.5;
@@ -1088,13 +1273,21 @@ impl Renderer2D {
                         gizmo_verts.push(Vertex::new(*corner, [0.0, 0.0], c));
                     }
                     gizmo_indices.extend_from_slice(&[
-                        base, base + 1,
-                        base + 1, base + 2,
-                        base + 2, base + 3,
-                        base + 3, base,
+                        base,
+                        base + 1,
+                        base + 1,
+                        base + 2,
+                        base + 2,
+                        base + 3,
+                        base + 3,
+                        base,
                     ]);
                 }
-                GizmoShape::Circle { position, radius, color } => {
+                GizmoShape::Circle {
+                    position,
+                    radius,
+                    color,
+                } => {
                     let c = [color.red(), color.green(), color.blue(), color.alpha()];
                     let segments = 32u32;
                     let base = gizmo_verts.len() as u16;
@@ -1107,7 +1300,12 @@ impl Renderer2D {
                         gizmo_indices.extend_from_slice(&[base + i as u16, base + next as u16]);
                     }
                 }
-                GizmoShape::NGon { position, radius, vertices, color } => {
+                GizmoShape::NGon {
+                    position,
+                    radius,
+                    vertices,
+                    color,
+                } => {
                     let c = [color.red(), color.green(), color.blue(), color.alpha()];
                     let n = vertices.max(3);
                     let base = gizmo_verts.len() as u16;
@@ -1198,26 +1396,31 @@ impl Renderer for Renderer2D {
         match command {
             Renderer2DCommand::Clear => {}
             Renderer2DCommand::ResolveAtlasRef(path) => {
-                let atlas_ref = self.render_state
+                let atlas_ref = self
+                    .render_state
                     .resources()
                     .get_asset_atlas_handle("atlas")
                     .and_then(|handle| {
-                        self.asset_provider.with(handle, |atlas| {
-                            atlas.textures()
-                                .get(path)
-                                .copied()
-                                .map(|region| AtlasRef::new(region, handle))
-                        })
-                        .flatten()
+                        self.asset_provider
+                            .with(handle, |atlas| {
+                                atlas
+                                    .textures()
+                                    .get(path)
+                                    .copied()
+                                    .map(|region| AtlasRef::new(region, handle))
+                            })
+                            .flatten()
                     });
 
-                let mut dynamic_image_handle: Option<comet_assets::Asset<comet_assets::Image>> = None;
+                let mut dynamic_image_handle: Option<comet_assets::Asset<comet_assets::Image>> =
+                    None;
                 let atlas_ref = atlas_ref.or_else(|| {
                     let fs_path = comet_assets::resolve_asset_path(path);
                     let bytes = std::fs::read(&fs_path).ok()?;
                     let image = comet_assets::Image::from_bytes(&bytes, false).ok()?;
                     let image_handle = self.asset_provider.add(image)?;
-                    self.asset_provider.track_for_reload::<comet_assets::Image>(image_handle, path);
+                    self.asset_provider
+                        .track_for_reload::<comet_assets::Image>(image_handle, path);
                     let result = self.ensure_image_in_atlas(image_handle);
                     if result.is_some() {
                         dynamic_image_handle = Some(image_handle);
@@ -1225,11 +1428,15 @@ impl Renderer for Renderer2D {
                     result
                 });
 
-                let _ = self.event_sender.send(Renderer2DEvent::AtlasRef(atlas_ref, dynamic_image_handle));
+                let _ = self
+                    .event_sender
+                    .send(Renderer2DEvent::AtlasRef(atlas_ref, dynamic_image_handle));
             }
             Renderer2DCommand::EnsureHandleInAtlas(handle) => {
                 let atlas_ref = self.ensure_image_in_atlas(handle);
-                let _ = self.event_sender.send(Renderer2DEvent::AtlasRef(atlas_ref, None));
+                let _ = self
+                    .event_sender
+                    .send(Renderer2DEvent::AtlasRef(atlas_ref, None));
             }
             Renderer2DCommand::Size => {
                 let _ = self.event_sender.send(Renderer2DEvent::Size(self.size()));
@@ -1252,12 +1459,18 @@ impl Renderer for Renderer2D {
                         height: bounds.y(),
                     });
             }
-            Renderer2DCommand::SubmitFrame(camera, draws, texts, referenced_handles, gizmo_shapes) => {
-                self.submit_frame(camera, draws, texts, referenced_handles, gizmo_shapes)
-            }
+            Renderer2DCommand::SubmitFrame(
+                camera,
+                draws,
+                texts,
+                referenced_handles,
+                gizmo_shapes,
+            ) => self.submit_frame(camera, draws, texts, referenced_handles, gizmo_shapes),
             Renderer2DCommand::AddRenderPass(desc) => {
                 let pass_output = self.add_pass(desc);
-                let _ = self.event_sender.send(Renderer2DEvent::PassAdded(pass_output));
+                let _ = self
+                    .event_sender
+                    .send(Renderer2DEvent::PassAdded(pass_output));
             }
             Renderer2DCommand::RemoveRenderPass(label) => {
                 self.remove_pass(&label);
@@ -1265,7 +1478,9 @@ impl Renderer for Renderer2D {
             }
             Renderer2DCommand::SetPassOutput(label, output) => {
                 let handle = self.set_pass_output(&label, output);
-                let _ = self.event_sender.send(Renderer2DEvent::PassOutputSet(handle));
+                let _ = self
+                    .event_sender
+                    .send(Renderer2DEvent::PassOutputSet(handle));
             }
             Renderer2DCommand::SetPassRenderTarget(label, render_target) => {
                 self.set_pass_render_target(&label, render_target);
@@ -1385,7 +1600,10 @@ impl Renderer2DModule {
 }
 
 impl Module for Renderer2DModule {
-    fn dependencies(app: &mut App) where Self: Sized {
+    fn dependencies(app: &mut App)
+    where
+        Self: Sized,
+    {
         if !app.has_module::<comet_assets::AssetModule>() {
             app.add_module(comet_assets::AssetModule::new());
         }
@@ -1405,10 +1623,11 @@ impl Module for Renderer2DModule {
                 let erased: Box<dyn comet_window::ErasedRenderer> =
                     Box::new(ErasedRenderer2D { renderer, cmd_rx });
                 let add_handle: Box<dyn FnOnce(&mut comet_app::App) + Send> =
-                    Box::new(move |app| { app.add_module(handle); });
+                    Box::new(move |app| {
+                        app.add_module(handle);
+                    });
 
                 (erased, add_handle)
             }));
     }
 }
-
