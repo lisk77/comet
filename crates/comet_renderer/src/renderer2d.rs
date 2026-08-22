@@ -13,7 +13,7 @@ use crate::{
     Vertex,
 };
 use comet_app::{App, Module};
-use comet_assets::{texture_atlas::*, AtlasRef, ImageRef};
+use comet_assets::{texture_atlas::*, AssetPath, AtlasRef, ImageRef};
 use comet_colors::Color;
 use comet_ecs::Component;
 use comet_ecs::EcsModuleExt;
@@ -59,7 +59,7 @@ pub struct RenderHandle2D {
 impl RenderHandle2D {
     fn resolve_atlas_ref(
         &mut self,
-        path: &'static str,
+        path: AssetPath,
     ) -> Option<(AtlasRef, Option<comet_assets::Asset<comet_assets::Image>>)> {
         let _ = self
             .command_sender
@@ -1405,7 +1405,7 @@ impl Renderer for Renderer2D {
                             .with(handle, |atlas| {
                                 atlas
                                     .textures()
-                                    .get(path)
+                                    .get(path.as_str())
                                     .copied()
                                     .map(|region| AtlasRef::new(region, handle))
                             })
@@ -1415,12 +1415,12 @@ impl Renderer for Renderer2D {
                 let mut dynamic_image_handle: Option<comet_assets::Asset<comet_assets::Image>> =
                     None;
                 let atlas_ref = atlas_ref.or_else(|| {
-                    let fs_path = comet_assets::resolve_asset_path(path);
+                    let fs_path = comet_assets::resolve_asset_path(path.as_str());
                     let bytes = std::fs::read(&fs_path).ok()?;
                     let image = comet_assets::Image::from_bytes(&bytes, false).ok()?;
                     let image_handle = self.asset_provider.add(image)?;
                     self.asset_provider
-                        .track_for_reload::<comet_assets::Image>(image_handle, path);
+                        .track_for_reload::<comet_assets::Image>(image_handle, path.clone());
                     let result = self.ensure_image_in_atlas(image_handle);
                     if result.is_some() {
                         dynamic_image_handle = Some(image_handle);

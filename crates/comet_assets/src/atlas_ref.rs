@@ -1,4 +1,9 @@
-use crate::{asset_handle::Asset, image::Image, texture_atlas::{TextureAtlas, TextureRegion}};
+use crate::{
+    asset_handle::Asset,
+    image::Image,
+    texture_atlas::{TextureAtlas, TextureRegion},
+    AssetPath, AssetSource,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AtlasRef {
@@ -20,9 +25,9 @@ impl AtlasRef {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ImageRef {
-    Unresolved(&'static str),
+    Unresolved(AssetPath),
     Atlas(AtlasRef),
     Handle(Asset<Image>),
     ResolvedHandle(Asset<Image>, AtlasRef),
@@ -30,12 +35,45 @@ pub enum ImageRef {
 
 impl Default for ImageRef {
     fn default() -> Self {
-        Self::Unresolved("")
+        Self::Unresolved(AssetPath::from(""))
     }
 }
 
-impl From<&'static str> for ImageRef {
-    fn from(path: &'static str) -> Self {
+impl From<AssetSource<Image>> for ImageRef {
+    fn from(source: AssetSource<Image>) -> Self {
+        match source {
+            AssetSource::Path(path) => Self::Unresolved(path),
+            AssetSource::Handle(handle) => Self::Handle(handle),
+        }
+    }
+}
+
+impl From<AssetPath> for ImageRef {
+    fn from(path: AssetPath) -> Self {
         Self::Unresolved(path)
+    }
+}
+
+impl From<&str> for ImageRef {
+    fn from(path: &str) -> Self {
+        Self::Unresolved(path.into())
+    }
+}
+
+impl From<String> for ImageRef {
+    fn from(path: String) -> Self {
+        Self::Unresolved(path.into())
+    }
+}
+
+impl From<Asset<Image>> for ImageRef {
+    fn from(handle: Asset<Image>) -> Self {
+        Self::Handle(handle)
+    }
+}
+
+impl From<AtlasRef> for ImageRef {
+    fn from(atlas: AtlasRef) -> Self {
+        Self::Atlas(atlas)
     }
 }

@@ -6,7 +6,7 @@
 use comet_gizmos::{Gizmo, GizmoBuffer};
 use crate::math::{v2, v3, v4, m4};
 use comet_colors::{Color, LinearRgba};
-use comet_assets::{Asset, Image, ImageRef};
+use comet_assets::{AssetSource, Image, ImageRef};
 use component_derive::Component;
 
 pub trait Component: Send + Sync + 'static {
@@ -193,26 +193,22 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    pub fn new(texture: &'static str, is_visible: bool, draw_index: u32) -> Self {
+    pub fn new(
+        texture: impl Into<AssetSource<Image>>,
+        is_visible: bool,
+        draw_index: u32,
+    ) -> Self {
         Self {
             is_visible,
-            texture: ImageRef::Unresolved(texture),
+            texture: texture.into().into(),
             draw_index,
         }
     }
 
-    pub fn with_texture(texture: &'static str) -> Self {
+    pub fn with_texture(texture: impl Into<AssetSource<Image>>) -> Self {
         Self {
             is_visible: true,
-            texture: ImageRef::Unresolved(texture),
-            draw_index: 0,
-        }
-    }
-
-    pub fn with_handle(handle: Asset<Image>) -> Self {
-        Self {
-            is_visible: true,
-            texture: ImageRef::Handle(handle),
+            texture: texture.into().into(),
             draw_index: 0,
         }
     }
@@ -234,15 +230,11 @@ impl Sprite {
     }
 
     pub fn texture(&self) -> ImageRef {
-        self.texture
+        self.texture.clone()
     }
 
-    pub fn set_texture(&mut self, texture: &'static str) {
-        self.texture = ImageRef::Unresolved(texture);
-    }
-
-    pub fn set_texture_asset(&mut self, texture: Asset<Image>) {
-        self.texture = ImageRef::Handle(texture);
+    pub fn set_texture(&mut self, texture: impl Into<AssetSource<Image>>) {
+        self.texture = texture.into().into();
     }
 
     pub fn set_image_ref(&mut self, image_ref: ImageRef) {

@@ -1,9 +1,8 @@
 use comet::prelude::*;
 
 fn setup(app: &mut App) {
-    // Load the audio clip (name for playback is the file stem: "hit")
-    app.load::<AudioClip>("res://sounds/hit.ogg");
-    app.play_audio("hit", true);
+    let clip = app.load::<AudioClip>("res://sounds/hit.ogg");
+    app.play_audio(clip, true);
 }
 
 fn update(_app: &mut App, _dt: f32) {}

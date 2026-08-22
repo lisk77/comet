@@ -44,7 +44,7 @@ pub struct PassDescriptor {
 
 pub enum Renderer2DCommand {
     Clear,
-    ResolveAtlasRef(&'static str),
+    ResolveAtlasRef(comet_assets::AssetPath),
     EnsureHandleInAtlas(comet_assets::Asset<comet_assets::Image>),
     Size,
     ScaleFactor,
