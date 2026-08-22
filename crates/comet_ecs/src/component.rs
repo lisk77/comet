@@ -3,10 +3,10 @@
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2d)
 // They are intended to work with the base suite of systems provided by the engine.
-use comet_gizmos::{Gizmo, GizmoBuffer};
-use crate::math::{v2, v3, v4, m4};
-use comet_colors::{Color, LinearRgba};
+use crate::math::{m4, v2, v3, v4};
 use comet_assets::{AssetSource, Image, ImageRef};
+use comet_colors::{Color, LinearRgba};
+use comet_gizmos::{Gizmo, GizmoBuffer};
 use component_derive::Component;
 
 pub trait Component: Send + Sync + 'static {
@@ -34,46 +34,53 @@ pub enum Projection {
 }
 
 impl Default for Projection {
-    fn default() -> Self { Self::Orthographic }
+    fn default() -> Self {
+        Self::Orthographic
+    }
 }
 
-#[derive(Component)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Transform {
     position: v3,
     rotation: v3,
     scale: v3,
 }
 
-impl Transform {
-    pub fn new() -> Self {
+impl Component for Transform {}
+
+impl Default for Transform {
+    fn default() -> Self {
         Self {
             position: v3::ZERO,
             rotation: v3::ZERO,
             scale: v3::new(1.0, 1.0, 1.0),
         }
+    }
+}
+
+impl Transform {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn with_position(position: v3) -> Self {
         Self {
             position,
-            rotation: v3::ZERO,
-            scale: v3::new(1.0, 1.0, 1.0),
+            ..Self::default()
         }
     }
 
     pub fn with_rotation(rotation: v3) -> Self {
         Self {
-            position: v3::ZERO,
             rotation,
-            scale: v3::new(1.0, 1.0, 1.0),
+            ..Self::default()
         }
     }
 
     pub fn with_scale(scale: v3) -> Self {
         Self {
-            position: v3::ZERO,
-            rotation: v3::ZERO,
             scale,
+            ..Self::default()
         }
     }
 
@@ -92,7 +99,7 @@ impl Transform {
     pub fn set_y(&mut self, y: f32) {
         self.position.y = y;
     }
-    
+
     pub fn set_z(&mut self, z: f32) {
         self.position.z = z;
     }
@@ -144,31 +151,24 @@ impl Transform {
 
 #[derive(Component)]
 pub enum Collider {
-    Rectangle {
-        size: v2,
-    },
-    Box {
-        size: v3,
-    },
-    Circle {
-        radius: f32,
-    },
-    Sphere {
-        radius: f32,
-    },
-    Capsule {
-        height: f32,
-        radius: f32,
-    },
+    Rectangle { size: v2 },
+    Box { size: v3 },
+    Circle { radius: f32 },
+    Sphere { radius: f32 },
+    Capsule { height: f32, radius: f32 },
 }
 
 impl Collider {
     pub fn rectangle(width: f32, height: f32) -> Self {
-        Self::Rectangle { size: v2::new(width, height) }
+        Self::Rectangle {
+            size: v2::new(width, height),
+        }
     }
 
     pub fn box_col(width: f32, height: f32, depth: f32) -> Self {
-        Self::Box { size: v3::new(width, height, depth) }
+        Self::Box {
+            size: v3::new(width, height, depth),
+        }
     }
 
     pub fn circle(radius: f32) -> Self {
@@ -182,7 +182,6 @@ impl Collider {
     pub fn capsule(height: f32, radius: f32) -> Self {
         Self::Capsule { height, radius }
     }
-
 }
 
 #[derive(Component)]
@@ -193,11 +192,7 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    pub fn new(
-        texture: impl Into<AssetSource<Image>>,
-        is_visible: bool,
-        draw_index: u32,
-    ) -> Self {
+    pub fn new(texture: impl Into<AssetSource<Image>>, is_visible: bool, draw_index: u32) -> Self {
         Self {
             is_visible,
             texture: texture.into().into(),
@@ -217,12 +212,22 @@ impl Sprite {
         self.draw_index
     }
 
+    pub fn with_draw_index(mut self, index: u32) -> Self {
+        self.draw_index = index;
+        self
+    }
+
     pub fn set_draw_index(&mut self, index: u32) {
         self.draw_index = index
     }
 
     pub fn is_visible(&self) -> bool {
         self.is_visible
+    }
+
+    pub fn with_visibility(mut self, is_visible: bool) -> Self {
+        self.is_visible = is_visible;
+        self
     }
 
     pub fn set_visibility(&mut self, is_visible: bool) {
@@ -242,24 +247,67 @@ impl Sprite {
     }
 }
 
-#[derive(Component)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Camera {
     pub zoom: f32,
     pub priority: u8,
     pub projection: Projection,
 }
 
+impl Component for Camera {}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            zoom: 1.0,
+            priority: 0,
+            projection: Projection::default(),
+        }
+    }
+}
+
 impl Camera {
     pub fn new(zoom: f32, priority: u8, projection: Projection) -> Self {
-        Self { zoom, priority, projection }
+        Self {
+            zoom,
+            priority,
+            projection,
+        }
     }
 
-    pub fn zoom(&self) -> f32 { self.zoom }
-    pub fn set_zoom(&mut self, zoom: f32) { self.zoom = zoom; }
-    pub fn priority(&self) -> u8 { self.priority }
-    pub fn set_priority(&mut self, priority: u8) { self.priority = priority; }
-    pub fn projection(&self) -> &Projection { &self.projection }
-    pub fn set_projection(&mut self, projection: Projection) { self.projection = projection; }
+    pub fn with_zoom(mut self, zoom: f32) -> Self {
+        self.zoom = zoom;
+        self
+    }
+
+    pub fn with_priority(mut self, priority: u8) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    pub fn with_projection(mut self, projection: Projection) -> Self {
+        self.projection = projection;
+        self
+    }
+
+    pub fn zoom(&self) -> f32 {
+        self.zoom
+    }
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.zoom = zoom;
+    }
+    pub fn priority(&self) -> u8 {
+        self.priority
+    }
+    pub fn set_priority(&mut self, priority: u8) {
+        self.priority = priority;
+    }
+    pub fn projection(&self) -> &Projection {
+        &self.projection
+    }
+    pub fn set_projection(&mut self, projection: Projection) {
+        self.projection = projection;
+    }
 }
 
 pub struct Camera2d {
@@ -267,12 +315,36 @@ pub struct Camera2d {
     pub camera: Camera,
 }
 
+impl Default for Camera2d {
+    fn default() -> Self {
+        Self {
+            transform: Transform::default(),
+            camera: Camera::default(),
+        }
+    }
+}
+
 impl Camera2d {
     pub fn new(zoom: f32, priority: u8) -> Self {
         Self {
-            transform: Transform::new(),
+            transform: Transform::default(),
             camera: Camera::new(zoom, priority, Projection::Orthographic),
         }
+    }
+
+    pub fn with_transform(mut self, transform: Transform) -> Self {
+        self.transform = transform;
+        self
+    }
+
+    pub fn with_zoom(mut self, zoom: f32) -> Self {
+        self.camera.set_zoom(zoom);
+        self
+    }
+
+    pub fn with_priority(mut self, priority: u8) -> Self {
+        self.camera.set_priority(priority);
+        self
     }
 }
 
@@ -333,21 +405,30 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new(
-        content: impl Into<String>,
-        font: comet_assets::Asset<comet_assets::Font>,
-        font_size: f32,
-        is_visible: bool,
-        color: impl Color,
-    ) -> Self {
+    pub fn new(content: impl Into<String>, font: comet_assets::Asset<comet_assets::Font>) -> Self {
         Self {
             content: content.into(),
             font,
-            font_size,
-            color: color.to_vec(),
-            is_visible,
+            font_size: 16.0,
+            color: LinearRgba::new(1.0, 1.0, 1.0, 1.0).to_vec(),
+            is_visible: true,
             bounds: v2::ZERO,
         }
+    }
+
+    pub fn with_font_size(mut self, font_size: f32) -> Self {
+        self.font_size = font_size;
+        self
+    }
+
+    pub fn with_color(mut self, color: impl Color) -> Self {
+        self.color = color.to_vec();
+        self
+    }
+
+    pub fn with_visibility(mut self, is_visible: bool) -> Self {
+        self.is_visible = is_visible;
+        self
     }
 
     pub fn content(&self) -> &str {
@@ -376,6 +457,10 @@ impl Text {
 
     pub fn color(&self) -> impl Color {
         LinearRgba::from_vec(self.color)
+    }
+
+    pub fn set_color(&mut self, color: impl Color) {
+        self.color = color.to_vec();
     }
 
     pub fn set_visibility(&mut self, visibility: bool) {
@@ -443,8 +528,16 @@ impl Gizmo for Collider {
             }
             Collider::Capsule { height, radius } => {
                 buffer.draw_rect(position, v3::new(*radius * 2.0, *height, 0.0), color);
-                buffer.draw_circle(v3::new(position.x(), position.y() + height * 0.5, position.z()), *radius, color);
-                buffer.draw_circle(v3::new(position.x(), position.y() - height * 0.5, position.z()), *radius, color);
+                buffer.draw_circle(
+                    v3::new(position.x(), position.y() + height * 0.5, position.z()),
+                    *radius,
+                    color,
+                );
+                buffer.draw_circle(
+                    v3::new(position.x(), position.y() - height * 0.5, position.z()),
+                    *radius,
+                    color,
+                );
             }
         }
     }
