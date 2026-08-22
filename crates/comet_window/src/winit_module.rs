@@ -102,8 +102,6 @@ impl Runner for WinitRunner {
         let winit_mod = app.take_module::<WinitModule>().unwrap();
         let title = winit_mod.title.clone();
         let event_hooks = winit_mod.event_hooks;
-        let update_timer = app.dt();
-
         info!("Starting up {}!", title);
 
         let event_loop = EventLoop::new().unwrap();
@@ -129,7 +127,7 @@ impl Runner for WinitRunner {
 
         info!("Starting event loop!");
         
-        run_event_loop(event_loop, renderer, window, event_hooks, quit_flag, update_timer);
+        run_event_loop(event_loop, renderer, window, event_hooks, quit_flag);
 
         logic_thread.join().ok();
         info!("Shutting down {}!", title);
@@ -193,7 +191,6 @@ fn run_event_loop(
     window: Arc<Window>,
     event_hooks: Vec<Box<dyn Fn(&Event<()>) + Send + Sync>>,
     quit_flag: Arc<AtomicBool>,
-    update_timer: f32,
 ) {
     let mut window_occluded = false;
 
@@ -243,13 +240,7 @@ fn run_event_loop(
                     } else {
                         drain_renderer_commands(&mut renderer);
                         window.request_redraw();
-                        if update_timer.is_finite() {
-                            let next = std::time::Instant::now()
-                                + std::time::Duration::from_secs_f32(update_timer);
-                            elwt.set_control_flow(ControlFlow::WaitUntil(next));
-                        } else {
-                            elwt.set_control_flow(ControlFlow::Wait);
-                        }
+                        elwt.set_control_flow(ControlFlow::Poll);
                     }
                 }
                 _ => {}
