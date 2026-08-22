@@ -2,7 +2,6 @@ use crate::module::Module;
 use crate::runner::Runner;
 use comet_log::fatal;
 use std::any::{type_name, Any, TypeId};
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 const MAX_TICK_STEPS: usize = 10;
@@ -10,8 +9,8 @@ const MAX_TICK_STEPS: usize = 10;
 pub struct App {
     delta_time: f32,
     update_timer: f32,
-    modules: HashMap<TypeId, RefCell<Box<dyn Any + Send>>>,
-    contexts: HashMap<TypeId, RefCell<Box<dyn Any + Send>>>,
+    modules: HashMap<TypeId, Box<dyn Any + Send>>,
+    contexts: HashMap<TypeId, Box<dyn Any + Send>>,
     should_quit: bool,
     tick_systems: Vec<fn(&mut App, f32)>,
     pending_tick_add: Vec<fn(&mut App, f32)>,
@@ -59,7 +58,7 @@ impl App {
     pub fn with_module<M: Module>(mut self, mut module: M) -> Self {
         M::dependencies(&mut self);
         module.build(&mut self);
-        self.modules.insert(TypeId::of::<M>(), RefCell::new(Box::new(module)));
+        self.modules.insert(TypeId::of::<M>(), Box::new(module));
         self
     }
 
@@ -67,33 +66,27 @@ impl App {
     pub fn add_module<M: Module>(&mut self, mut module: M) {
         M::dependencies(self);
         module.build(self);
-        self.modules.insert(TypeId::of::<M>(), RefCell::new(Box::new(module)));
+        self.modules.insert(TypeId::of::<M>(), Box::new(module));
     }
 
     /// Re-inserts a previously taken module without calling `dependencies` or `build` again.
     pub fn reinsert_module<M: Module>(&mut self, module: M) {
-        self.modules.insert(TypeId::of::<M>(), RefCell::new(Box::new(module)));
+        self.modules.insert(TypeId::of::<M>(), Box::new(module));
     }
 
     /// Returns a reference to the module of type `M`. Panics if not loaded.
     pub fn get_module<M: 'static>(&self) -> &M {
         self.modules
             .get(&TypeId::of::<M>())
-            .and_then(|cell| {
-                let ptr = cell.borrow().as_ref() as *const dyn Any;
-                unsafe { (*ptr).downcast_ref::<M>() }
-            })
+            .and_then(|module| module.downcast_ref::<M>())
             .unwrap_or_else(|| fatal!("Module {} is not loaded", type_name::<M>()))
     }
 
     /// Returns a mutable reference to the module of type `M`. Panics if not loaded.
-    pub fn get_module_mut<M: 'static>(&self) -> &mut M {
+    pub fn get_module_mut<M: 'static>(&mut self) -> &mut M {
         self.modules
-            .get(&TypeId::of::<M>())
-            .and_then(|cell| {
-                let ptr = cell.borrow_mut().as_mut() as *mut dyn Any;
-                unsafe { (*ptr).downcast_mut::<M>() }
-            })
+            .get_mut(&TypeId::of::<M>())
+            .and_then(|module| module.downcast_mut::<M>())
             .unwrap_or_else(|| fatal!("Module {} is not loaded", type_name::<M>()))
     }
 
@@ -106,34 +99,28 @@ impl App {
     pub fn take_module<M: 'static>(&mut self) -> Option<M> {
         self.modules
             .remove(&TypeId::of::<M>())
-            .and_then(|cell| cell.into_inner().downcast::<M>().ok())
+            .and_then(|module| module.downcast::<M>().ok())
             .map(|b| *b)
     }
 
     /// Inserts a context value, replacing any previous value of the same type.
     pub fn add_context<T: Any + Send + 'static>(&mut self, ctx: T) {
-        self.contexts.insert(TypeId::of::<T>(), RefCell::new(Box::new(ctx)));
+        self.contexts.insert(TypeId::of::<T>(), Box::new(ctx));
     }
 
     /// Returns a reference to the context of type `T`. Panics if not present.
     pub fn context<T: Any + Send + 'static>(&self) -> &T {
         self.contexts
             .get(&TypeId::of::<T>())
-            .and_then(|cell| {
-                let ptr = cell.borrow().as_ref() as *const dyn Any;
-                unsafe { (*ptr).downcast_ref::<T>() }
-            })
+            .and_then(|context| context.downcast_ref::<T>())
             .unwrap_or_else(|| fatal!("Context {} not found", type_name::<T>()))
     }
 
     /// Returns a mutable reference to the context of type `T`. Panics if not present.
-    pub fn context_mut<T: Any + Send + 'static>(&self) -> &mut T {
+    pub fn context_mut<T: Any + Send + 'static>(&mut self) -> &mut T {
         self.contexts
-            .get(&TypeId::of::<T>())
-            .and_then(|cell| {
-                let ptr = cell.borrow_mut().as_mut() as *mut dyn Any;
-                unsafe { (*ptr).downcast_mut::<T>() }
-            })
+            .get_mut(&TypeId::of::<T>())
+            .and_then(|context| context.downcast_mut::<T>())
             .unwrap_or_else(|| fatal!("Context {} not found", type_name::<T>()))
     }
 
@@ -141,20 +128,14 @@ impl App {
     pub fn try_get_context<T: Any + Send + 'static>(&self) -> Option<&T> {
         self.contexts
             .get(&TypeId::of::<T>())
-            .and_then(|cell| {
-                let ptr = cell.borrow().as_ref() as *const dyn Any;
-                unsafe { (*ptr).downcast_ref::<T>() }
-            })
+            .and_then(|context| context.downcast_ref::<T>())
     }
 
     /// Returns a mutable reference to the context of type `T`, or `None` if not present.
-    pub fn try_get_context_mut<T: Any + Send + 'static>(&self) -> Option<&mut T> {
+    pub fn try_get_context_mut<T: Any + Send + 'static>(&mut self) -> Option<&mut T> {
         self.contexts
-            .get(&TypeId::of::<T>())
-            .and_then(|cell| {
-                let ptr = cell.borrow_mut().as_mut() as *mut dyn Any;
-                unsafe { (*ptr).downcast_mut::<T>() }
-            })
+            .get_mut(&TypeId::of::<T>())
+            .and_then(|context| context.downcast_mut::<T>())
     }
 
     /// Returns whether a context of type `T` has been added.
