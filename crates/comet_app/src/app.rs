@@ -5,9 +5,12 @@ use std::any::{type_name, Any, TypeId};
 use std::collections::HashMap;
 
 const MAX_TICK_STEPS: usize = 10;
+const FPS_SMOOTHING_SECONDS: f32 = 0.5;
 
 pub struct App {
     delta_time: f32,
+    render_frame_time: f32,
+    smoothed_render_frame_time: f32,
     update_timer: f32,
     modules: HashMap<TypeId, Box<dyn Any + Send>>,
     contexts: HashMap<TypeId, Box<dyn Any + Send>>,
@@ -24,6 +27,8 @@ impl App {
     pub fn new() -> Self {
         Self {
             delta_time: 0.0,
+            render_frame_time: 0.0,
+            smoothed_render_frame_time: 0.0,
             update_timer: 0.0166667,
             modules: HashMap::new(),
             contexts: HashMap::new(),
@@ -205,9 +210,39 @@ impl App {
         self.update_timer
     }
 
-    /// Returns the last measured frame delta time.
+    /// Returns the last measured logic-loop delta time in seconds.
     pub fn frame_dt(&self) -> f32 {
         self.delta_time
+    }
+
+    /// Returns the raw duration of the latest rendered frame in seconds.
+    pub fn frame_time(&self) -> f32 {
+        self.render_frame_time
+    }
+
+    /// Returns display-smoothed rendered frames per second.
+    pub fn fps(&self) -> f32 {
+        if self.smoothed_render_frame_time > 0.0 {
+            self.smoothed_render_frame_time.recip()
+        } else {
+            0.0
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn record_render_frame_time(&mut self, frame_time: f32) {
+        if !frame_time.is_finite() || frame_time <= 0.0 {
+            return;
+        }
+
+        self.render_frame_time = frame_time;
+        if self.smoothed_render_frame_time == 0.0 {
+            self.smoothed_render_frame_time = frame_time;
+            return;
+        }
+
+        let alpha = 1.0 - (-frame_time / FPS_SMOOTHING_SECONDS).exp();
+        self.smoothed_render_frame_time += alpha * (frame_time - self.smoothed_render_frame_time);
     }
 
     /// Sets the number of logic ticks per second. Pass 0 for uncapped (variable timestep).

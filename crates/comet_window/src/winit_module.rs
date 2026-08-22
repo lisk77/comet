@@ -265,6 +265,7 @@ fn drain_renderer_commands(renderer: &mut Option<Box<dyn ErasedRenderer>>) {
 }
 
 fn handle_render(renderer: &mut dyn ErasedRenderer) -> bool {
+    renderer.update();
     match renderer.render() {
         Ok(_) => false,
         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

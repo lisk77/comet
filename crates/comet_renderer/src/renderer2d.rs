@@ -53,6 +53,7 @@ pub struct RenderHandle2D {
     event_receiver: flume::Receiver<Renderer2DEvent>,
     last_size: Option<PhysicalSize<u32>>,
     pending_atlas_rebuild: bool,
+    pending_frame_times: Vec<f32>,
     gizmo_buffer: GizmoBuffer,
     gizmo_registry: GizmoRegistry,
 }
@@ -151,6 +152,7 @@ impl RenderHandle2D {
             match event {
                 Renderer2DEvent::Size(size) => self.last_size = Some(size),
                 Renderer2DEvent::AtlasRebuilt => self.pending_atlas_rebuild = true,
+                Renderer2DEvent::FrameTime(frame_time) => self.pending_frame_times.push(frame_time),
                 _ => {}
             }
         }
@@ -173,6 +175,9 @@ impl RenderHandle2D {
                     match &event {
                         Renderer2DEvent::Size(size) => self.last_size = Some(*size),
                         Renderer2DEvent::AtlasRebuilt => self.pending_atlas_rebuild = true,
+                        Renderer2DEvent::FrameTime(frame_time) => {
+                            self.pending_frame_times.push(*frame_time)
+                        }
                         _ => {}
                     }
                     if predicate(&event) {
@@ -464,6 +469,7 @@ impl RendererHandle for RenderHandle2D {
             event_receiver: receiver,
             last_size: None,
             pending_atlas_rebuild: false,
+            pending_frame_times: Vec::new(),
             gizmo_buffer: GizmoBuffer::new(),
             gizmo_registry: GizmoRegistry::new(),
         }
@@ -490,6 +496,9 @@ impl comet_app::Module for RenderHandle2D {
         app.add_post_tick_hook(|app| {
             let mut renderer = app.take_module::<RenderHandle2D>().unwrap();
             renderer.render_scene_2d(app.scene_mut());
+            for frame_time in renderer.pending_frame_times.drain(..) {
+                app.record_render_frame_time(frame_time);
+            }
             app.reinsert_module(renderer);
         });
     }
@@ -1802,6 +1811,9 @@ impl Renderer for Renderer2D {
         let now = std::time::Instant::now();
         self.delta_time = now.duration_since(self.last_frame_time).as_secs_f32();
         self.last_frame_time = now;
+        let _ = self
+            .event_sender
+            .send(Renderer2DEvent::FrameTime(self.delta_time));
         self.delta_time
     }
 
