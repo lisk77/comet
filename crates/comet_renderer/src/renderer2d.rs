@@ -3,7 +3,9 @@ use crate::{
     camera::{resolve_camera_viewport, CameraUniform, RenderCamera, ResolvedViewport},
     draw_batch::{DrawCommand, GeometryDescriptor, IndexStreamDescriptor, VertexStreamDescriptor},
     gpu_texture::GpuTexture,
-    render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, ScreenText2D, Text2D},
+    render_commands::{
+        CameraPacket2D, Draw2D, FramePacket2D, Renderer2DCommand, ScreenText2D, Text2D,
+    },
     render_events::Renderer2DEvent,
     render_graph::{
         nodes::{PassNode, PostProcessNode},
@@ -24,7 +26,7 @@ use comet_macros::module;
 use comet_math::{v2, v3};
 use comet_window::renderer::{Renderer, RendererHandle};
 use std::{
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -35,6 +37,8 @@ struct FontKey {
     size_bits: u32,
 }
 use winit::{dpi::PhysicalSize, window::Window};
+
+type FrameMailbox2D = Arc<Mutex<Option<FramePacket2D>>>;
 
 pub struct Renderer2D {
     render_state: RenderState,
@@ -51,6 +55,7 @@ pub struct Renderer2D {
 pub struct RenderHandle2D {
     command_sender: flume::Sender<Renderer2DCommand>,
     event_receiver: flume::Receiver<Renderer2DEvent>,
+    frame_mailbox: FrameMailbox2D,
     last_size: Option<PhysicalSize<u32>>,
     pending_atlas_rebuild: bool,
     pending_frame_times: Vec<f32>,
@@ -448,14 +453,34 @@ impl RenderHandle2D {
         self.gizmo_registry.flush(scene, &mut self.gizmo_buffer);
         let gizmo_shapes = std::mem::take(&mut self.gizmo_buffer.shapes);
 
-        let _ = self.command_sender.send(Renderer2DCommand::SubmitFrame(
-            camera_packet,
+        let replaced_frame = self.frame_mailbox.lock().unwrap().replace(FramePacket2D {
+            camera: camera_packet,
             draws,
             texts,
             screen_texts,
             referenced_handles,
             gizmo_shapes,
-        ));
+        });
+        drop(replaced_frame);
+    }
+}
+
+impl RenderHandle2D {
+    fn with_frame_mailbox(
+        command_sender: flume::Sender<Renderer2DCommand>,
+        event_receiver: flume::Receiver<Renderer2DEvent>,
+        frame_mailbox: FrameMailbox2D,
+    ) -> Self {
+        Self {
+            command_sender,
+            event_receiver,
+            frame_mailbox,
+            last_size: None,
+            pending_atlas_rebuild: false,
+            pending_frame_times: Vec::new(),
+            gizmo_buffer: GizmoBuffer::new(),
+            gizmo_registry: GizmoRegistry::new(),
+        }
     }
 }
 
@@ -464,15 +489,7 @@ impl RendererHandle for RenderHandle2D {
     type Event = Renderer2DEvent;
 
     fn new(sender: flume::Sender<Self::Command>, receiver: flume::Receiver<Self::Event>) -> Self {
-        Self {
-            command_sender: sender,
-            event_receiver: receiver,
-            last_size: None,
-            pending_atlas_rebuild: false,
-            pending_frame_times: Vec::new(),
-            gizmo_buffer: GizmoBuffer::new(),
-            gizmo_registry: GizmoRegistry::new(),
-        }
+        Self::with_frame_mailbox(sender, receiver, Arc::new(Mutex::new(None)))
     }
 
     fn poll_event(&self) -> Option<Renderer2DEvent> {
@@ -1738,21 +1755,7 @@ impl Renderer for Renderer2D {
                         height: bounds.y(),
                     });
             }
-            Renderer2DCommand::SubmitFrame(
-                camera,
-                draws,
-                texts,
-                screen_texts,
-                referenced_handles,
-                gizmo_shapes,
-            ) => self.submit_frame(
-                camera,
-                draws,
-                texts,
-                screen_texts,
-                referenced_handles,
-                gizmo_shapes,
-            ),
+
             Renderer2DCommand::AddRenderPass(desc) => {
                 let pass_output = self.add_pass(desc);
                 let _ = self
@@ -1847,6 +1850,7 @@ impl Renderer for Renderer2D {
 struct ErasedRenderer2D {
     renderer: Renderer2D,
     cmd_rx: flume::Receiver<Renderer2DCommand>,
+    frame_mailbox: FrameMailbox2D,
 }
 
 impl comet_window::ErasedRenderer for ErasedRenderer2D {
@@ -1856,6 +1860,18 @@ impl comet_window::ErasedRenderer for ErasedRenderer2D {
     fn drain_commands(&mut self) {
         while let Ok(cmd) = self.cmd_rx.try_recv() {
             self.renderer.apply_command(cmd);
+        }
+
+        let frame = self.frame_mailbox.lock().unwrap().take();
+        if let Some(frame) = frame {
+            self.renderer.submit_frame(
+                frame.camera,
+                frame.draws,
+                frame.texts,
+                frame.screen_texts,
+                frame.referenced_handles,
+                frame.gizmo_shapes,
+            );
         }
     }
     fn window(&self) -> &winit::window::Window {
@@ -1906,12 +1922,17 @@ impl Module for Renderer2DModule {
             .set_renderer_factory(Box::new(|window, clear_color| {
                 let (cmd_tx, cmd_rx) = flume::unbounded::<Renderer2DCommand>();
                 let (evt_tx, evt_rx) = flume::unbounded::<Renderer2DEvent>();
+                let frame_mailbox = Arc::new(Mutex::new(None));
 
                 let renderer = Renderer2D::new(window, clear_color, evt_tx);
-                let handle = RenderHandle2D::new(cmd_tx, evt_rx);
+                let handle =
+                    RenderHandle2D::with_frame_mailbox(cmd_tx, evt_rx, frame_mailbox.clone());
 
-                let erased: Box<dyn comet_window::ErasedRenderer> =
-                    Box::new(ErasedRenderer2D { renderer, cmd_rx });
+                let erased: Box<dyn comet_window::ErasedRenderer> = Box::new(ErasedRenderer2D {
+                    renderer,
+                    cmd_rx,
+                    frame_mailbox,
+                });
                 let add_handle: Box<dyn FnOnce(&mut comet_app::App) + Send> =
                     Box::new(move |app| {
                         app.add_module(handle);

@@ -50,6 +50,15 @@ pub struct ScreenText2D {
     pub visible: bool,
 }
 
+pub(crate) struct FramePacket2D {
+    pub(crate) camera: CameraPacket2D,
+    pub(crate) draws: Vec<Draw2D>,
+    pub(crate) texts: Vec<Text2D>,
+    pub(crate) screen_texts: Vec<ScreenText2D>,
+    pub(crate) referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
+    pub(crate) gizmo_shapes: Vec<GizmoShape>,
+}
+
 pub struct PassDescriptor {
     pub label: String,
     pub inputs: Vec<String>,
@@ -71,14 +80,7 @@ pub enum Renderer2DCommand {
         font: comet_assets::Asset<comet_assets::Font>,
         font_size: comet_math::ScreenUnit,
     },
-    SubmitFrame(
-        CameraPacket2D,
-        Vec<Draw2D>,
-        Vec<Text2D>,
-        Vec<ScreenText2D>,
-        Vec<comet_assets::Asset<comet_assets::Image>>,
-        Vec<GizmoShape>,
-    ),
+
     AddRenderPass(PassDescriptor),
     RemoveRenderPass(String),
     SetPassOutput(String, Option<crate::render_pass::PassOutput>),
