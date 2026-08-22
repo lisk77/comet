@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use notify::{EventKind, RecursiveMode, Watcher};
-use crate::{AssetManager, Asset};
+use crate::{AssetManager, Asset, AssetPath};
 use crate::asset_manager::Loadable;
 use crate::image::Image;
 use crate::texture_atlas::TextureAtlas;
@@ -159,8 +159,8 @@ impl AssetProvider {
     }
 
     /// Loads multiple assets of the same type in the background. Returns handles immediately.
-    pub fn load_assets<T: Loadable>(&self, paths: &[&str]) -> Vec<Asset<T>> {
-        paths.iter().map(|p| self.load(p)).collect()
+    pub fn load_assets<T: Loadable>(&self, paths: &[impl Clone + Into<AssetPath>]) -> Vec<Asset<T>> {
+        paths.iter().cloned().map(|path| self.load(path)).collect()
     }
 
     /// Unloads a batch of handles returned by `load_assets`.
@@ -169,7 +169,9 @@ impl AssetProvider {
     }
 
     /// Loads an asset from `path` in the background. Returns a typed handle immediately.
-    pub fn load<T: Loadable>(&self, path: &str) -> Asset<T> {
+    pub fn load<T: Loadable>(&self, path: impl Into<AssetPath>) -> Asset<T> {
+        let path = path.into();
+        let path = path.as_str();
         let resolved = comet_app::resolve_asset_path(path);
 
         let ext = match file_extension(&resolved, path) {
