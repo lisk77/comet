@@ -12,8 +12,6 @@ impl Gizmo for Hitbox {
 }
 
 fn setup(app: &mut App) {
-    app.register_component::<Hitbox>();
-
     app.spawn(Camera2d::new());
 
     let e = app.spawn((

@@ -42,15 +42,26 @@ impl Bundle for () {
     }
 
     fn spawn_batch(scene: &mut Scene, bundles: Vec<Self>) -> Vec<crate::Entity> {
-        bundles.into_iter().map(|_| scene.new_entity_immediate()).collect()
+        bundles
+            .into_iter()
+            .map(|_| scene.new_entity_immediate())
+            .collect()
     }
 
     fn type_ids(&self) -> Vec<TypeId> {
         Vec::new()
     }
 
+    fn ensure_registered(&self, _scene: &mut Scene) {}
+
     fn write_components(self, _columns: &mut [Column], _column_indices: &[usize], _row: usize) {}
-    fn write_components_reserved(self, _columns: &mut [Column], _column_indices: &[usize], _row: usize) {}
+    fn write_components_reserved(
+        self,
+        _columns: &mut [Column],
+        _column_indices: &[usize],
+        _row: usize,
+    ) {
+    }
 }
 
 impl<C: Component> Bundle for C {
@@ -62,6 +73,10 @@ impl<C: Component> Bundle for C {
         vec![C::type_id()]
     }
 
+    fn ensure_registered(&self, scene: &mut Scene) {
+        scene.__ensure_component_registered::<C>();
+    }
+
     fn write_components(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
         let col_idx = column_indices[0];
         unsafe {
@@ -69,7 +84,12 @@ impl<C: Component> Bundle for C {
         }
     }
 
-    fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
+    fn write_components_reserved(
+        self,
+        columns: &mut [Column],
+        column_indices: &[usize],
+        _row: usize,
+    ) {
         let col_idx = column_indices[0];
         unsafe {
             columns[col_idx].push_unchecked_reserved::<C>(self);
@@ -101,6 +121,7 @@ macro_rules! impl_component_tuple {
             }
 
             fn spawn(self, scene: &mut Scene) -> crate::Entity {
+                self.ensure_registered(scene);
                 let component_types = [$(std::any::TypeId::of::<$name>()),+];
                 scene.__spawn_bundle_typed(
                     std::any::TypeId::of::<($($name,)+)>(),
@@ -115,6 +136,7 @@ macro_rules! impl_component_tuple {
                 if bundles.is_empty() {
                     return Vec::new();
                 }
+                bundles[0].ensure_registered(scene);
                 let component_types = [$(std::any::TypeId::of::<$name>()),+];
                 scene.__spawn_bundle_typed_batch(
                     std::any::TypeId::of::<($($name,)+)>(),
@@ -128,6 +150,10 @@ macro_rules! impl_component_tuple {
 
             fn type_ids(&self) -> Vec<TypeId> {
                 vec![$(std::any::TypeId::of::<$name>()),+]
+            }
+
+            fn ensure_registered(&self, scene: &mut Scene) {
+                $(scene.__ensure_component_registered::<$name>();)+
             }
 
             #[allow(non_snake_case, unused_assignments)]

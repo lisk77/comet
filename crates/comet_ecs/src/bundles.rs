@@ -6,6 +6,8 @@ use crate::{ErasedComponent, Scene};
 pub trait Bundle {
     fn into_components(self) -> Vec<ErasedComponent>;
 
+    fn ensure_registered(&self, scene: &mut Scene);
+
     fn spawn(self, scene: &mut Scene) -> crate::Entity
     where
         Self: Sized,
@@ -69,7 +71,12 @@ macro_rules! bundle {
                 vec![$(std::any::TypeId::of::<$ty>()),*]
             }
 
+            fn ensure_registered(&self, scene: &mut $crate::Scene) {
+                $(scene.__ensure_component_registered::<$ty>();)*
+            }
+
             fn spawn(self, scene: &mut $crate::Scene) -> $crate::Entity {
+                self.ensure_registered(scene);
                 let component_types = [
                     $(
                         std::any::TypeId::of::<$ty>(),
@@ -94,6 +101,9 @@ macro_rules! bundle {
             }
 
             fn spawn_batch(scene: &mut $crate::Scene, bundles: Vec<Self>) -> Vec<$crate::Entity> {
+                if let Some(bundle) = bundles.first() {
+                    bundle.ensure_registered(scene);
+                }
                 let component_types = [
                     $(
                         std::any::TypeId::of::<$ty>(),

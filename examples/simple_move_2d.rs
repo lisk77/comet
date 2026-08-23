@@ -5,8 +5,6 @@ use comet::prelude::*;
 struct Player;
 
 fn setup(app: &mut App) {
-    app.register_component::<Player>();
-
     app.spawn(Camera2d::new());
 
     app.spawn((

@@ -4,8 +4,6 @@ use comet::prelude::*;
 struct Count(u8);
 
 fn setup(app: &mut App) {
-    app.register_component::<Count>();
-
     app.spawn(Count::new());
 }
 

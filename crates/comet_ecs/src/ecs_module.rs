@@ -1,7 +1,7 @@
 use std::any::TypeId;
 use comet_app::{App, Module};
 use crate::{
-    Bundle, Camera, Component, ComponentTuple, Entity, PrefabFactory, QueryParam, QuerySpecMut, Collider, Sprite, Scene, Text, Transform
+    Bundle, Component, ComponentTuple, Entity, PrefabFactory, QueryParam, QuerySpecMut, Scene
 };
 
 pub struct EcsModule {
@@ -14,15 +14,11 @@ impl EcsModule {
     }
 
     pub fn preset_2d() -> Self {
-        let mut m = Self::new();
-        m.scene.register_components::<(Camera, Transform, Collider, Sprite, Text)>();
-        m
+        Self::new()
     }
 
     pub fn preset_3d() -> Self {
-        let mut m = Self::new();
-        m.scene.register_components::<(Transform, Collider, Text)>();
-        m
+        Self::new()
     }
 }
 

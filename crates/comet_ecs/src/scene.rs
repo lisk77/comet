@@ -4,9 +4,7 @@ use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan, ComponentChangeState};
-use crate::{
-    Component, ComponentTuple, Entity, EntityLocation, IdQueue, Tick,
-};
+use crate::{Component, ComponentTuple, Entity, EntityLocation, IdQueue, Tick};
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
@@ -150,11 +148,7 @@ impl Scene {
     }
 
     /// Queues adding or setting multiple components on an entity.
-    pub fn deferred_add_components<B: Bundle>(
-        &mut self,
-        entity: Entity,
-        bundle: B,
-    ) {
+    pub fn deferred_add_components<B: Bundle>(&mut self, entity: Entity, bundle: B) {
         self.commands
             .add_components(entity, bundle.into_components());
     }
@@ -625,6 +619,13 @@ impl Scene {
         T::register_all(self);
     }
 
+    #[doc(hidden)]
+    pub fn __ensure_component_registered<C: Component + 'static>(&mut self) {
+        if !self.component_info.contains_key(&C::type_id()) {
+            self.register_component_immediate::<C>();
+        }
+    }
+
     pub(crate) fn register_component_immediate<C: Component + 'static>(&mut self) {
         let type_id = C::type_id();
         if self.component_info.contains_key(&type_id) {
@@ -733,6 +734,7 @@ impl Scene {
             Some(loc) => loc,
             None => return,
         };
+        bundle.ensure_registered(self);
         let old_arch_id = loc.archetype;
         let cache_key = (old_arch_id, TypeId::of::<B>());
 
@@ -744,7 +746,8 @@ impl Scene {
             if !self.validate_type_ids_registered(&type_ids) {
                 return;
             }
-            let all_new = type_ids.iter()
+            let all_new = type_ids
+                .iter()
                 .all(|t| self.archetypes.get(old_arch_id).column_index(*t).is_none());
 
             if !all_new {
@@ -759,14 +762,18 @@ impl Scene {
                 component_set.insert(index);
             }
             let target_arch = self.ensure_archetype(component_set);
-            let col_indices: Arc<[usize]> = type_ids.iter()
+            let col_indices: Arc<[usize]> = type_ids
+                .iter()
                 .map(|t| self.archetypes.get(target_arch).column_index(*t).unwrap())
                 .collect();
-            self.bundle_add_cache.insert(cache_key, Some(BundleAddPlan {
-                target_arch,
-                col_indices,
-                type_ids: type_ids.into(),
-            }));
+            self.bundle_add_cache.insert(
+                cache_key,
+                Some(BundleAddPlan {
+                    target_arch,
+                    col_indices,
+                    type_ids: type_ids.into(),
+                }),
+            );
         }
 
         let (target_arch, col_indices, type_ids) =
@@ -775,7 +782,11 @@ impl Scene {
                     self.add_with_components_immediate(entity_id, bundle.into_components());
                     return;
                 }
-                Some(plan) => (plan.target_arch, plan.col_indices.clone(), plan.type_ids.clone()),
+                Some(plan) => (
+                    plan.target_arch,
+                    plan.col_indices.clone(),
+                    plan.type_ids.clone(),
+                ),
             };
 
         let old_len = self.archetypes.get(old_arch_id).len();
@@ -812,7 +823,6 @@ impl Scene {
             self.mark_component_added_and_changed(entity_id, type_id);
         }
     }
-
 
     pub fn remove_component<C: Component + 'static>(&mut self, entity_id: Entity) {
         self.remove_component_immediate::<C>(entity_id);
@@ -1093,17 +1103,16 @@ impl Scene {
     }
 
     pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {
+        bundle.ensure_registered(self);
         bundle.spawn(self)
     }
 
-    pub fn spawn_batch<B: Bundle + 'static>(
-        &mut self,
-        bundles: Vec<B>,
-    ) -> Vec<Entity> {
+    pub fn spawn_batch<B: Bundle + 'static>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
         if bundles.is_empty() {
             return Vec::new();
         }
 
+        bundles[0].ensure_registered(self);
         let component_types = bundles[0].type_ids();
         self.__spawn_bundle_typed_batch(
             TypeId::of::<B>(),
@@ -1116,11 +1125,15 @@ impl Scene {
     }
 
     pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> Entity {
+        bundle.ensure_registered(self);
         bundle.spawn(self)
     }
 
     /// Spawns a batch of bundles immediately.
     pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
+        if let Some(bundle) = bundles.first() {
+            bundle.ensure_registered(self);
+        }
         B::spawn_batch(self, bundles)
     }
 
@@ -1139,6 +1152,9 @@ impl Scene {
     ) {
         if !self.is_alive(entity_id) || components.is_empty() {
             return;
+        }
+        for component in &components {
+            (component.register_fn)(self);
         }
         if !self.validate_components_registered(&components) {
             return;
@@ -1253,6 +1269,9 @@ impl Scene {
     ) -> Entity {
         if components.is_empty() {
             return self.new_entity_immediate();
+        }
+        for component in &components {
+            (component.register_fn)(self);
         }
         if !self.validate_components_registered(&components) {
             return self.new_entity_immediate();

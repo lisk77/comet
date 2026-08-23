@@ -480,6 +480,11 @@ impl crate::Bundle for Camera2d {
             std::any::TypeId::of::<Camera>(),
         ]
     }
+
+    fn ensure_registered(&self, scene: &mut crate::Scene) {
+        scene.__ensure_component_registered::<Transform>();
+        scene.__ensure_component_registered::<Camera>();
+    }
 }
 
 pub struct Camera3d {
@@ -509,6 +514,11 @@ impl crate::Bundle for Camera3d {
             std::any::TypeId::of::<Transform>(),
             std::any::TypeId::of::<Camera>(),
         ]
+    }
+
+    fn ensure_registered(&self, scene: &mut crate::Scene) {
+        scene.__ensure_component_registered::<Transform>();
+        scene.__ensure_component_registered::<Camera>();
     }
 }
 
