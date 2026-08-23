@@ -284,23 +284,29 @@ impl RenderHandle2D {
             }
         }
 
-        let mut selected_camera: Option<([f32; 2], f32, comet_ecs::Camera)> = None;
-        for (transform, camera) in scene
-            .query::<(&comet_ecs::Transform, &comet_ecs::Camera), ()>()
+        let mut selected_camera: Option<([f32; 2], f32, comet_ecs::Camera, comet_ecs::Screen)> =
+            None;
+        for (transform, camera, screen) in scene
+            .query::<(
+                &comet_ecs::Transform,
+                &comet_ecs::Camera,
+                &comet_ecs::Screen,
+            ), ()>()
             .iter()
         {
             let should_replace = selected_camera
                 .as_ref()
-                .is_none_or(|(_, _, current)| camera.priority() < current.priority());
+                .is_none_or(|(_, _, current, _)| camera.priority() < current.priority());
             if should_replace {
                 selected_camera = Some((
                     [transform.position().x(), transform.position().y()],
                     transform.rotation().z().to_degrees(),
                     camera.clone(),
+                    screen.clone(),
                 ));
             }
         }
-        let Some((camera_pos, camera_rot, camera)) = selected_camera else {
+        let Some((camera_pos, camera_rot, camera, screen)) = selected_camera else {
             return;
         };
 
@@ -383,7 +389,7 @@ impl RenderHandle2D {
             });
         }
 
-        let virtual_resolution = camera.virtual_resolution().map(|size| [size.x(), size.y()]);
+        let virtual_resolution = screen.virtual_resolution().map(|size| [size.x(), size.y()]);
         let mut screen_texts = Vec::new();
         for (position, text, layout) in scene
             .query::<(
@@ -425,7 +431,7 @@ impl RenderHandle2D {
             priority: camera.priority(),
             projection: *camera.projection(),
             virtual_resolution,
-            resolution_scaling: camera.resolution_scaling(),
+            resolution_scaling: screen.resolution_scaling(),
             magnification: camera.magnification(),
             viewport: camera.viewport(),
         };

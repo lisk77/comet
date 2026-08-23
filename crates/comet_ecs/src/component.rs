@@ -355,8 +355,6 @@ impl Sprite {
 pub struct Camera {
     priority: u8,
     projection: Projection,
-    virtual_resolution: Option<v2>,
-    resolution_scaling: ResolutionScaling,
     magnification: f32,
     viewport: Option<CameraViewport>,
 }
@@ -368,8 +366,6 @@ impl Default for Camera {
         Self {
             priority: 0,
             projection: Projection::default(),
-            virtual_resolution: None,
-            resolution_scaling: ResolutionScaling::default(),
             magnification: 1.0,
             viewport: None,
         }
@@ -391,16 +387,6 @@ impl Camera {
 
     pub fn with_projection(mut self, projection: Projection) -> Self {
         self.projection = projection;
-        self
-    }
-
-    pub fn with_virtual_resolution(mut self, width: u32, height: u32) -> Self {
-        self.set_virtual_resolution(width, height);
-        self
-    }
-
-    pub fn with_resolution_scaling(mut self, scaling: ResolutionScaling) -> Self {
-        self.resolution_scaling = scaling;
         self
     }
 
@@ -426,28 +412,11 @@ impl Camera {
     pub fn set_projection(&mut self, projection: Projection) {
         self.projection = projection;
     }
-    pub fn virtual_resolution(&self) -> Option<v2> {
-        self.virtual_resolution
-    }
-    pub fn set_virtual_resolution(&mut self, width: u32, height: u32) {
-        assert!(
-            width > 0 && height > 0,
-            "virtual resolution dimensions must be non-zero"
-        );
-        self.virtual_resolution = Some(v2::new(width as f32, height as f32));
-    }
-    pub fn clear_virtual_resolution(&mut self) {
-        self.virtual_resolution = None;
-    }
-    pub fn resolution_scaling(&self) -> ResolutionScaling {
-        self.resolution_scaling
-    }
-    pub fn set_resolution_scaling(&mut self, scaling: ResolutionScaling) {
-        self.resolution_scaling = scaling;
-    }
+
     pub fn magnification(&self) -> f32 {
         self.magnification
     }
+
     pub fn set_magnification(&mut self, magnification: f32) {
         assert!(
             magnification.is_finite() && magnification > 0.0,
@@ -455,6 +424,7 @@ impl Camera {
         );
         self.magnification = magnification;
     }
+
     pub fn viewport(&self) -> Option<CameraViewport> {
         self.viewport
     }
@@ -466,9 +436,67 @@ impl Camera {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Screen {
+    virtual_resolution: Option<v2>,
+    resolution_scaling: ResolutionScaling,
+}
+
+impl Component for Screen {}
+
+impl Default for Screen {
+    fn default() -> Self {
+        Self {
+            virtual_resolution: None,
+            resolution_scaling: ResolutionScaling::default(),
+        }
+    }
+}
+
+impl Screen {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_virtual_resolution(mut self, width: u32, height: u32) -> Self {
+        self.set_virtual_resolution(width, height);
+        self
+    }
+
+    pub fn with_resolution_scaling(mut self, scaling: ResolutionScaling) -> Self {
+        self.resolution_scaling = scaling;
+        self
+    }
+
+    pub fn virtual_resolution(&self) -> Option<v2> {
+        self.virtual_resolution
+    }
+
+    pub fn set_virtual_resolution(&mut self, width: u32, height: u32) {
+        assert!(
+            width > 0 && height > 0,
+            "virtual resolution dimensions must be non-zero"
+        );
+        self.virtual_resolution = Some(v2::new(width as f32, height as f32));
+    }
+
+    pub fn clear_virtual_resolution(&mut self) {
+        self.virtual_resolution = None;
+    }
+
+    pub fn resolution_scaling(&self) -> ResolutionScaling {
+        self.resolution_scaling
+    }
+
+    pub fn set_resolution_scaling(&mut self, scaling: ResolutionScaling) {
+        self.resolution_scaling = scaling;
+    }
+}
+
 pub struct Camera2d {
     pub transform: Transform,
     pub camera: Camera,
+    pub screen: Screen,
 }
 
 impl Default for Camera2d {
@@ -476,6 +504,7 @@ impl Default for Camera2d {
         Self {
             transform: Transform::default(),
             camera: Camera::default(),
+            screen: Screen::default(),
         }
     }
 }
@@ -491,12 +520,12 @@ impl Camera2d {
     }
 
     pub fn with_virtual_resolution(mut self, width: u32, height: u32) -> Self {
-        self.camera.set_virtual_resolution(width, height);
+        self.screen.set_virtual_resolution(width, height);
         self
     }
 
     pub fn with_resolution_scaling(mut self, scaling: ResolutionScaling) -> Self {
-        self.camera.set_resolution_scaling(scaling);
+        self.screen.set_resolution_scaling(scaling);
         self
     }
 
@@ -521,6 +550,7 @@ impl crate::Bundle for Camera2d {
         vec![
             crate::prefabs::ErasedComponent::new(self.transform),
             crate::prefabs::ErasedComponent::new(self.camera),
+            crate::prefabs::ErasedComponent::new(self.screen),
         ]
     }
 
@@ -528,12 +558,14 @@ impl crate::Bundle for Camera2d {
         vec![
             std::any::TypeId::of::<Transform>(),
             std::any::TypeId::of::<Camera>(),
+            std::any::TypeId::of::<Screen>(),
         ]
     }
 
     fn ensure_registered(&self, scene: &mut crate::Scene) {
         scene.__ensure_component_registered::<Transform>();
         scene.__ensure_component_registered::<Camera>();
+        scene.__ensure_component_registered::<Screen>();
     }
 }
 

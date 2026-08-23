@@ -1,4 +1,4 @@
-use comet_ecs::{Camera, ResolutionScaling, Transform};
+use comet_ecs::{Camera, ResolutionScaling, Screen, Transform};
 use comet_math::{m4, v2, v3};
 
 #[allow(unused)]
@@ -32,8 +32,11 @@ impl CameraManager {
         for entity in camera_entities {
             let camera_component = scene.get_component::<Camera>(entity).unwrap();
             let transform_component = scene.get_component::<Transform>(entity).unwrap();
+            let Some(screen) = scene.get_component::<Screen>(entity) else {
+                continue;
+            };
 
-            let base_size = camera_component
+            let base_size = screen
                 .virtual_resolution()
                 .unwrap_or_else(|| v2::new(1.0, 1.0));
             let visible_size = base_size / camera_component.magnification();
