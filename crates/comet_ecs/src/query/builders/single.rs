@@ -106,6 +106,24 @@ impl<'a, P: WriteFetch<'a> + 'a, Filters> Query<'a, P, Filters> {
     }
 }
 
+impl<'a, P: ReadFetch<'a> + 'a, Filters> IntoIterator for QueryBuilder<'a, P, Filters> {
+    type Item = P::Item;
+    type IntoIter = QueryIter<'a, P>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, P: WriteFetch<'a> + 'a, Filters> IntoIterator for Query<'a, P, Filters> {
+    type Item = P::Item;
+    type IntoIter = QueryIterMut<'a, P>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl<'a, P: ReadFetch<'a> + 'a, Filters, F> QueryBuilderFiltered<'a, P, Filters, F>
 where
     F: Fn(&P::Component) -> bool + 'a,
@@ -167,6 +185,32 @@ where
         while let Some(item) = iter.next() {
             f(item);
         }
+    }
+}
+
+impl<'a, P, Filters, F> IntoIterator for QueryBuilderFiltered<'a, P, Filters, F>
+where
+    P: ReadFetch<'a> + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
+{
+    type Item = P::Item;
+    type IntoIter = QueryIterFiltered<'a, P, F>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, P, Filters, F> IntoIterator for QueryFiltered<'a, P, Filters, F>
+where
+    P: WriteFetch<'a> + 'a,
+    F: Fn(&P::Component) -> bool + 'a,
+{
+    type Item = P::Item;
+    type IntoIter = QueryIterMutFiltered<'a, P, F>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 

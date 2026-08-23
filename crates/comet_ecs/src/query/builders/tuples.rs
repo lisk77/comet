@@ -102,6 +102,15 @@ macro_rules! impl_tuple_builders_arity {
             }
         }
 
+        impl<'a, $first_ty: ReadFetch<'a> + 'a, $($ty: ReadFetch<'a> + 'a),+, Filters> IntoIterator for $builder<'a, $first_ty, $($ty),+, Filters> {
+            type Item = ($first_ty::Item, $($ty::Item),+);
+            type IntoIter = $iter<'a, $first_ty, $($ty),+>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.iter()
+            }
+        }
+
         impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+, Filters> $builder_mut<'a, $first_ty, $($ty),+, Filters> {
             impl_query_state_methods_scene_mut!();
 
@@ -162,6 +171,15 @@ macro_rules! impl_tuple_builders_arity {
                 while let Some(item) = iter.next() {
                     f(item);
                 }
+            }
+        }
+
+        impl<'a, $first_ty: WriteFetch<'a> + 'a, $($ty: WriteFetch<'a> + 'a),+, Filters> IntoIterator for $builder_mut<'a, $first_ty, $($ty),+, Filters> {
+            type Item = ($first_ty::Item, $($ty::Item),+);
+            type IntoIter = $iter_mut<'a, $first_ty, $($ty),+>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.iter()
             }
         }
     };
@@ -271,6 +289,15 @@ macro_rules! impl_entity_tuple_builders_arity {
             }
         }
 
+        impl<'a, $first_ty: ReadFetch<'a> + 'a $(, $ty: ReadFetch<'a> + 'a)*, Filters> IntoIterator for $builder<'a, $first_ty $(, $ty)*, Filters> {
+            type Item = (Entity, $first_ty::Item $(, $ty::Item)*);
+            type IntoIter = $iter<'a, $first_ty $(, $ty)*>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.iter()
+            }
+        }
+
         impl<'a, $first_ty: WriteFetch<'a> + 'a $(, $ty: WriteFetch<'a> + 'a)*, Filters> $builder_mut<'a, $first_ty $(, $ty)*, Filters> {
             impl_query_state_methods_scene_mut!();
 
@@ -331,6 +358,15 @@ macro_rules! impl_entity_tuple_builders_arity {
                 while let Some(item) = iter.next() {
                     f(item);
                 }
+            }
+        }
+
+        impl<'a, $first_ty: WriteFetch<'a> + 'a $(, $ty: WriteFetch<'a> + 'a)*, Filters> IntoIterator for $builder_mut<'a, $first_ty $(, $ty)*, Filters> {
+            type Item = (Entity, $first_ty::Item $(, $ty::Item)*);
+            type IntoIter = $iter_mut<'a, $first_ty $(, $ty)*>;
+
+            fn into_iter(self) -> Self::IntoIter {
+                self.iter()
             }
         }
     };
