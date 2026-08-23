@@ -350,19 +350,26 @@ impl RenderHandle2D {
         draws.sort_by_key(|draw| draw.draw_index);
 
         let mut texts = Vec::new();
-        for (transform, text) in scene
-            .query::<
-                (&comet_ecs::Transform, &comet_ecs::Text),
-                comet_ecs::Without<comet_ecs::ScreenPosition>,
-            >()
+        for (transform, text, layout) in scene
+            .query::<(
+                &comet_ecs::Transform,
+                &comet_ecs::Text,
+                Option<&comet_ecs::TextLayout>,
+            ), comet_ecs::Without<comet_ecs::ScreenPosition>>()
             .iter()
         {
             if !text.is_visible() {
                 continue;
             }
             let color = text.color().to_wgpu();
+            let anchor = layout.map_or(comet_ecs::Anchor::TopLeft, |layout| layout.anchor());
+            let justification = layout.map_or(comet_ecs::TextJustification::Left, |layout| {
+                layout.justification()
+            });
             texts.push(Text2D {
                 position: [transform.position().x(), transform.position().y()],
+                anchor,
+                justification,
                 content: text.content().to_string(),
                 font: text.font(),
                 size: text.font_size(),
@@ -378,20 +385,27 @@ impl RenderHandle2D {
 
         let virtual_resolution = camera.virtual_resolution().map(|size| [size.x(), size.y()]);
         let mut screen_texts = Vec::new();
-        for (position, text) in scene
-            .query::<
-                (&comet_ecs::ScreenPosition, &comet_ecs::Text),
-                comet_ecs::Without<comet_ecs::Transform>,
-            >()
+        for (position, text, layout) in scene
+            .query::<(
+                &comet_ecs::ScreenPosition,
+                &comet_ecs::Text,
+                Option<&comet_ecs::TextLayout>,
+            ), comet_ecs::Without<comet_ecs::Transform>>()
             .iter()
         {
             if !text.is_visible() {
                 continue;
             }
             let color = text.color().to_wgpu();
+            let text_anchor = layout.map_or(comet_ecs::Anchor::TopLeft, |layout| layout.anchor());
+            let justification = layout.map_or(comet_ecs::TextJustification::Left, |layout| {
+                layout.justification()
+            });
             screen_texts.push(ScreenText2D {
                 anchor: position.anchor(),
                 offset: [position.offset().x(), position.offset().y()],
+                text_anchor,
+                justification,
                 content: text.content().to_string(),
                 font: text.font(),
                 size: text.font_size(),
@@ -1003,8 +1017,16 @@ impl Renderer2D {
         size: f32,
     ) -> v2 {
         let mut bounds = v2::ZERO;
-        let _ =
-            self.add_text_to_buffers(text, font, size, v2::ZERO, wgpu::Color::WHITE, &mut bounds);
+        let _ = self.add_text_to_buffers(
+            text,
+            font,
+            size,
+            v2::ZERO,
+            wgpu::Color::WHITE,
+            comet_ecs::Anchor::TopLeft,
+            comet_ecs::TextJustification::Left,
+            &mut bounds,
+        );
         bounds
     }
 
@@ -1015,6 +1037,8 @@ impl Renderer2D {
         size: f32,
         position: comet_math::v2,
         color: wgpu::Color,
+        anchor: comet_ecs::Anchor,
+        justification: comet_ecs::TextJustification,
         bounds: &mut comet_math::v2,
     ) -> (Vec<Vertex>, Vec<u16>) {
         self.ensure_font_initialized(font, size);
@@ -1041,25 +1065,45 @@ impl Renderer2D {
             .map(|s| s.chars().map(|c| if c == '\t' { ' ' } else { c }).collect())
             .collect();
 
-        let mut max_line_width = 0.0f32;
-        for line in &lines {
-            let line_width: f32 = line
-                .chars()
-                .map(|c| self.get_glyph_region(c, font, size).advance())
-                .sum();
-            if line_width > max_line_width {
-                max_line_width = line_width;
-            }
-        }
+        let line_widths: Vec<f32> = lines
+            .iter()
+            .map(|line| {
+                line.chars()
+                    .map(|c| self.get_glyph_region(c, font, size).advance())
+                    .sum()
+            })
+            .collect();
+        let max_line_width = line_widths.iter().copied().fold(0.0, f32::max);
+        let block_height = lines.len() as f32 * line_height_px;
         bounds.set_x(max_line_width);
-        bounds.set_y(lines.len() as f32 * line_height_px);
+        bounds.set_y(block_height);
 
-        let mut x_offset = 0.0f32;
+        let (anchor_x, anchor_y) = match anchor {
+            comet_ecs::Anchor::TopLeft => (0.0, 0.0),
+            comet_ecs::Anchor::TopCenter => (0.5, 0.0),
+            comet_ecs::Anchor::TopRight => (1.0, 0.0),
+            comet_ecs::Anchor::CenterLeft => (0.0, 0.5),
+            comet_ecs::Anchor::Center => (0.5, 0.5),
+            comet_ecs::Anchor::CenterRight => (1.0, 0.5),
+            comet_ecs::Anchor::BottomLeft => (0.0, 1.0),
+            comet_ecs::Anchor::BottomCenter => (0.5, 1.0),
+            comet_ecs::Anchor::BottomRight => (1.0, 1.0),
+        };
+        let block_origin = v2::new(
+            screen_position.x() - max_line_width * anchor_x,
+            screen_position.y() + block_height * anchor_y,
+        );
+
         let mut y_offset = 0.0f32;
         let mut vertex_data = Vec::new();
         let mut index_data = Vec::new();
 
-        for line in lines {
+        for (line, line_width) in lines.into_iter().zip(line_widths) {
+            let mut x_offset = match justification {
+                comet_ecs::TextJustification::Left => 0.0,
+                comet_ecs::TextJustification::Center => (max_line_width - line_width) * 0.5,
+                comet_ecs::TextJustification::Right => max_line_width - line_width,
+            };
             for c in line.chars() {
                 let region = self.get_glyph_region(c, font, size);
 
@@ -1069,8 +1113,8 @@ impl Renderer2D {
                 let offset_x = region.offset_x();
                 let offset_y = region.offset_y();
 
-                let glyph_left = screen_position.x() + x_offset + offset_x;
-                let glyph_top = screen_position.y() - offset_y - y_offset;
+                let glyph_left = block_origin.x() + x_offset + offset_x;
+                let glyph_top = block_origin.y() - offset_y - y_offset;
                 let glyph_right = glyph_left + w;
                 let glyph_bottom = glyph_top - h;
 
@@ -1110,7 +1154,6 @@ impl Renderer2D {
             }
 
             y_offset += line_height;
-            x_offset = 0.0;
         }
 
         (vertex_data, index_data)
@@ -1274,6 +1317,8 @@ impl Renderer2D {
                 text.size,
                 position,
                 color,
+                text.anchor,
+                text.justification,
                 &mut bounds,
             );
 
@@ -1325,6 +1370,8 @@ impl Renderer2D {
                 text.size,
                 position,
                 color,
+                text.text_anchor,
+                text.justification,
                 &mut bounds,
             );
             let offset = screen_font_vertex_buffer.len() as u16;

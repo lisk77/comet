@@ -572,6 +572,52 @@ impl crate::Bundle for Camera3d {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextJustification {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Component)]
+pub struct TextLayout {
+    anchor: Anchor,
+    justification: TextJustification,
+}
+
+impl TextLayout {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_anchor(mut self, anchor: Anchor) -> Self {
+        self.anchor = anchor;
+        self
+    }
+
+    pub fn with_justification(mut self, justification: TextJustification) -> Self {
+        self.justification = justification;
+        self
+    }
+
+    pub fn anchor(&self) -> Anchor {
+        self.anchor
+    }
+
+    pub fn set_anchor(&mut self, anchor: Anchor) {
+        self.anchor = anchor;
+    }
+
+    pub fn justification(&self) -> TextJustification {
+        self.justification
+    }
+
+    pub fn set_justification(&mut self, justification: TextJustification) {
+        self.justification = justification;
+    }
+}
+
 #[derive(Component)]
 pub struct Text {
     content: String,

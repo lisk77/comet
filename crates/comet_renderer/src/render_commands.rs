@@ -28,6 +28,8 @@ pub struct Draw2D {
 #[derive(Clone, Debug)]
 pub struct Text2D {
     pub position: [f32; 2],
+    pub anchor: comet_ecs::Anchor,
+    pub justification: comet_ecs::TextJustification,
     pub content: String,
     pub font: comet_assets::Asset<comet_assets::Font>,
     pub size: f32,
@@ -39,6 +41,8 @@ pub struct Text2D {
 pub struct ScreenText2D {
     pub anchor: comet_ecs::Anchor,
     pub offset: [f32; 2],
+    pub text_anchor: comet_ecs::Anchor,
+    pub justification: comet_ecs::TextJustification,
     pub content: String,
     pub font: comet_assets::Asset<comet_assets::Font>,
     pub size: f32,
