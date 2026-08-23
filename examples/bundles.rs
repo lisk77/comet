@@ -15,7 +15,7 @@ bundle!(Comet {
 fn setup(app: &mut App) {
     app.register_component::<Player>();
 
-    app.spawn(Camera2d::new(1.0, 1));
+    app.spawn(Camera2d::new());
 
     // notice that bundles are being spawned by `spawn` as well
     app.spawn(Comet {

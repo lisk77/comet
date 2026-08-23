@@ -3,7 +3,7 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use crate::{
     batch::Batch,
-    camera::CameraUniform,
+    camera::{CameraUniform, ResolvedViewport},
     gpu_texture::GpuTexture,
     render_pass::LoadOp,
     Vertex,
@@ -18,6 +18,7 @@ pub struct PassNode {
     texture: Option<Arc<GpuTexture>>,
     run_after: Vec<String>,
     load: LoadOp,
+    viewport: Option<ResolvedViewport>,
 
     pipeline: Option<wgpu::RenderPipeline>,
     texture_layout: Option<Arc<wgpu::BindGroupLayout>>,
@@ -45,6 +46,7 @@ impl PassNode {
             texture,
             run_after: run_after.into_iter().map(|s| s.to_string()).collect(),
             load,
+            viewport: None,
             pipeline: None,
             texture_layout: None,
             texture_bind_group: None,
@@ -97,6 +99,10 @@ impl PassNode {
         if let Some(buffer) = &self.camera_buffer {
             queue.write_buffer(buffer, 0, bytemuck::cast_slice(&[*uniform]));
         }
+    }
+
+    pub fn set_viewport(&mut self, viewport: Option<ResolvedViewport>) {
+        self.viewport = viewport;
     }
 }
 
@@ -320,6 +326,18 @@ impl RenderNode for PassNode {
         }
 
         rpass.set_pipeline(pipeline);
+
+        if let Some(viewport) = self.viewport {
+            rpass.set_viewport(
+                viewport.x as f32,
+                viewport.y as f32,
+                viewport.width as f32,
+                viewport.height as f32,
+                0.0,
+                1.0,
+            );
+            rpass.set_scissor_rect(viewport.x, viewport.y, viewport.width, viewport.height);
+        }
 
         if let Some(tex_bg) = &self.texture_bind_group {
             rpass.set_bind_group(0, tex_bg, &[]);

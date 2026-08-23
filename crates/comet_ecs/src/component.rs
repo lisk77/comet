@@ -39,6 +39,60 @@ impl Default for Projection {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResolutionScaling {
+    /// Fits the virtual canvas height to the output and lets visible width follow its aspect ratio.
+    FitVertical,
+    /// Fits the virtual canvas width to the output and lets visible height follow its aspect ratio.
+    FitHorizontal,
+    /// Shows the entire virtual canvas, adding letterboxing or pillarboxing when necessary.
+    Fit,
+    /// Fills the output while cropping virtual canvas content on one axis when necessary.
+    Fill,
+    /// Fills the output by revealing additional world beyond the virtual canvas on one axis.
+    #[default]
+    Expand,
+    /// Maps the complete virtual canvas to the output without preserving its aspect ratio.
+    Stretch,
+}
+
+/// A camera's output rectangle in physical render-target pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CameraViewport {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+impl CameraViewport {
+    pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+        assert!(
+            width > 0 && height > 0,
+            "camera viewport dimensions must be non-zero"
+        );
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    pub fn x(&self) -> u32 {
+        self.x
+    }
+    pub fn y(&self) -> u32 {
+        self.y
+    }
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Transform {
     position: v3,
@@ -249,9 +303,12 @@ impl Sprite {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera {
-    pub zoom: f32,
-    pub priority: u8,
-    pub projection: Projection,
+    priority: u8,
+    projection: Projection,
+    virtual_resolution: Option<v2>,
+    resolution_scaling: ResolutionScaling,
+    magnification: f32,
+    viewport: Option<CameraViewport>,
 }
 
 impl Component for Camera {}
@@ -259,25 +316,22 @@ impl Component for Camera {}
 impl Default for Camera {
     fn default() -> Self {
         Self {
-            zoom: 1.0,
             priority: 0,
             projection: Projection::default(),
+            virtual_resolution: None,
+            resolution_scaling: ResolutionScaling::default(),
+            magnification: 1.0,
+            viewport: None,
         }
     }
 }
 
 impl Camera {
-    pub fn new(zoom: f32, priority: u8, projection: Projection) -> Self {
+    pub fn new(projection: Projection) -> Self {
         Self {
-            zoom,
-            priority,
             projection,
+            ..Self::default()
         }
-    }
-
-    pub fn with_zoom(mut self, zoom: f32) -> Self {
-        self.zoom = zoom;
-        self
     }
 
     pub fn with_priority(mut self, priority: u8) -> Self {
@@ -290,12 +344,26 @@ impl Camera {
         self
     }
 
-    pub fn zoom(&self) -> f32 {
-        self.zoom
+    pub fn with_virtual_resolution(mut self, width: u32, height: u32) -> Self {
+        self.set_virtual_resolution(width, height);
+        self
     }
-    pub fn set_zoom(&mut self, zoom: f32) {
-        self.zoom = zoom;
+
+    pub fn with_resolution_scaling(mut self, scaling: ResolutionScaling) -> Self {
+        self.resolution_scaling = scaling;
+        self
     }
+
+    pub fn with_magnification(mut self, magnification: f32) -> Self {
+        self.set_magnification(magnification);
+        self
+    }
+
+    pub fn with_viewport(mut self, viewport: CameraViewport) -> Self {
+        self.viewport = Some(viewport);
+        self
+    }
+
     pub fn priority(&self) -> u8 {
         self.priority
     }
@@ -307,6 +375,44 @@ impl Camera {
     }
     pub fn set_projection(&mut self, projection: Projection) {
         self.projection = projection;
+    }
+    pub fn virtual_resolution(&self) -> Option<v2> {
+        self.virtual_resolution
+    }
+    pub fn set_virtual_resolution(&mut self, width: u32, height: u32) {
+        assert!(
+            width > 0 && height > 0,
+            "virtual resolution dimensions must be non-zero"
+        );
+        self.virtual_resolution = Some(v2::new(width as f32, height as f32));
+    }
+    pub fn clear_virtual_resolution(&mut self) {
+        self.virtual_resolution = None;
+    }
+    pub fn resolution_scaling(&self) -> ResolutionScaling {
+        self.resolution_scaling
+    }
+    pub fn set_resolution_scaling(&mut self, scaling: ResolutionScaling) {
+        self.resolution_scaling = scaling;
+    }
+    pub fn magnification(&self) -> f32 {
+        self.magnification
+    }
+    pub fn set_magnification(&mut self, magnification: f32) {
+        assert!(
+            magnification.is_finite() && magnification > 0.0,
+            "camera magnification must be finite and greater than zero"
+        );
+        self.magnification = magnification;
+    }
+    pub fn viewport(&self) -> Option<CameraViewport> {
+        self.viewport
+    }
+    pub fn set_viewport(&mut self, viewport: CameraViewport) {
+        self.viewport = Some(viewport);
+    }
+    pub fn clear_viewport(&mut self) {
+        self.viewport = None;
     }
 }
 
@@ -325,11 +431,8 @@ impl Default for Camera2d {
 }
 
 impl Camera2d {
-    pub fn new(zoom: f32, priority: u8) -> Self {
-        Self {
-            transform: Transform::default(),
-            camera: Camera::new(zoom, priority, Projection::Orthographic),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn with_transform(mut self, transform: Transform) -> Self {
@@ -337,8 +440,23 @@ impl Camera2d {
         self
     }
 
-    pub fn with_zoom(mut self, zoom: f32) -> Self {
-        self.camera.set_zoom(zoom);
+    pub fn with_virtual_resolution(mut self, width: u32, height: u32) -> Self {
+        self.camera.set_virtual_resolution(width, height);
+        self
+    }
+
+    pub fn with_resolution_scaling(mut self, scaling: ResolutionScaling) -> Self {
+        self.camera.set_resolution_scaling(scaling);
+        self
+    }
+
+    pub fn with_magnification(mut self, magnification: f32) -> Self {
+        self.camera.set_magnification(magnification);
+        self
+    }
+
+    pub fn with_viewport(mut self, viewport: CameraViewport) -> Self {
+        self.camera.set_viewport(viewport);
         self
     }
 
@@ -373,7 +491,7 @@ impl Camera3d {
     pub fn new(fov: f32, near: f32, far: f32, priority: u8) -> Self {
         Self {
             transform: Transform::new(),
-            camera: Camera::new(1.0, priority, Projection::Perspective { fov, near, far }),
+            camera: Camera::new(Projection::Perspective { fov, near, far }).with_priority(priority),
         }
     }
 }

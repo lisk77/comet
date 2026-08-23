@@ -11,7 +11,7 @@ fn setup(app: &mut App) {
         app,
         "camera",
         Transform::new(),
-        Camera::new(1.0, 1, Projection::Orthographic)
+        Camera::new(Projection::Orthographic).with_priority(1)
     );
 
     register_prefab!(

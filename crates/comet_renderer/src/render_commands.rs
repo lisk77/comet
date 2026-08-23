@@ -1,15 +1,18 @@
+use crate::render_pass::LoadOp;
 use comet_assets::AtlasRef;
 use comet_ecs::Projection;
 use comet_gizmos::GizmoShape;
-use crate::render_pass::LoadOp;
 
 #[derive(Clone, Copy, Debug)]
 pub struct CameraPacket2D {
     pub position: [f32; 2],
     pub rotation_deg: f32,
-    pub zoom: f32,
     pub priority: u8,
     pub projection: Projection,
+    pub virtual_resolution: Option<[f32; 2]>,
+    pub resolution_scaling: comet_ecs::ResolutionScaling,
+    pub magnification: f32,
+    pub viewport: Option<comet_ecs::CameraViewport>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -53,7 +56,13 @@ pub enum Renderer2DCommand {
         font: comet_assets::Asset<comet_assets::Font>,
         font_size: f32,
     },
-    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>, Vec<comet_assets::Asset<comet_assets::Image>>, Vec<GizmoShape>),
+    SubmitFrame(
+        CameraPacket2D,
+        Vec<Draw2D>,
+        Vec<Text2D>,
+        Vec<comet_assets::Asset<comet_assets::Image>>,
+        Vec<GizmoShape>,
+    ),
     AddRenderPass(PassDescriptor),
     RemoveRenderPass(String),
     SetPassOutput(String, Option<crate::render_pass::PassOutput>),

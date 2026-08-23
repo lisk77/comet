@@ -1,6 +1,6 @@
 use crate::gizmo_registry::GizmoRegistry;
 use crate::{
-    camera::{CameraUniform, RenderCamera},
+    camera::{resolve_camera_viewport, CameraUniform, RenderCamera, ResolvedViewport},
     gpu_texture::GpuTexture,
     render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
     render_events::Renderer2DEvent,
@@ -284,27 +284,23 @@ impl RenderHandle2D {
             }
         }
 
-        let mut selected_camera: Option<([f32; 2], f32, f32, u8, comet_ecs::Projection)> = None;
+        let mut selected_camera: Option<([f32; 2], f32, comet_ecs::Camera)> = None;
         for (transform, camera) in scene
             .query::<(&comet_ecs::Transform, &comet_ecs::Camera), ()>()
             .iter()
         {
             let should_replace = selected_camera
                 .as_ref()
-                .is_none_or(|(_, _, _, current_priority, _)| camera.priority() < *current_priority);
+                .is_none_or(|(_, _, current)| camera.priority() < current.priority());
             if should_replace {
                 selected_camera = Some((
                     [transform.position().x(), transform.position().y()],
                     transform.rotation().z().to_degrees(),
-                    camera.zoom(),
-                    camera.priority(),
-                    camera.projection().clone(),
+                    camera.clone(),
                 ));
             }
         }
-        let Some((camera_pos, camera_rot, camera_zoom, camera_priority, camera_projection)) =
-            selected_camera
-        else {
+        let Some((camera_pos, camera_rot, camera)) = selected_camera else {
             return;
         };
 
@@ -377,12 +373,16 @@ impl RenderHandle2D {
             });
         }
 
+        let virtual_resolution = camera.virtual_resolution().map(|size| [size.x(), size.y()]);
         let camera_packet = CameraPacket2D {
             position: camera_pos,
             rotation_deg: camera_rot,
-            zoom: camera_zoom,
-            priority: camera_priority,
-            projection: camera_projection,
+            priority: camera.priority(),
+            projection: *camera.projection(),
+            virtual_resolution,
+            resolution_scaling: camera.resolution_scaling(),
+            magnification: camera.magnification(),
+            viewport: camera.viewport(),
         };
 
         self.gizmo_registry.flush(scene, &mut self.gizmo_buffer);
@@ -1332,19 +1332,52 @@ impl Renderer2D {
     fn setup_camera_from_packet(&mut self, camera: CameraPacket2D) {
         use comet_ecs::Projection;
 
-        let width = self.render_state.config().width as f32;
-        let height = self.render_state.config().height as f32;
+        let output_bounds = if let Some(viewport) = camera.viewport {
+            let x = viewport
+                .x()
+                .min(self.render_state.config().width.saturating_sub(1));
+            let y = viewport
+                .y()
+                .min(self.render_state.config().height.saturating_sub(1));
+            ResolvedViewport {
+                x,
+                y,
+                width: viewport.width().min(self.render_state.config().width - x),
+                height: viewport.height().min(self.render_state.config().height - y),
+            }
+        } else {
+            ResolvedViewport {
+                x: 0,
+                y: 0,
+                width: self.render_state.config().width,
+                height: self.render_state.config().height,
+            }
+        };
+        let scale_factor = self.scale_factor() as f32;
+        let virtual_resolution = camera
+            .virtual_resolution
+            .map(|size| v2::new(size[0], size[1]))
+            .unwrap_or_else(|| {
+                v2::new(
+                    output_bounds.width as f32 / scale_factor,
+                    output_bounds.height as f32 / scale_factor,
+                )
+            });
+        let resolved = resolve_camera_viewport(
+            virtual_resolution,
+            camera.resolution_scaling,
+            camera.magnification,
+            output_bounds,
+        );
 
         let view_proj: [[f32; 4]; 4] = match camera.projection {
             Projection::Custom { matrix } => matrix.into(),
-            _ => {
-                let render_camera = RenderCamera::new(
-                    camera.zoom,
-                    v2::new(width, height),
-                    v3::new(camera.position[0], camera.position[1], 0.0),
-                );
-                render_camera.build_view_projection_matrix().into()
-            }
+            _ => RenderCamera::new(
+                resolved.visible_world_size,
+                v3::new(camera.position[0], camera.position[1], 0.0),
+            )
+            .build_view_projection_matrix()
+            .into(),
         };
 
         let mut camera_uniform = CameraUniform::new();
@@ -1354,12 +1387,15 @@ impl Renderer2D {
 
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
             node.set_camera(&camera_uniform, queue);
+            node.set_viewport(Some(resolved.viewport));
         }
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Font") {
             node.set_camera(&camera_uniform, queue);
+            node.set_viewport(Some(resolved.viewport));
         }
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Gizmo") {
             node.set_camera(&camera_uniform, queue);
+            node.set_viewport(Some(resolved.viewport));
         }
     }
 }

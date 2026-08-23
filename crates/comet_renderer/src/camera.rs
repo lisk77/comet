@@ -1,4 +1,4 @@
-use comet_ecs::{Camera, Transform};
+use comet_ecs::{Camera, ResolutionScaling, Transform};
 use comet_math::{m4, v2, v3};
 
 #[allow(unused)]
@@ -33,9 +33,12 @@ impl CameraManager {
             let camera_component = scene.get_component::<Camera>(entity).unwrap();
             let transform_component = scene.get_component::<Transform>(entity).unwrap();
 
+            let base_size = camera_component
+                .virtual_resolution()
+                .unwrap_or_else(|| v2::new(1.0, 1.0));
+            let visible_size = base_size / camera_component.magnification();
             let render_cam = RenderCamera::new(
-                camera_component.zoom(),
-                v2::new(0.0, 0.0),
+                visible_size,
                 v3::new(
                     transform_component.position().x(),
                     transform_component.position().y(),
@@ -60,31 +63,124 @@ impl CameraManager {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ResolvedViewport {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ResolvedCameraViewport {
+    pub visible_world_size: v2,
+    pub viewport: ResolvedViewport,
+}
+
+pub fn resolve_camera_viewport(
+    virtual_resolution: v2,
+    scaling: ResolutionScaling,
+    magnification: f32,
+    output_bounds: ResolvedViewport,
+) -> ResolvedCameraViewport {
+    let virtual_width = valid_dimension(virtual_resolution.x());
+    let virtual_height = valid_dimension(virtual_resolution.y());
+    let magnification = if magnification.is_finite() && magnification > 0.0 {
+        magnification
+    } else {
+        1.0
+    };
+    let baseline_width = virtual_width / magnification;
+    let baseline_height = virtual_height / magnification;
+    let output_width = output_bounds.width.max(1) as f32;
+    let output_height = output_bounds.height.max(1) as f32;
+    let horizontal_scale = output_width / baseline_width;
+    let vertical_scale = output_height / baseline_height;
+    let full_viewport = ResolvedViewport {
+        width: output_bounds.width.max(1),
+        height: output_bounds.height.max(1),
+        ..output_bounds
+    };
+
+    let (visible_width, visible_height, viewport) = match scaling {
+        ResolutionScaling::FitVertical => (
+            baseline_height * output_width / output_height,
+            baseline_height,
+            full_viewport,
+        ),
+        ResolutionScaling::FitHorizontal => (
+            baseline_width,
+            baseline_width * output_height / output_width,
+            full_viewport,
+        ),
+        ResolutionScaling::Fit => {
+            let scale = horizontal_scale.min(vertical_scale);
+            let width = (baseline_width * scale).round().max(1.0) as u32;
+            let height = (baseline_height * scale).round().max(1.0) as u32;
+            let width = width.min(full_viewport.width);
+            let height = height.min(full_viewport.height);
+            (
+                baseline_width,
+                baseline_height,
+                ResolvedViewport {
+                    x: output_bounds.x + (full_viewport.width - width) / 2,
+                    y: output_bounds.y + (full_viewport.height - height) / 2,
+                    width,
+                    height,
+                },
+            )
+        }
+        ResolutionScaling::Fill => {
+            let scale = horizontal_scale.max(vertical_scale);
+            (output_width / scale, output_height / scale, full_viewport)
+        }
+        ResolutionScaling::Expand => {
+            let scale = horizontal_scale.min(vertical_scale);
+            (output_width / scale, output_height / scale, full_viewport)
+        }
+        ResolutionScaling::Stretch => (baseline_width, baseline_height, full_viewport),
+    };
+
+    ResolvedCameraViewport {
+        visible_world_size: v2::new(visible_width, visible_height),
+        viewport,
+    }
+}
+
+fn valid_dimension(value: f32) -> f32 {
+    if value.is_finite() && value > 0.0 {
+        value
+    } else {
+        1.0
+    }
+}
+
 pub struct RenderCamera {
-    zoom: f32,
-    dimension: v2,
+    visible_world_size: v2,
     position: v3,
 }
 
 impl RenderCamera {
-    pub fn new(zoom: f32, dimension: v2, position: v3) -> Self {
+    pub fn new(visible_world_size: v2, position: v3) -> Self {
         Self {
-            zoom,
-            dimension,
+            visible_world_size: v2::new(
+                valid_dimension(visible_world_size.x()),
+                valid_dimension(visible_world_size.y()),
+            ),
             position,
         }
     }
 
     pub fn build_view_projection_matrix(&self) -> m4 {
-        let zoomed_width = self.dimension.x() / self.zoom;
-        let zoomed_height = self.dimension.y() / self.zoom;
+        let half_width = self.visible_world_size.x() / 2.0;
+        let half_height = self.visible_world_size.y() / 2.0;
 
         m4::OPENGL_CONV
             * m4::orthographic_projection(
-                self.position.x() - zoomed_width / 2.0,
-                self.position.x() + zoomed_width / 2.0,
-                self.position.y() - zoomed_height / 2.0,
-                self.position.y() + zoomed_height / 2.0,
+                self.position.x() - half_width,
+                self.position.x() + half_width,
+                self.position.y() - half_height,
+                self.position.y() + half_height,
                 1.0,
                 0.0,
             )
