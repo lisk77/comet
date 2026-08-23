@@ -35,6 +35,17 @@ pub struct Text2D {
     pub visible: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct ScreenText2D {
+    pub anchor: comet_ecs::Anchor,
+    pub offset: [f32; 2],
+    pub content: String,
+    pub font: comet_assets::Asset<comet_assets::Font>,
+    pub size: f32,
+    pub color: [f32; 4],
+    pub visible: bool,
+}
+
 pub struct PassDescriptor {
     pub label: String,
     pub inputs: Vec<String>,
@@ -60,6 +71,7 @@ pub enum Renderer2DCommand {
         CameraPacket2D,
         Vec<Draw2D>,
         Vec<Text2D>,
+        Vec<ScreenText2D>,
         Vec<comet_assets::Asset<comet_assets::Image>>,
         Vec<GizmoShape>,
     ),

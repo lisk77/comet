@@ -40,6 +40,56 @@ impl Default for Projection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Anchor {
+    #[default]
+    TopLeft,
+    TopCenter,
+    TopRight,
+    CenterLeft,
+    Center,
+    CenterRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
+}
+
+#[derive(Component)]
+pub struct ScreenPosition {
+    anchor: Anchor,
+    offset: v2,
+}
+
+impl ScreenPosition {
+    pub fn new(anchor: Anchor) -> Self {
+        Self {
+            anchor,
+            offset: v2::ZERO,
+        }
+    }
+
+    pub fn with_offset(mut self, offset: v2) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    pub fn anchor(&self) -> Anchor {
+        self.anchor
+    }
+
+    pub fn set_anchor(&mut self, anchor: Anchor) {
+        self.anchor = anchor;
+    }
+
+    pub fn offset(&self) -> v2 {
+        self.offset
+    }
+
+    pub fn set_offset(&mut self, offset: v2) {
+        self.offset = offset;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResolutionScaling {
     /// Fits the virtual canvas height to the output and lets visible width follow its aspect ratio.
     FitVertical,
