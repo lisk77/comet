@@ -2,7 +2,7 @@ use comet::prelude::*;
 
 fn setup(app: &mut App) {
     // Creating a camera entity
-    app.spawn(Camera2d::new());
+    app.spawn(Camera2d);
 
     // Creating a textured entity
     app.spawn((

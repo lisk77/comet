@@ -12,7 +12,7 @@ impl Gizmo for Hitbox {
 }
 
 fn setup(app: &mut App) {
-    app.spawn(Camera2d::new());
+    app.spawn(Camera2d);
 
     let e = app.spawn((
         Transform::with_position(v3::new(0.0, 0.0, 0.0)),

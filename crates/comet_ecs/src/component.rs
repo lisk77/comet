@@ -79,15 +79,197 @@ pub trait Component: Send + Sync + 'static {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Projection {
-    Orthographic,
-    Perspective { fov: f32, near: f32, far: f32 },
-    Custom { matrix: m4 },
+pub struct PerspectiveProjection {
+    vertical_fov: f32,
+    near_plane: f32,
+    far_plane: f32,
 }
+
+impl Default for PerspectiveProjection {
+    fn default() -> Self {
+        Self {
+            vertical_fov: 60.0_f32.to_radians(),
+            near_plane: 0.1,
+            far_plane: 1_000.0,
+        }
+    }
+}
+
+impl PerspectiveProjection {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_vertical_fov(mut self, vertical_fov: f32) -> Self {
+        self.set_vertical_fov(vertical_fov);
+        self
+    }
+
+    pub fn with_clipping_planes(mut self, near_plane: f32, far_plane: f32) -> Self {
+        self.set_clipping_planes(near_plane, far_plane);
+        self
+    }
+
+    pub fn vertical_fov(&self) -> f32 {
+        self.vertical_fov
+    }
+
+    pub fn set_vertical_fov(&mut self, vertical_fov: f32) {
+        assert!(
+            vertical_fov.is_finite() && vertical_fov > 0.0 && vertical_fov < std::f32::consts::PI,
+            "vertical fov must be finite and between zero and pi radians"
+        );
+        self.vertical_fov = vertical_fov;
+    }
+
+    pub fn near_plane(&self) -> f32 {
+        self.near_plane
+    }
+
+    pub fn far_plane(&self) -> f32 {
+        self.far_plane
+    }
+
+    pub fn set_clipping_planes(&mut self, near_plane: f32, far_plane: f32) {
+        assert!(
+            near_plane.is_finite()
+                && far_plane.is_finite()
+                && near_plane > 0.0
+                && far_plane > near_plane,
+            "perspective clipping planes must be finite, with 0 < near < far"
+        );
+        self.near_plane = near_plane;
+        self.far_plane = far_plane;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OrthographicProjection {
+    visible_height: f32,
+    near_plane: f32,
+    far_plane: f32,
+    magnification: f32,
+}
+
+impl Default for OrthographicProjection {
+    fn default() -> Self {
+        Self {
+            visible_height: 1.0,
+            near_plane: -1_000.0,
+            far_plane: 1_000.0,
+            magnification: 1.0,
+        }
+    }
+}
+
+impl OrthographicProjection {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_visible_height(mut self, visible_height: f32) -> Self {
+        self.set_visible_height(visible_height);
+        self
+    }
+
+    pub fn with_clipping_planes(mut self, near_plane: f32, far_plane: f32) -> Self {
+        self.set_clipping_planes(near_plane, far_plane);
+        self
+    }
+
+    pub fn with_magnification(mut self, magnification: f32) -> Self {
+        self.set_magnification(magnification);
+        self
+    }
+
+    pub fn visible_height(&self) -> f32 {
+        self.visible_height
+    }
+
+    pub fn set_visible_height(&mut self, visible_height: f32) {
+        assert!(
+            visible_height.is_finite() && visible_height > 0.0,
+            "orthographic visible height must be finite and greater than zero"
+        );
+        self.visible_height = visible_height;
+    }
+
+    pub fn near_plane(&self) -> f32 {
+        self.near_plane
+    }
+
+    pub fn far_plane(&self) -> f32 {
+        self.far_plane
+    }
+
+    pub fn set_clipping_planes(&mut self, near_plane: f32, far_plane: f32) {
+        assert!(
+            near_plane.is_finite() && far_plane.is_finite() && far_plane > near_plane,
+            "orthographic clipping planes must be finite, with near < far"
+        );
+        self.near_plane = near_plane;
+        self.far_plane = far_plane;
+    }
+
+    pub fn magnification(&self) -> f32 {
+        self.magnification
+    }
+
+    pub fn set_magnification(&mut self, magnification: f32) {
+        assert!(
+            magnification.is_finite() && magnification > 0.0,
+            "camera magnification must be finite and greater than zero"
+        );
+        self.magnification = magnification;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Projection {
+    Orthographic(OrthographicProjection),
+    Perspective(PerspectiveProjection),
+    Custom(m4),
+}
+
+impl Component for Projection {}
 
 impl Default for Projection {
     fn default() -> Self {
-        Self::Orthographic
+        Self::Orthographic(OrthographicProjection::default())
+    }
+}
+
+impl From<PerspectiveProjection> for Projection {
+    fn from(projection: PerspectiveProjection) -> Self {
+        Self::Perspective(projection)
+    }
+}
+
+impl From<OrthographicProjection> for Projection {
+    fn from(projection: OrthographicProjection) -> Self {
+        Self::Orthographic(projection)
+    }
+}
+
+impl From<m4> for Projection {
+    fn from(matrix: m4) -> Self {
+        Self::Custom(matrix)
+    }
+}
+
+impl Projection {
+    pub fn magnification(&self) -> f32 {
+        match self {
+            Self::Orthographic(projection) => projection.magnification(),
+            _ => 1.0,
+        }
+    }
+
+    pub fn set_magnification(&mut self, magnification: f32) {
+        match self {
+            Self::Orthographic(projection) => projection.set_magnification(magnification),
+            _ => panic!("magnification is only available for orthographic projections"),
+        }
     }
 }
 
@@ -348,14 +530,6 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    pub fn new(texture: impl Into<AssetSource<Image>>, is_visible: bool, draw_index: u32) -> Self {
-        Self {
-            is_visible,
-            texture: texture.into().into(),
-            draw_index,
-        }
-    }
-
     pub fn with_texture(texture: impl Into<AssetSource<Image>>) -> Self {
         Self {
             is_visible: true,
@@ -403,12 +577,10 @@ impl Sprite {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Camera {
-    priority: u8,
-    projection: Projection,
-    magnification: f32,
-    viewport: Option<CameraViewport>,
+    enabled: bool,
+    priority: i32,
 }
 
 impl Component for Camera {}
@@ -416,75 +588,37 @@ impl Component for Camera {}
 impl Default for Camera {
     fn default() -> Self {
         Self {
+            enabled: true,
             priority: 0,
-            projection: Projection::default(),
-            magnification: 1.0,
-            viewport: None,
         }
     }
 }
 
 impl Camera {
-    pub fn new(projection: Projection) -> Self {
-        Self {
-            projection,
-            ..Self::default()
-        }
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
     }
 
-    pub fn with_priority(mut self, priority: u8) -> Self {
+    pub fn with_priority(mut self, priority: i32) -> Self {
         self.priority = priority;
         self
     }
 
-    pub fn with_projection(mut self, projection: Projection) -> Self {
-        self.projection = projection;
-        self
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
     }
 
-    pub fn with_magnification(mut self, magnification: f32) -> Self {
-        self.set_magnification(magnification);
-        self
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
     }
 
-    pub fn with_viewport(mut self, viewport: CameraViewport) -> Self {
-        self.viewport = Some(viewport);
-        self
-    }
-
-    pub fn priority(&self) -> u8 {
+    pub fn priority(&self) -> i32 {
         self.priority
     }
-    pub fn set_priority(&mut self, priority: u8) {
+
+    pub fn set_priority(&mut self, priority: i32) {
         self.priority = priority;
-    }
-    pub fn projection(&self) -> &Projection {
-        &self.projection
-    }
-    pub fn set_projection(&mut self, projection: Projection) {
-        self.projection = projection;
-    }
-
-    pub fn magnification(&self) -> f32 {
-        self.magnification
-    }
-
-    pub fn set_magnification(&mut self, magnification: f32) {
-        assert!(
-            magnification.is_finite() && magnification > 0.0,
-            "camera magnification must be finite and greater than zero"
-        );
-        self.magnification = magnification;
-    }
-
-    pub fn viewport(&self) -> Option<CameraViewport> {
-        self.viewport
-    }
-    pub fn set_viewport(&mut self, viewport: CameraViewport) {
-        self.viewport = Some(viewport);
-    }
-    pub fn clear_viewport(&mut self) {
-        self.viewport = None;
     }
 }
 
@@ -492,6 +626,7 @@ impl Camera {
 pub struct Screen {
     virtual_resolution: Option<v2>,
     resolution_scaling: ResolutionScaling,
+    viewport: Option<CameraViewport>,
 }
 
 impl Component for Screen {}
@@ -501,6 +636,7 @@ impl Default for Screen {
         Self {
             virtual_resolution: None,
             resolution_scaling: ResolutionScaling::default(),
+            viewport: None,
         }
     }
 }
@@ -517,6 +653,11 @@ impl Screen {
 
     pub fn with_resolution_scaling(mut self, scaling: ResolutionScaling) -> Self {
         self.resolution_scaling = scaling;
+        self
+    }
+
+    pub fn with_viewport(mut self, viewport: CameraViewport) -> Self {
+        self.viewport = Some(viewport);
         self
     }
 
@@ -543,118 +684,45 @@ impl Screen {
     pub fn set_resolution_scaling(&mut self, scaling: ResolutionScaling) {
         self.resolution_scaling = scaling;
     }
-}
 
-pub struct Camera2d {
-    pub transform: Transform,
-    pub camera: Camera,
-    pub screen: Screen,
-}
+    pub fn viewport(&self) -> Option<CameraViewport> {
+        self.viewport
+    }
 
-impl Default for Camera2d {
-    fn default() -> Self {
-        Self {
-            transform: Transform::default(),
-            camera: Camera::default(),
-            screen: Screen::default(),
-        }
+    pub fn set_viewport(&mut self, viewport: CameraViewport) {
+        self.viewport = Some(viewport);
+    }
+
+    pub fn clear_viewport(&mut self) {
+        self.viewport = None;
     }
 }
 
-impl Camera2d {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_transform(mut self, transform: Transform) -> Self {
-        self.transform = transform;
-        self
-    }
-
-    pub fn with_virtual_resolution(mut self, width: u32, height: u32) -> Self {
-        self.screen.set_virtual_resolution(width, height);
-        self
-    }
-
-    pub fn with_resolution_scaling(mut self, scaling: ResolutionScaling) -> Self {
-        self.screen.set_resolution_scaling(scaling);
-        self
-    }
-
-    pub fn with_magnification(mut self, magnification: f32) -> Self {
-        self.camera.set_magnification(magnification);
-        self
-    }
-
-    pub fn with_viewport(mut self, viewport: CameraViewport) -> Self {
-        self.camera.set_viewport(viewport);
-        self
-    }
-
-    pub fn with_priority(mut self, priority: u8) -> Self {
-        self.camera.set_priority(priority);
-        self
-    }
+fn default_2d_projection() -> Projection {
+    Projection::Orthographic(OrthographicProjection::default())
 }
 
-impl crate::Bundle for Camera2d {
-    fn into_components(self) -> Vec<crate::prefabs::ErasedComponent> {
-        vec![
-            crate::prefabs::ErasedComponent::new(self.transform),
-            crate::prefabs::ErasedComponent::new(self.camera),
-            crate::prefabs::ErasedComponent::new(self.screen),
-        ]
-    }
-
-    fn type_ids(&self) -> Vec<std::any::TypeId> {
-        vec![
-            std::any::TypeId::of::<Transform>(),
-            std::any::TypeId::of::<Camera>(),
-            std::any::TypeId::of::<Screen>(),
-        ]
-    }
-
-    fn ensure_registered(&self, scene: &mut crate::Scene) {
-        scene.__ensure_component_registered::<Transform>();
-        scene.__ensure_component_registered::<Camera>();
-        scene.__ensure_component_registered::<Screen>();
-    }
+fn default_3d_projection() -> Projection {
+    Projection::Perspective(PerspectiveProjection::default())
 }
 
-pub struct Camera3d {
-    pub transform: Transform,
-    pub camera: Camera,
-}
+#[derive(Component)]
+#[require(
+    Transform,
+    Camera,
+    Projection = default_2d_projection,
+    Screen,
+)]
+pub struct Camera2d;
 
-impl Camera3d {
-    pub fn new(fov: f32, near: f32, far: f32, priority: u8) -> Self {
-        Self {
-            transform: Transform::new(),
-            camera: Camera::new(Projection::Perspective { fov, near, far }).with_priority(priority),
-        }
-    }
-}
-
-impl crate::Bundle for Camera3d {
-    fn into_components(self) -> Vec<crate::prefabs::ErasedComponent> {
-        vec![
-            crate::prefabs::ErasedComponent::new(self.transform),
-            crate::prefabs::ErasedComponent::new(self.camera),
-        ]
-    }
-
-    fn type_ids(&self) -> Vec<std::any::TypeId> {
-        vec![
-            std::any::TypeId::of::<Transform>(),
-            std::any::TypeId::of::<Camera>(),
-        ]
-    }
-
-    fn ensure_registered(&self, scene: &mut crate::Scene) {
-        scene.__ensure_component_registered::<Transform>();
-        scene.__ensure_component_registered::<Camera>();
-    }
-}
+#[derive(Component)]
+#[require(
+    Transform,
+    Camera,
+    Projection = default_3d_projection,
+    Screen,
+)]
+pub struct Camera3d;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextJustification {

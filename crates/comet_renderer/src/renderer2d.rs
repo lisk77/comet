@@ -284,29 +284,39 @@ impl RenderHandle2D {
             }
         }
 
-        let mut selected_camera: Option<([f32; 2], f32, comet_ecs::Camera, comet_ecs::Screen)> =
-            None;
-        for (transform, camera, screen) in scene
+        let mut selected_camera: Option<(
+            [f32; 2],
+            f32,
+            comet_ecs::Camera,
+            comet_ecs::Projection,
+            comet_ecs::Screen,
+        )> = None;
+        for (transform, camera, projection, screen) in scene
             .query::<(
                 &comet_ecs::Transform,
                 &comet_ecs::Camera,
+                &comet_ecs::Projection,
                 &comet_ecs::Screen,
-            ), ()>()
+            ), comet_ecs::With<comet_ecs::Camera2d>>()
             .iter()
         {
+            if !camera.is_enabled() {
+                continue;
+            }
             let should_replace = selected_camera
                 .as_ref()
-                .is_none_or(|(_, _, current, _)| camera.priority() < current.priority());
+                .is_none_or(|(_, _, current, _, _)| camera.priority() > current.priority());
             if should_replace {
                 selected_camera = Some((
                     [transform.position().x(), transform.position().y()],
                     transform.rotation().z().to_degrees(),
-                    camera.clone(),
+                    *camera,
+                    *projection,
                     screen.clone(),
                 ));
             }
         }
-        let Some((camera_pos, camera_rot, camera, screen)) = selected_camera else {
+        let Some((camera_pos, camera_rot, camera, projection, screen)) = selected_camera else {
             return;
         };
 
@@ -429,11 +439,11 @@ impl RenderHandle2D {
             position: camera_pos,
             rotation_deg: camera_rot,
             priority: camera.priority(),
-            projection: *camera.projection(),
+            projection,
             virtual_resolution,
             resolution_scaling: screen.resolution_scaling(),
-            magnification: camera.magnification(),
-            viewport: camera.viewport(),
+            magnification: projection.magnification(),
+            viewport: screen.viewport(),
         };
 
         self.gizmo_registry.flush(scene, &mut self.gizmo_buffer);
@@ -1496,8 +1506,6 @@ impl Renderer2D {
         &mut self,
         camera: CameraPacket2D,
     ) -> crate::camera::ResolvedCameraViewport {
-        use comet_ecs::Projection;
-
         let output_bounds = if let Some(viewport) = camera.viewport {
             let x = viewport
                 .x()
@@ -1543,7 +1551,7 @@ impl Renderer2D {
         );
 
         let view_proj: [[f32; 4]; 4] = match camera.projection {
-            Projection::Custom { matrix } => matrix.into(),
+            comet_ecs::Projection::Custom(matrix) => matrix.into(),
             _ => RenderCamera::new(
                 resolved.visible_world_size,
                 v3::new(camera.position[0], camera.position[1], 0.0),

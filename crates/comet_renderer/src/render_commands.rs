@@ -7,7 +7,7 @@ use comet_gizmos::GizmoShape;
 pub struct CameraPacket2D {
     pub position: [f32; 2],
     pub rotation_deg: f32,
-    pub priority: u8,
+    pub priority: i32,
     pub projection: Projection,
     pub virtual_resolution: Option<[f32; 2]>,
     pub resolution_scaling: comet_ecs::ResolutionScaling,

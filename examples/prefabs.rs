@@ -8,8 +8,8 @@ fn setup(app: &mut App) {
     register_prefab!(
         app,
         "camera",
-        Transform::new(),
-        Camera::new(Projection::Orthographic).with_priority(1)
+        Camera2d,
+        Camera::default().with_priority(1)
     );
 
     register_prefab!(

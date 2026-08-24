@@ -1,4 +1,4 @@
-use comet_ecs::{Camera, ResolutionScaling, Screen, Transform};
+use comet_ecs::{Camera, Projection, ResolutionScaling, Screen, Transform};
 use comet_math::{m4, v2, v3};
 
 #[allow(unused)]
@@ -27,10 +27,14 @@ impl CameraManager {
     ) {
         self.cameras.clear();
 
-        let mut cameras_with_priority: Vec<(RenderCamera, u8)> = Vec::new();
+        let mut cameras_with_priority: Vec<(RenderCamera, i32)> = Vec::new();
 
         for entity in camera_entities {
-            let camera_component = scene.get_component::<Camera>(entity).unwrap();
+            let camera = scene.get_component::<Camera>(entity).unwrap();
+            if !camera.is_enabled() {
+                continue;
+            }
+            let projection = scene.get_component::<Projection>(entity).unwrap();
             let transform_component = scene.get_component::<Transform>(entity).unwrap();
             let Some(screen) = scene.get_component::<Screen>(entity) else {
                 continue;
@@ -39,7 +43,7 @@ impl CameraManager {
             let base_size = screen
                 .virtual_resolution()
                 .unwrap_or_else(|| v2::new(1.0, 1.0));
-            let visible_size = base_size / camera_component.magnification();
+            let visible_size = base_size / projection.magnification();
             let render_cam = RenderCamera::new(
                 visible_size,
                 v3::new(
@@ -49,14 +53,14 @@ impl CameraManager {
                 ),
             );
 
-            cameras_with_priority.push((render_cam, camera_component.priority()));
+            cameras_with_priority.push((render_cam, camera.priority()));
         }
 
         if cameras_with_priority.is_empty() {
             return;
         }
 
-        cameras_with_priority.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        cameras_with_priority.sort_by(|a, b| b.1.cmp(&a.1));
         self.cameras = cameras_with_priority.into_iter().map(|(c, _)| c).collect();
         self.active_camera = 0;
     }

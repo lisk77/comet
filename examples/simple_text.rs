@@ -1,7 +1,7 @@
 use comet::prelude::*;
 
 fn setup(app: &mut App) {
-    app.spawn(Camera2d::new());
+    app.spawn(Camera2d);
 
     app.spawn((
         // This is the analog to `Transform` for something like HUDs

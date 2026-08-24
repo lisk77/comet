@@ -13,7 +13,7 @@ bundle!(Comet {
 });
 
 fn setup(app: &mut App) {
-    app.spawn(Camera2d::new());
+    app.spawn(Camera2d);
 
     // notice that bundles are being spawned by `spawn` as well
     app.spawn(Comet {
