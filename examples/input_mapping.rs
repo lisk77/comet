@@ -1,51 +1,63 @@
 use comet::prelude::*;
 
-fn setup(app: &mut App) {
-    app.bind("jump", Key::Space);
-    app.bind("jump", GamepadButton::South);
+// Defines typed keybind names
+#[derive(Action)]
+enum GameAction {
+    Jump,
+    MoveLeft,
+    MoveRight,
+    MoveDown,
+    MoveUp,
+    Copy,
+    Paste,
+}
 
-    app.bind("move_left", Key::KeyA);
-    app.bind("move_right", Key::KeyD);
+fn setup(app: &mut App) {
+    app.bind(GameAction::Jump, Key::Space);
+    app.bind(GameAction::Jump, GamepadButton::South);
+
+    app.bind(GameAction::MoveLeft, Key::KeyA);
+    app.bind(GameAction::MoveRight, Key::KeyD);
     app.bind(
-        "move_left",
+        GameAction::MoveLeft,
         AxisBinding::new(GamepadAxis::LeftStickX, AxisDirection::Negative),
     );
     app.bind(
-        "move_right",
+        GameAction::MoveRight,
         AxisBinding::new(GamepadAxis::LeftStickX, AxisDirection::Positive),
     );
 
-    app.bind("move_down", Key::KeyS);
-    app.bind("move_up", Key::KeyW);
+    app.bind(GameAction::MoveDown, Key::KeyS);
+    app.bind(GameAction::MoveUp, Key::KeyW);
     app.bind(
-        "move_down",
+        GameAction::MoveDown,
         AxisBinding::new(GamepadAxis::LeftStickY, AxisDirection::Negative),
     );
     app.bind(
-        "move_up",
+        GameAction::MoveUp,
         AxisBinding::new(GamepadAxis::LeftStickY, AxisDirection::Positive),
     );
 
-    app.bind("copy", (Key::ControlLeft, Key::KeyC));
-    app.bind("paste", (Key::ControlLeft, Key::KeyV));
+    app.bind(GameAction::Copy, (Key::ControlLeft, Key::KeyC));
+    app.bind(GameAction::Paste, (Key::ControlLeft, Key::KeyV));
 }
 
 fn update(app: &mut App, _dt: f32) {
-    if app.action_pressed("jump") {
+    if app.action_pressed(GameAction::Jump) {
         info!("Jump!");
     }
 
-    let x = app.get_axis("move_left", "move_right");
-    let y = app.get_axis("move_down", "move_up");
+    let x = app.get_axis(GameAction::MoveLeft, GameAction::MoveRight);
+    let y = app.get_axis(GameAction::MoveDown, GameAction::MoveUp);
 
     if x != 0.0 || y != 0.0 {
         info!("Move ({:.2}, {:.2})", x, y);
     }
 
-    if app.action_pressed("copy") {
+    if app.action_pressed(GameAction::Copy) {
         info!("Copy!");
     }
-    if app.action_pressed("paste") {
+    if app.action_pressed(GameAction::Paste) {
         info!("Paste!");
     }
 }

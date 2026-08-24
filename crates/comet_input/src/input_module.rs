@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -30,6 +31,10 @@ impl AxisBinding {
     pub fn new(axis: GamepadAxis, direction: AxisDirection) -> Self {
         Self { axis, direction }
     }
+}
+
+pub trait Action: Send + Sync + 'static {
+    fn id(self) -> u64;
 }
 
 pub trait Binding: Send + 'static {
@@ -128,8 +133,23 @@ impl_binding_tuple!(A, B);
 impl_binding_tuple!(A, B, C);
 impl_binding_tuple!(A, B, C, D);
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct ActionKey {
+    action_type: TypeId,
+    id: u64,
+}
+
+impl ActionKey {
+    fn new<A: Action>(action: A) -> Self {
+        Self {
+            action_type: TypeId::of::<A>(),
+            id: action.id(),
+        }
+    }
+}
+
 pub struct InputMap {
-    bindings: HashMap<String, Vec<Box<dyn Binding>>>,
+    bindings: HashMap<ActionKey, Vec<Box<dyn Binding>>>,
 }
 
 impl InputMap {
@@ -137,12 +157,16 @@ impl InputMap {
         Self { bindings: HashMap::new() }
     }
 
-    fn bind(&mut self, action: impl Into<String>, binding: impl Binding) {
-        self.bindings.entry(action.into()).or_default().push(Box::new(binding));
+    fn bind<A: Action>(&mut self, action: A, binding: impl Binding) {
+        self.bindings.entry(ActionKey::new(action)).or_default().push(Box::new(binding));
     }
 
-    fn unbind(&mut self, action: &str) {
-        self.bindings.remove(action);
+    fn unbind<A: Action>(&mut self, action: A) {
+        self.bindings.remove(&ActionKey::new(action));
+    }
+
+    fn bindings<A: Action>(&self, action: A) -> Option<&[Box<dyn Binding>]> {
+        self.bindings.get(&ActionKey::new(action)).map(Vec::as_slice)
     }
 }
 
@@ -421,37 +445,38 @@ impl InputModule {
         self.state.gamepads.keys().copied().collect()
     }
 
-    pub fn bind(&mut self, action: impl Into<String>, binding: impl Binding) {
+    pub fn bind<A: Action>(&mut self, action: A, binding: impl Binding) {
         self.input_map.bind(action, binding);
     }
 
-    pub fn unbind(&mut self, action: impl Into<String>) {
-        self.input_map.unbind(&action.into());
+    pub fn unbind<A: Action>(&mut self, action: A) {
+        self.input_map.unbind(action);
     }
 
-    pub fn action_strength(&self, action: &str) -> f32 {
-        self.input_map.bindings.get(action)
-            .map_or(0.0, |bs| bs.iter().map(|b| b.strength(&self.state)).fold(0.0f32, f32::max))
+    pub fn action_strength<A: Action>(&self, action: A) -> f32 {
+        self.input_map.bindings(action)
+            .map_or(0.0, |bindings| bindings.iter().map(|binding| binding.strength(&self.state)).fold(0.0, f32::max))
     }
 
-    pub fn get_axis(&self, negative: &str, positive: &str) -> f32 {
+    pub fn get_axis<A: Action>(&self, negative: A, positive: A) -> f32 {
         self.action_strength(positive) - self.action_strength(negative)
     }
 
-    pub fn action_pressed(&self, action: &str) -> bool {
-        self.input_map.bindings.get(action)
-            .map_or(false, |bs| bs.iter().any(|b| b.pressed(&self.state)))
+    pub fn action_pressed<A: Action>(&self, action: A) -> bool {
+        self.input_map.bindings(action)
+            .is_some_and(|bindings| bindings.iter().any(|binding| binding.pressed(&self.state)))
     }
 
-    pub fn action_held(&self, action: &str) -> bool {
-        self.input_map.bindings.get(action)
-            .map_or(false, |bs| bs.iter().any(|b| b.held(&self.state)))
+    pub fn action_held<A: Action>(&self, action: A) -> bool {
+        self.input_map.bindings(action)
+            .is_some_and(|bindings| bindings.iter().any(|binding| binding.held(&self.state)))
     }
 
-    pub fn action_released(&self, action: &str) -> bool {
-        self.input_map.bindings.get(action)
-            .map_or(false, |bs| bs.iter().any(|b| b.released(&self.state)))
+    pub fn action_released<A: Action>(&self, action: A) -> bool {
+        self.input_map.bindings(action)
+            .is_some_and(|bindings| bindings.iter().any(|binding| binding.released(&self.state)))
     }
+
 }
 
 impl Module for InputModule {

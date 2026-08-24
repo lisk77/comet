@@ -1,7 +1,42 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, FnArg, ImplItem, ItemImpl, Pat, ReturnType, Type, Visibility};
+use syn::{parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, Pat, ReturnType, Type, Visibility};
+
+#[proc_macro_derive(Action)]
+pub fn derive_action(item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let name = &input.ident;
+    let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
+    let Data::Enum(data) = &input.data else {
+        return syn::Error::new_spanned(name, "Action can only be derived for enums")
+            .to_compile_error()
+            .into();
+    };
+
+    let mut arms = Vec::with_capacity(data.variants.len());
+    for (index, variant) in data.variants.iter().enumerate() {
+        if !matches!(variant.fields, Fields::Unit) {
+            return syn::Error::new_spanned(variant, "Action variants cannot contain data")
+                .to_compile_error()
+                .into();
+        }
+        let variant_name = &variant.ident;
+        let id = index as u64;
+        arms.push(quote! { Self::#variant_name => #id });
+    }
+
+    quote! {
+        impl #impl_generics Action for #name #type_generics #where_clause {
+            fn id(self) -> u64 {
+                match self {
+                    #(#arms,)*
+                }
+            }
+        }
+    }
+    .into()
+}
 
 #[proc_macro_attribute]
 pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
