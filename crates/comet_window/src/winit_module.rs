@@ -2,6 +2,7 @@ use crate::renderer::{ErasedRenderer, RendererFactory};
 use comet_app::{App, Module, Runner, runner::sleep_until_next_tick};
 use comet_colors::{Color, LinearRgba};
 use comet_log::*;
+use comet_math::Dp;
 use comet_macros::module;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,7 +14,7 @@ use winit::window::{Icon, Window};
 pub struct WinitModule {
     pub(crate) title: String,
     pub(crate) icon: Option<Icon>,
-    pub(crate) size: Option<LogicalSize<u32>>,
+    pub(crate) size: Option<LogicalSize<f32>>,
     pub(crate) clear_color: Option<LinearRgba>,
     pub(crate) event_hooks: Vec<Box<dyn Fn(&Event<()>) + Send + Sync>>,
     pub(crate) renderer_factory: Option<RendererFactory>,
@@ -44,8 +45,18 @@ impl WinitModule {
         self
     }
 
-    pub fn with_size(&mut self, width: u32, height: u32) -> &mut Self {
-        self.size = Some(LogicalSize::new(width, height));
+    pub fn with_size(&mut self, width: Dp, height: Dp) -> &mut Self {
+        assert!(
+            width.display_points().is_finite()
+                && height.display_points().is_finite()
+                && width.display_points() > 0.0
+                && height.display_points() > 0.0,
+            "window dimensions must be finite and greater than zero"
+        );
+        self.size = Some(LogicalSize::new(
+            width.display_points(),
+            height.display_points(),
+        ));
         self
     }
 
@@ -128,7 +139,7 @@ impl Runner for WinitRunner {
 fn create_window(
     title: String,
     icon: &Option<Icon>,
-    size: &Option<LogicalSize<u32>>,
+    size: &Option<LogicalSize<f32>>,
     event_loop: &EventLoop<()>,
 ) -> Window {
     let builder = winit::window::WindowBuilder::new().with_title(title);

@@ -32,7 +32,7 @@ pub struct Text2D {
     pub justification: comet_ecs::TextJustification,
     pub content: String,
     pub font: comet_assets::Asset<comet_assets::Font>,
-    pub size: f32,
+    pub size: comet_ecs::TextSize,
     pub color: [f32; 4],
     pub visible: bool,
 }
@@ -45,7 +45,7 @@ pub struct ScreenText2D {
     pub justification: comet_ecs::TextJustification,
     pub content: String,
     pub font: comet_assets::Asset<comet_assets::Font>,
-    pub size: f32,
+    pub size: comet_ecs::TextSize,
     pub color: [f32; 4],
     pub visible: bool,
 }
@@ -69,7 +69,7 @@ pub enum Renderer2DCommand {
     PrecomputedTextBounds {
         text: String,
         font: comet_assets::Asset<comet_assets::Font>,
-        font_size: f32,
+        font_size: comet_math::ScreenUnit,
     },
     SubmitFrame(
         CameraPacket2D,

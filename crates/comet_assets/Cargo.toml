@@ -7,6 +7,7 @@ edition = "2021"
 comet_app = { workspace = true }
 comet_macros = { workspace = true }
 comet_log = { workspace = true }
+comet_math = { workspace = true }
 notify = "6"
 anyhow = { workspace = true }
 ab_glyph = "0.2.29"

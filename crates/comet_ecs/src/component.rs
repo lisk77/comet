@@ -3,7 +3,7 @@
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2d)
 // They are intended to work with the base suite of systems provided by the engine.
-use crate::math::{deg, m4, v2, v3, v4, Rad};
+use crate::math::{deg, dp, m4, v2, v3, v4, Dp, Px, Rad, ScreenUnit};
 use comet_assets::{AssetSource, Image, ImageRef};
 use comet_colors::{Color, LinearRgba};
 use comet_gizmos::{Gizmo, GizmoBuffer};
@@ -344,19 +344,26 @@ pub enum ResolutionScaling {
 }
 
 /// A camera's output rectangle in physical render-target pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CameraViewport {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
+    x: Px,
+    y: Px,
+    width: Px,
+    height: Px,
 }
 
 impl CameraViewport {
-    pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+    pub fn new(x: Px, y: Px, width: Px, height: Px) -> Self {
         assert!(
-            width > 0 && height > 0,
-            "camera viewport dimensions must be non-zero"
+            x.pixels().is_finite()
+                && y.pixels().is_finite()
+                && width.pixels().is_finite()
+                && height.pixels().is_finite()
+                && x.pixels() >= 0.0
+                && y.pixels() >= 0.0
+                && width.pixels() > 0.0
+                && height.pixels() > 0.0,
+            "camera viewport must have a finite, non-negative origin and positive dimensions"
         );
         Self {
             x,
@@ -366,16 +373,16 @@ impl CameraViewport {
         }
     }
 
-    pub fn x(&self) -> u32 {
+    pub fn x(&self) -> Px {
         self.x
     }
-    pub fn y(&self) -> u32 {
+    pub fn y(&self) -> Px {
         self.y
     }
-    pub fn width(&self) -> u32 {
+    pub fn width(&self) -> Px {
         self.width
     }
-    pub fn height(&self) -> u32 {
+    pub fn height(&self) -> Px {
         self.height
     }
 }
@@ -773,11 +780,55 @@ impl TextLayout {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextSize {
+    Screen(ScreenUnit),
+    World(f32),
+}
+
+impl Default for TextSize {
+    fn default() -> Self {
+        Self::Screen(dp(16.0).into())
+    }
+}
+
+impl TextSize {
+    fn assert_valid(self) {
+        let value = match self {
+            Self::Screen(ScreenUnit::Px(size)) => size.pixels(),
+            Self::Screen(ScreenUnit::Dp(size)) => size.display_points(),
+            Self::World(size) => size,
+        };
+        assert!(
+            value.is_finite() && value > 0.0,
+            "text size must be finite and greater than zero"
+        );
+    }
+}
+
+impl From<Px> for TextSize {
+    fn from(size: Px) -> Self {
+        Self::Screen(size.into())
+    }
+}
+
+impl From<Dp> for TextSize {
+    fn from(size: Dp) -> Self {
+        Self::Screen(size.into())
+    }
+}
+
+impl From<ScreenUnit> for TextSize {
+    fn from(size: ScreenUnit) -> Self {
+        Self::Screen(size)
+    }
+}
+
 #[derive(Component)]
 pub struct Text {
     content: String,
     font: comet_assets::Asset<comet_assets::Font>,
-    font_size: f32,
+    font_size: TextSize,
     color: v4,
     is_visible: bool,
     bounds: v2,
@@ -788,15 +839,20 @@ impl Text {
         Self {
             content: content.into(),
             font,
-            font_size: 16.0,
+            font_size: TextSize::default(),
             color: LinearRgba::new(1.0, 1.0, 1.0, 1.0).to_vec(),
             is_visible: true,
             bounds: v2::ZERO,
         }
     }
 
-    pub fn with_font_size(mut self, font_size: f32) -> Self {
-        self.font_size = font_size;
+    pub fn with_font_size(mut self, font_size: impl Into<TextSize>) -> Self {
+        self.set_font_size(font_size);
+        self
+    }
+
+    pub fn with_world_font_size(mut self, font_size: f32) -> Self {
+        self.set_world_font_size(font_size);
         self
     }
 
@@ -826,12 +882,22 @@ impl Text {
         self.font = font;
     }
 
-    pub fn font_size(&self) -> f32 {
+    pub fn font_size(&self) -> TextSize {
         self.font_size
     }
 
-    pub fn set_font_size(&mut self, font_size: f32) {
+    pub fn set_font_size(&mut self, font_size: impl Into<TextSize>) {
+        let font_size = font_size.into();
+        font_size.assert_valid();
         self.font_size = font_size;
+    }
+
+    pub fn set_world_font_size(&mut self, font_size: f32) {
+        assert!(
+            font_size.is_finite() && font_size > 0.0,
+            "world font size must be finite and greater than zero"
+        );
+        self.font_size = TextSize::World(font_size);
     }
 
     pub fn color(&self) -> impl Color {

@@ -123,14 +123,14 @@ impl RenderHandle2D {
         &mut self,
         text: &str,
         font: comet_assets::Asset<comet_assets::Font>,
-        font_size: f32,
+        font_size: impl Into<comet_math::ScreenUnit>,
     ) -> v2 {
         let _ = self
             .command_sender
             .send(Renderer2DCommand::PrecomputedTextBounds {
                 text: text.to_string(),
                 font,
-                font_size,
+                font_size: font_size.into(),
             });
         self.recv_matching_event(Duration::from_secs(5), |event| {
             matches!(event, Renderer2DEvent::PrecomputedTextBounds { .. })
@@ -646,12 +646,12 @@ impl Renderer2D {
     fn ensure_font_initialized(
         &mut self,
         handle: comet_assets::Asset<comet_assets::Font>,
-        size: f32,
+        size: comet_math::Px,
     ) {
         let key = FontKey {
             index: handle.index(),
             generation: handle.generation(),
-            size_bits: size.to_bits(),
+            size_bits: size.pixels().to_bits(),
         };
         if self.font_cache.contains_key(&key) {
             return;
@@ -673,7 +673,7 @@ impl Renderer2D {
             }
         };
 
-        let prefix = format!("{}@{}::", handle.index(), size.to_bits());
+        let prefix = format!("{}@{}::", handle.index(), size.pixels().to_bits());
         for g in &mut glyphs {
             g.name = format!("{}{}", prefix, g.name);
         }
@@ -1030,13 +1030,15 @@ impl Renderer2D {
         &mut self,
         text: &str,
         font: comet_assets::Asset<comet_assets::Font>,
-        size: f32,
+        size: comet_math::ScreenUnit,
     ) -> v2 {
+        let size = size.resolve(self.scale_factor() as f32);
         let mut bounds = v2::ZERO;
         let _ = self.add_text_to_buffers(
             text,
             font,
             size,
+            1.0,
             v2::ZERO,
             wgpu::Color::WHITE,
             comet_ecs::Anchor::TopLeft,
@@ -1050,14 +1052,16 @@ impl Renderer2D {
         &mut self,
         text: &str,
         font: comet_assets::Asset<comet_assets::Font>,
-        size: f32,
+        raster_size: comet_math::Px,
+        geometry_scale: f32,
         position: comet_math::v2,
         color: wgpu::Color,
         anchor: comet_ecs::Anchor,
         justification: comet_ecs::TextJustification,
         bounds: &mut comet_math::v2,
     ) -> (Vec<Vertex>, Vec<u16>) {
-        self.ensure_font_initialized(font, size);
+        self.ensure_font_initialized(font, raster_size);
+        let size = raster_size.pixels();
 
         let cache_key = FontKey {
             index: font.index(),
@@ -1073,7 +1077,7 @@ impl Renderer2D {
             color.a as f32,
         ];
 
-        let line_height = line_height_px;
+        let line_height = line_height_px * geometry_scale;
         let screen_position = position;
 
         let lines: Vec<String> = text
@@ -1086,11 +1090,12 @@ impl Renderer2D {
             .map(|line| {
                 line.chars()
                     .map(|c| self.get_glyph_region(c, font, size).advance())
-                    .sum()
+                    .sum::<f32>()
+                    * geometry_scale
             })
             .collect();
         let max_line_width = line_widths.iter().copied().fold(0.0, f32::max);
-        let block_height = lines.len() as f32 * line_height_px;
+        let block_height = lines.len() as f32 * line_height;
         bounds.set_x(max_line_width);
         bounds.set_y(block_height);
 
@@ -1124,10 +1129,10 @@ impl Renderer2D {
                 let region = self.get_glyph_region(c, font, size);
 
                 let (dim_x, dim_y) = region.dimensions();
-                let w = dim_x as f32;
-                let h = dim_y as f32;
-                let offset_x = region.offset_x();
-                let offset_y = region.offset_y();
+                let w = dim_x as f32 * geometry_scale;
+                let h = dim_y as f32 * geometry_scale;
+                let offset_x = region.offset_x() * geometry_scale;
+                let offset_y = region.offset_y() * geometry_scale;
 
                 let glyph_left = block_origin.x() + x_offset + offset_x;
                 let glyph_top = block_origin.y() - offset_y - y_offset;
@@ -1166,13 +1171,32 @@ impl Renderer2D {
                     buffer_size + 3,
                 ]);
 
-                x_offset += region.advance();
+                x_offset += region.advance() * geometry_scale;
             }
 
             y_offset += line_height;
         }
 
         (vertex_data, index_data)
+    }
+
+    fn resolve_text_size(
+        &self,
+        size: comet_ecs::TextSize,
+        view: crate::camera::ResolvedCameraViewport,
+    ) -> (comet_math::Px, f32) {
+        let world_units_per_pixel =
+            view.visible_world_size.y() / view.viewport.height.max(1) as f32;
+        match size {
+            comet_ecs::TextSize::Screen(size) => {
+                let raster_size = size.resolve(self.scale_factor() as f32);
+                (raster_size, world_units_per_pixel)
+            }
+            comet_ecs::TextSize::World(world_size) => {
+                let raster_size = comet_math::px(world_size / world_units_per_pixel);
+                (raster_size, world_units_per_pixel)
+            }
+        }
     }
 
     pub fn submit_frame(
@@ -1208,7 +1232,7 @@ impl Renderer2D {
                 let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
             }
         }
-        let screen_view = self.setup_camera_from_packet(camera);
+        let (world_view, screen_view) = self.setup_camera_from_packet(camera);
 
         draws.sort_by_key(|draw| draw.draw_index);
 
@@ -1326,11 +1350,13 @@ impl Renderer2D {
                 a: text.color[3] as f64,
             };
 
+            let (raster_size, geometry_scale) = self.resolve_text_size(text.size, world_view);
             let mut bounds = v2::ZERO;
             let (mut vertices, indices) = self.add_text_to_buffers(
                 &text.content,
                 text.font,
-                text.size,
+                raster_size,
+                geometry_scale,
                 position,
                 color,
                 text.anchor,
@@ -1379,11 +1405,13 @@ impl Renderer2D {
                 b: text.color[2] as f64,
                 a: text.color[3] as f64,
             };
+            let (raster_size, geometry_scale) = self.resolve_text_size(text.size, screen_view);
             let mut bounds = v2::ZERO;
             let (mut vertices, indices) = self.add_text_to_buffers(
                 &text.content,
                 text.font,
-                text.size,
+                raster_size,
+                geometry_scale,
                 position,
                 color,
                 text.text_anchor,
@@ -1505,19 +1533,22 @@ impl Renderer2D {
     fn setup_camera_from_packet(
         &mut self,
         camera: CameraPacket2D,
-    ) -> crate::camera::ResolvedCameraViewport {
+    ) -> (
+        crate::camera::ResolvedCameraViewport,
+        crate::camera::ResolvedCameraViewport,
+    ) {
         let output_bounds = if let Some(viewport) = camera.viewport {
-            let x = viewport
-                .x()
+            let x = (viewport.x().pixels().floor() as u32)
                 .min(self.render_state.config().width.saturating_sub(1));
-            let y = viewport
-                .y()
+            let y = (viewport.y().pixels().floor() as u32)
                 .min(self.render_state.config().height.saturating_sub(1));
+            let width = viewport.width().pixels().round().max(1.0) as u32;
+            let height = viewport.height().pixels().round().max(1.0) as u32;
             ResolvedViewport {
                 x,
                 y,
-                width: viewport.width().min(self.render_state.config().width - x),
-                height: viewport.height().min(self.render_state.config().height - y),
+                width: width.min(self.render_state.config().width - x),
+                height: height.min(self.render_state.config().height - y),
             }
         } else {
             ResolvedViewport {
@@ -1578,7 +1609,7 @@ impl Renderer2D {
             node.set_viewport(Some(resolved.viewport));
         }
 
-        screen_view
+        (resolved, screen_view)
     }
 }
 

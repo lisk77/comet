@@ -17,7 +17,7 @@
 //!fn main() {
 //!    App::with_preset(App2D)
 //!        .with_title("Comet App")
-//!        .with_size(1920, 1080)
+//!        .with_size(dp(1920.0), dp(1080.0))
 //!        .run(setup, update)
 //!}
 //!```

@@ -8,6 +8,7 @@ comet_app = { workspace = true }
 comet_macros = { workspace = true }
 comet_colors = { workspace = true }
 comet_log = { workspace = true }
+comet_math = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 flume = { workspace = true }

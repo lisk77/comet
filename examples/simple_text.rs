@@ -11,7 +11,7 @@ fn setup(app: &mut App) {
             .with_anchor(Anchor::TopLeft)
             .with_justification(TextJustification::Left),
         Text::new("comet", app.load("res://fonts/PublicPixel.ttf"))
-            .with_font_size(77.0)
+            .with_font_size(dp(77.0))
             .with_color(sRgba::<f32>::from_hex("#abb2bfff")),
     ));
 }
