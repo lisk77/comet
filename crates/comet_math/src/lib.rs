@@ -1,7 +1,9 @@
 //! This crate provides a set of mathematical utilities for game development.
 //! It includes definitions for points, vectors, matrices, quaternions, bezier curves, easing functions, noise generation, polynomials, and interpolation utilities.
 
+pub use angle::*;
 pub use bezier::*;
+pub use display::*;
 pub use easings::*;
 pub use interpolation::*;
 pub use matrix::*;
@@ -9,7 +11,9 @@ pub use point::*;
 pub use polynomial::*;
 pub use vector::*;
 
+pub mod angle;
 pub mod bezier;
+pub mod display;
 pub mod easings;
 pub mod interpolation;
 pub mod matrix;

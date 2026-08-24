@@ -3,7 +3,7 @@
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2d)
 // They are intended to work with the base suite of systems provided by the engine.
-use crate::math::{m4, v2, v3, v4};
+use crate::math::{deg, m4, v2, v3, v4, Rad};
 use comet_assets::{AssetSource, Image, ImageRef};
 use comet_colors::{Color, LinearRgba};
 use comet_gizmos::{Gizmo, GizmoBuffer};
@@ -80,7 +80,7 @@ pub trait Component: Send + Sync + 'static {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PerspectiveProjection {
-    vertical_fov: f32,
+    vertical_fov: Rad,
     near_plane: f32,
     far_plane: f32,
 }
@@ -88,7 +88,7 @@ pub struct PerspectiveProjection {
 impl Default for PerspectiveProjection {
     fn default() -> Self {
         Self {
-            vertical_fov: 60.0_f32.to_radians(),
+            vertical_fov: deg(60.0).into(),
             near_plane: 0.1,
             far_plane: 1_000.0,
         }
@@ -100,7 +100,7 @@ impl PerspectiveProjection {
         Self::default()
     }
 
-    pub fn with_vertical_fov(mut self, vertical_fov: f32) -> Self {
+    pub fn with_vertical_fov(mut self, vertical_fov: impl Into<Rad>) -> Self {
         self.set_vertical_fov(vertical_fov);
         self
     }
@@ -110,13 +110,16 @@ impl PerspectiveProjection {
         self
     }
 
-    pub fn vertical_fov(&self) -> f32 {
+    pub fn vertical_fov(&self) -> Rad {
         self.vertical_fov
     }
 
-    pub fn set_vertical_fov(&mut self, vertical_fov: f32) {
+    pub fn set_vertical_fov(&mut self, vertical_fov: impl Into<Rad>) {
+        let vertical_fov = vertical_fov.into();
         assert!(
-            vertical_fov.is_finite() && vertical_fov > 0.0 && vertical_fov < std::f32::consts::PI,
+            vertical_fov.radians().is_finite()
+                && vertical_fov.radians() > 0.0
+                && vertical_fov.radians() < std::f32::consts::PI,
             "vertical fov must be finite and between zero and pi radians"
         );
         self.vertical_fov = vertical_fov;
