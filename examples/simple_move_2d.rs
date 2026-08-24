@@ -1,6 +1,6 @@
 use comet::prelude::*;
 
-// Zero sized components are also called tags in the documentation
+// Zero-sized components are tags.
 #[derive(Component)]
 struct Player;
 

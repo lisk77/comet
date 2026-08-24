@@ -6,7 +6,8 @@ fn setup(app: &mut App) {
     app.spawn((
         // This is the analog to `Transform` for something like HUDs
         ScreenPosition::new(Anchor::TopLeft).with_offset(v2::new(50.0, 100.0)),
-        // For the renderer this is optional. It will be inferred as `TopLeft` and `Left` if missing
+        // For the renderer this is optional.
+        // It will be inferred as `TopLeft` and `Left` if missing
         TextLayout::new()
             .with_anchor(Anchor::TopLeft)
             .with_justification(TextJustification::Left),

@@ -1,8 +1,7 @@
 use comet::prelude::*;
 
+// Spawning this tag also inserts its required components.
 #[derive(Component)]
-// This will add the needed components alongside this tag
-// The function call on Sprite creates a default variant of the Sprite component for us
 #[require(Transform, Sprite = player_sprite)]
 struct Player;
 
