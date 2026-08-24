@@ -500,7 +500,7 @@ impl Transform {
 #[derive(Component)]
 pub enum Collider {
     Rectangle { size: v2 },
-    Box { size: v3 },
+    Cuboid { size: v3 },
     Circle { radius: f32 },
     Sphere { radius: f32 },
     Capsule { height: f32, radius: f32 },
@@ -513,8 +513,8 @@ impl Collider {
         }
     }
 
-    pub fn box_col(width: f32, height: f32, depth: f32) -> Self {
-        Self::Box {
+    pub fn cuboid(width: f32, height: f32, depth: f32) -> Self {
+        Self::Cuboid {
             size: v3::new(width, height, depth),
         }
     }
