@@ -1,17 +1,18 @@
 use crate::{sRgba, Color, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
-use comet_math::v4;
+use comet_math::{v4, Deg};
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Hsla {
-    hue: f32,
+    hue: Deg,
     saturation: f32,
     lightness: f32,
     alpha: f32,
 }
 
 impl Hsla {
-    pub fn new(hue: f32, saturation: f32, lightness: f32, alpha: f32) -> Self {
-        assert!((0.0..=360.0).contains(&hue) && (0.0..=1.0).contains(&saturation) && (0.0..=1.0).contains(&lightness) && (0.0..=1.0).contains(&alpha), "Hue needs to be in range 0..360\nSaturation needs to be in range 0..1\nLightness needs to be in range 0..1\nAlpha needs to be in range 0..1");
+    pub fn new(hue: impl Into<Deg>, saturation: f32, lightness: f32, alpha: f32) -> Self {
+        let hue = hue.into();
+        assert!((0.0..=360.0).contains(&hue.degrees()) && (0.0..=1.0).contains(&saturation) && (0.0..=1.0).contains(&lightness) && (0.0..=1.0).contains(&alpha), "Hue needs to be in range 0..360\nSaturation needs to be in range 0..1\nLightness needs to be in range 0..1\nAlpha needs to be in range 0..1");
         Self {
             hue,
             saturation,
@@ -20,7 +21,7 @@ impl Hsla {
         }
     }
 
-    pub fn hue(&self) -> f32 {
+    pub fn hue(&self) -> Deg {
         self.hue
     }
 
@@ -116,10 +117,10 @@ impl Color for Hsla {
     }
 
     fn to_vec(&self) -> v4 {
-        v4::new(self.hue, self.saturation, self.lightness, self.alpha)
+        v4::new(self.hue.degrees(), self.saturation, self.lightness, self.alpha)
     }
 
     fn from_vec(color: v4) -> Self {
-        Self::new(color.x(), color.y(), color.z(), color.w())
+        Self::new(Deg::new(color.x()), color.y(), color.z(), color.w())
     }
 }

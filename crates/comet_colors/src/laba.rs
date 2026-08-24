@@ -1,5 +1,5 @@
 use crate::{sRgba, Color, Hsla, Hsva, Hwba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
-use comet_math::v4;
+use comet_math::{v4, Deg, Rad};
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Laba {
@@ -71,11 +71,11 @@ impl Laba {
     }
 
     pub fn to_lcha(&self) -> Lcha {
-        let hue: f32 = self.b.atan2(self.a).to_degrees();
+        let hue = Deg::from(Rad::new(self.b.atan2(self.a))).degrees();
         Lcha::new(
             self.lightness,
             (self.a * self.a + self.b * self.b).sqrt(),
-            if hue < 0.0 { hue + 360.0 } else { hue },
+            Deg::new(if hue < 0.0 { hue + 360.0 } else { hue }),
             self.alpha,
         )
     }

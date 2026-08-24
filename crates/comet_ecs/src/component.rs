@@ -3,7 +3,7 @@
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2d)
 // They are intended to work with the base suite of systems provided by the engine.
-use crate::math::{deg, dp, m4, v2, v3, v4, Dp, Px, Rad, ScreenUnit};
+use crate::math::{deg, dp, m4, v2, v3, v4, Dp, EulerAngles, Px, Rad, ScreenUnit};
 use comet_assets::{AssetSource, Image, ImageRef};
 use comet_colors::{Color, LinearRgba};
 use comet_gizmos::{Gizmo, GizmoBuffer};
@@ -390,7 +390,7 @@ impl CameraViewport {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Transform {
     position: v3,
-    rotation: v3,
+    rotation: EulerAngles,
     scale: v3,
 }
 
@@ -400,7 +400,7 @@ impl Default for Transform {
     fn default() -> Self {
         Self {
             position: v3::ZERO,
-            rotation: v3::ZERO,
+            rotation: EulerAngles::ZERO,
             scale: v3::new(1.0, 1.0, 1.0),
         }
     }
@@ -418,7 +418,7 @@ impl Transform {
         }
     }
 
-    pub fn with_rotation(rotation: v3) -> Self {
+    pub fn with_rotation(rotation: EulerAngles) -> Self {
         Self {
             rotation,
             ..Self::default()
@@ -452,24 +452,24 @@ impl Transform {
         self.position.z = z;
     }
 
-    pub fn rotation(&self) -> v3 {
+    pub fn rotation(&self) -> EulerAngles {
         self.rotation
     }
 
-    pub fn set_rotation(&mut self, rotation: v3) {
+    pub fn set_rotation(&mut self, rotation: EulerAngles) {
         self.rotation = rotation;
     }
 
-    pub fn set_rotation_x(&mut self, x: f32) {
-        self.rotation.x = x;
+    pub fn set_rotation_x(&mut self, angle: impl Into<Rad>) {
+        self.rotation.set_x(angle);
     }
 
-    pub fn set_rotation_y(&mut self, y: f32) {
-        self.rotation.y = y;
+    pub fn set_rotation_y(&mut self, angle: impl Into<Rad>) {
+        self.rotation.set_y(angle);
     }
 
-    pub fn set_rotation_z(&mut self, z: f32) {
-        self.rotation.z = z;
+    pub fn set_rotation_z(&mut self, angle: impl Into<Rad>) {
+        self.rotation.set_z(angle);
     }
 
     pub fn scale(&self) -> v3 {
@@ -955,7 +955,13 @@ impl Timer {
 }
 
 impl Gizmo for Collider {
-    fn draw_gizmo(&self, position: v3, _rotation: v3, _scale: v3, buffer: &mut GizmoBuffer) {
+    fn draw_gizmo(
+        &self,
+        position: v3,
+        _rotation: EulerAngles,
+        _scale: v3,
+        buffer: &mut GizmoBuffer,
+    ) {
         use comet_colors::LinearRgba;
         let color = LinearRgba::new(0.0, 1.0, 0.0, 1.0);
         match self {

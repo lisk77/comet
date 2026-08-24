@@ -309,7 +309,7 @@ impl RenderHandle2D {
             if should_replace {
                 selected_camera = Some((
                     [transform.position().x(), transform.position().y()],
-                    transform.rotation().z().to_degrees(),
+                    transform.rotation().as_degrees().z(),
                     *camera,
                     *projection,
                     screen.clone(),
@@ -356,7 +356,7 @@ impl RenderHandle2D {
 
             draws.push(Draw2D {
                 position: [transform.position().x(), transform.position().y()],
-                rotation_deg: transform.rotation().z().to_degrees(),
+                rotation_deg: transform.rotation().as_degrees().z(),
                 scale: [transform.scale().x(), transform.scale().y()],
                 texture: atlas_ref,
                 draw_index: render.draw_index(),

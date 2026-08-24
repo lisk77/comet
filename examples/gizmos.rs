@@ -6,7 +6,7 @@ struct Hitbox {
 }
 
 impl Gizmo for Hitbox {
-    fn draw_gizmo(&self, position: v3, _rotation: v3, _scale: v3, buffer: &mut GizmoBuffer) {
+    fn draw_gizmo(&self, position: v3, _rotation: EulerAngles, _scale: v3, buffer: &mut GizmoBuffer) {
         buffer.draw_rect(position, self.dimensions, LinearRgba::new(0.0, 1.0, 0.0, 1.0));
     }
 }

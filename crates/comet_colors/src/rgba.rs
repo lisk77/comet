@@ -1,5 +1,6 @@
 use crate::{math::v4, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
 use comet_log::error;
+use comet_math::Deg;
 
 /// sRGB representation of color
 /// There are two variants: `sRgba<u8>` and `sRgba<f32>`
@@ -319,7 +320,7 @@ impl sRgba<f32> {
 
         hue = if hue < 0.0 { hue + 360.0 } else { hue };
 
-        Hwba::new(hue, c_min, 1.0 - c_max, self.alpha)
+        Hwba::new(Deg::new(hue), c_min, 1.0 - c_max, self.alpha)
     }
 
     pub fn to_hsva(&self) -> Hsva {
