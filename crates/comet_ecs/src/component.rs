@@ -411,21 +411,21 @@ impl Transform {
         Self::default()
     }
 
-    pub fn with_position(position: v3) -> Self {
+    pub fn at(position: v3) -> Self {
         Self {
             position,
             ..Self::default()
         }
     }
 
-    pub fn with_rotation(rotation: EulerAngles) -> Self {
+    pub fn rotated(rotation: EulerAngles) -> Self {
         Self {
             rotation,
             ..Self::default()
         }
     }
 
-    pub fn with_scale(scale: v3) -> Self {
+    pub fn scaled(scale: v3) -> Self {
         Self {
             scale,
             ..Self::default()
@@ -971,7 +971,7 @@ impl Gizmo for Collider {
             Collider::Circle { radius } => {
                 buffer.draw_circle(position, *radius, color);
             }
-            Collider::Box { size } => {
+            Collider::Cuboid { size } => {
                 buffer.draw_rect(position, *size, color);
             }
             Collider::Sphere { radius } => {

@@ -12,7 +12,7 @@ fn player_sprite() -> Sprite {
 fn setup(app: &mut App) {
     app.spawn(Camera2d);
     // You can also add your own specific components even if they are already required
-    // app.spawn((Player, Transform::with_position(v2::ZERO)));
+    // app.spawn((Player, Transform::at(v3::ZERO)));
     // This will still add the Sprite component but overrides the Transform component
     // with your self defined variant
     app.spawn(Player);
