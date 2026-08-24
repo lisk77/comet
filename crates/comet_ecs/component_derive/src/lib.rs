@@ -2,13 +2,63 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Index};
+use syn::{
+    parse::{Parse, ParseStream},
+    parse_macro_input,
+    punctuated::Punctuated,
+    Data, DeriveInput, Expr, Fields, Index, Token, Type,
+};
 
-#[proc_macro_derive(Component)]
+struct RequiredComponent {
+    component_type: Type,
+    factory: Option<Expr>,
+}
+
+impl Parse for RequiredComponent {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let component_type = input.parse()?;
+        let factory = if input.peek(Token![=]) {
+            input.parse::<Token![=]>()?;
+            Some(input.parse()?)
+        } else {
+            None
+        };
+        Ok(Self {
+            component_type,
+            factory,
+        })
+    }
+}
+
+#[proc_macro_derive(Component, attributes(require))]
 pub fn component_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     let name = &input.ident;
+    let required_components = input
+        .attrs
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("require"))
+        .map(|attribute| {
+            attribute.parse_args_with(Punctuated::<RequiredComponent, Token![,]>::parse_terminated)
+        })
+        .collect::<syn::Result<Vec<_>>>()
+        .unwrap_or_else(|error| panic!("invalid required component declaration: {error}"))
+        .into_iter()
+        .flatten()
+        .map(|required| {
+            let component_type = required.component_type;
+            if let Some(factory) = required.factory {
+                quote! {
+                    requirements.require_with::<#component_type>(#factory);
+                }
+            } else {
+                quote! {
+                    requirements.require::<#component_type>();
+                }
+            }
+        })
+        .collect::<Vec<_>>();
 
     let (default_body, clone_body, debug_body, eq_body) = match &input.data {
         Data::Struct(data) => match &data.fields {
@@ -188,6 +238,10 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
 
             fn type_name() -> String {
                 std::any::type_name::<Self>().to_string()
+            }
+
+            fn register_required_components(requirements: &mut RequiredComponents) {
+                #(#required_components)*
             }
         }
 

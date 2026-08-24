@@ -4,13 +4,16 @@ use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan, ComponentChangeState};
-use crate::{Component, ComponentTuple, Entity, EntityLocation, IdQueue, Tick};
+use crate::{
+    Component, ComponentTuple, Entity, EntityLocation, IdQueue, RequiredComponent,
+    RequiredComponents, Tick,
+};
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
 use std::any::TypeId;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ptr;
 use std::slice;
 use std::sync::Arc;
@@ -28,6 +31,7 @@ pub struct Scene {
     component_registry: Vec<Option<TypeId>>,
     component_index: HashMap<TypeId, usize>,
     component_info: HashMap<TypeId, ComponentInfo>,
+    required_components: HashMap<TypeId, Vec<RequiredComponent>>,
     entity_locations: Vec<Option<EntityLocation>>,
     archetypes: Archetypes,
     archetype_version: usize,
@@ -54,6 +58,7 @@ impl Scene {
             component_registry: Vec::new(),
             component_index: HashMap::new(),
             component_info: HashMap::new(),
+            required_components: HashMap::new(),
             entity_locations: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
             archetypes: Archetypes::new(),
             archetype_version: 0,
@@ -636,10 +641,16 @@ impl Scene {
         let drop_fn: unsafe fn(*mut u8) = |ptr| unsafe { ptr::drop_in_place(ptr as *mut C) };
         let info = ComponentInfo {
             type_id,
+            type_name: std::any::type_name::<C>(),
             layout: Layout::new::<C>(),
             drop_fn,
         };
         self.component_info.insert(type_id, info);
+
+        let mut requirements = RequiredComponents::new();
+        C::register_required_components(&mut requirements);
+        self.required_components
+            .insert(type_id, requirements.into_components());
 
         if !self.component_index.contains_key(&type_id) {
             let index = if let Some((i, _)) = self
@@ -693,11 +704,101 @@ impl Scene {
             .retain(|(_, tracked_type_id), _| *tracked_type_id != type_id);
         self.removed_component_events.remove(&type_id);
 
+        self.required_components.remove(&type_id);
+
         if self.component_info.remove(&type_id).is_some() {
             info!("Deregistered component: {}", C::type_name());
         } else {
             warn!("Component {} was not registered!", C::type_name());
         }
+    }
+
+    #[doc(hidden)]
+    pub fn __bundle_has_required_components(&self, component_types: &[TypeId]) -> bool {
+        component_types.iter().any(|type_id| {
+            self.required_components
+                .get(type_id)
+                .is_some_and(|requirements| !requirements.is_empty())
+        })
+    }
+
+    fn expand_required_components(
+        &mut self,
+        components: &mut Vec<ErasedComponent>,
+        existing_types: impl IntoIterator<Item = TypeId>,
+    ) {
+        let explicit_types: Vec<TypeId> = components
+            .iter()
+            .map(|component| component.type_id)
+            .collect();
+        let mut present: HashSet<TypeId> = existing_types.into_iter().collect();
+        present.extend(explicit_types.iter().copied());
+        let mut states = HashMap::new();
+        let mut stack = Vec::new();
+
+        for type_id in explicit_types {
+            self.expand_requirements_from(
+                type_id,
+                components,
+                &mut present,
+                &mut states,
+                &mut stack,
+            );
+        }
+    }
+
+    fn expand_requirements_from(
+        &mut self,
+        type_id: TypeId,
+        components: &mut Vec<ErasedComponent>,
+        present: &mut HashSet<TypeId>,
+        states: &mut HashMap<TypeId, u8>,
+        stack: &mut Vec<TypeId>,
+    ) {
+        match states.get(&type_id).copied() {
+            Some(2) => return,
+            Some(1) => {
+                let cycle_start = stack
+                    .iter()
+                    .position(|entry| *entry == type_id)
+                    .unwrap_or(0);
+                let mut cycle = stack[cycle_start..]
+                    .iter()
+                    .map(|entry| {
+                        self.component_info
+                            .get(entry)
+                            .map_or("<unregistered>", |info| info.type_name)
+                    })
+                    .collect::<Vec<_>>();
+                cycle.push(
+                    self.component_info
+                        .get(&type_id)
+                        .map_or("<unregistered>", |info| info.type_name),
+                );
+                panic!("required component cycle: {}", cycle.join(" -> "));
+            }
+            _ => {}
+        }
+
+        states.insert(type_id, 1);
+        stack.push(type_id);
+        let requirements = self
+            .required_components
+            .get(&type_id)
+            .cloned()
+            .unwrap_or_default();
+
+        for required in requirements {
+            (required.register_fn)(self);
+            if present.insert(required.type_id) {
+                components.push((required.factory)());
+            }
+            self.expand_requirements_from(required.type_id, components, present, states, stack);
+        }
+
+        let popped = stack.pop();
+        debug_assert_eq!(popped, Some(type_id));
+        states.insert(type_id, 2);
     }
 
     fn validate_components_registered(&self, components: &[ErasedComponent]) -> bool {
@@ -735,6 +836,11 @@ impl Scene {
             None => return,
         };
         bundle.ensure_registered(self);
+        let explicit_types = bundle.type_ids();
+        if self.__bundle_has_required_components(&explicit_types) {
+            self.add_with_components_immediate(entity_id, bundle.into_components());
+            return;
+        }
         let old_arch_id = loc.archetype;
         let cache_key = (old_arch_id, TypeId::of::<B>());
 
@@ -1114,6 +1220,12 @@ impl Scene {
 
         bundles[0].ensure_registered(self);
         let component_types = bundles[0].type_ids();
+        if self.__bundle_has_required_components(&component_types) {
+            return bundles
+                .into_iter()
+                .map(|bundle| self.spawn_with_components_immediate(bundle.into_components()))
+                .collect();
+        }
         self.__spawn_bundle_typed_batch(
             TypeId::of::<B>(),
             &component_types,
@@ -1156,6 +1268,13 @@ impl Scene {
         for component in &components {
             (component.register_fn)(self);
         }
+        let loc = match self.get_location(entity_id) {
+            Some(loc) => loc,
+            None => return,
+        };
+        let old_arch_id = loc.archetype;
+        let existing_types = self.archetypes.get(old_arch_id).types().to_vec();
+        self.expand_required_components(&mut components, existing_types);
         if !self.validate_components_registered(&components) {
             return;
         }
@@ -1163,12 +1282,6 @@ impl Scene {
             .iter()
             .map(|component| component.type_id)
             .collect();
-
-        let loc = match self.get_location(entity_id) {
-            Some(loc) => loc,
-            None => return,
-        };
-        let old_arch_id = loc.archetype;
         let old_set = self.archetypes.get(old_arch_id).set().clone();
         let mut component_set = old_set.clone();
         for component in &components {
@@ -1265,7 +1378,7 @@ impl Scene {
 
     pub(crate) fn spawn_with_components_immediate(
         &mut self,
-        components: Vec<ErasedComponent>,
+        mut components: Vec<ErasedComponent>,
     ) -> Entity {
         if components.is_empty() {
             return self.new_entity_immediate();
@@ -1273,6 +1386,7 @@ impl Scene {
         for component in &components {
             (component.register_fn)(self);
         }
+        self.expand_required_components(&mut components, std::iter::empty());
         if !self.validate_components_registered(&components) {
             return self.new_entity_immediate();
         }
@@ -1289,7 +1403,6 @@ impl Scene {
         let archetype = self.ensure_archetype(component_set);
         let entity_id = self.allocate_entity_slot();
         let row = self.place_entity_in_archetype(entity_id, archetype);
-        let mut components = components;
         let mut inserted_types = Vec::new();
         let arch = self.archetypes.get_mut(archetype);
         for type_id in arch.types().to_vec() {
@@ -1559,7 +1672,7 @@ impl Scene {
 #[cfg(test)]
 mod tests {
     use super::Scene;
-    use crate::{Component, ErasedComponent};
+    use crate::{Component, ErasedComponent, RequiredComponents};
 
     #[derive(Component)]
     struct A;

@@ -123,6 +123,9 @@ macro_rules! impl_component_tuple {
             fn spawn(self, scene: &mut Scene) -> crate::Entity {
                 self.ensure_registered(scene);
                 let component_types = [$(std::any::TypeId::of::<$name>()),+];
+                if scene.__bundle_has_required_components(&component_types) {
+                    return scene.spawn_with_components(self.into_components());
+                }
                 scene.__spawn_bundle_typed(
                     std::any::TypeId::of::<($($name,)+)>(),
                     &component_types,
@@ -138,6 +141,12 @@ macro_rules! impl_component_tuple {
                 }
                 bundles[0].ensure_registered(scene);
                 let component_types = [$(std::any::TypeId::of::<$name>()),+];
+                if scene.__bundle_has_required_components(&component_types) {
+                    return bundles
+                        .into_iter()
+                        .map(|bundle| scene.spawn_with_components(bundle.into_components()))
+                        .collect();
+                }
                 scene.__spawn_bundle_typed_batch(
                     std::any::TypeId::of::<($($name,)+)>(),
                     &component_types,
