@@ -1,6 +1,6 @@
-use std::any::Any;
 use std::sync::Arc;
 use crate::gpu_texture::GpuTexture;
+use crate::render_graph::{PassNode, PostProcessNode};
 use crate::render_pass::LoadOp;
 
 pub struct BuildContext<'a> {
@@ -40,5 +40,6 @@ pub trait RenderNode: Send + Sync + 'static {
     ) {
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn pass_mut(&mut self) -> Option<&mut PassNode> { None }
+    fn post_process_mut(&mut self) -> Option<&mut PostProcessNode> { None }
 }

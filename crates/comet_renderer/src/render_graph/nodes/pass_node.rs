@@ -7,7 +7,6 @@ use crate::{
     Vertex,
 };
 use comet_math::m4;
-use std::any::Any;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
@@ -105,14 +104,14 @@ impl PassNode {
 
     pub fn set_geometry(
         &mut self,
-        verts: Vec<Vertex>,
-        indices: Vec<u16>,
+        verts: &[Vertex],
+        indices: &[u16],
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<(), DrawStreamError> {
         let batch = self.batch.as_mut().ok_or(DrawStreamError::BatchNotBuilt)?;
-        batch.write_vertex_stream(0, &verts, device, queue)?;
-        batch.write_indices_u16(&indices, device, queue)?;
+        batch.write_vertex_stream(0, verts, device, queue)?;
+        batch.write_indices_u16(indices, device, queue)?;
         batch.set_command(DrawCommand::Indexed {
             indices: 0..indices.len() as u32,
             base_vertex: 0,
@@ -425,7 +424,7 @@ impl RenderNode for PassNode {
         }
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    fn pass_mut(&mut self) -> Option<&mut PassNode> {
+        Some(self)
     }
 }

@@ -65,12 +65,15 @@ impl RenderGraph {
         self.nodes.iter().any(|n| n.name() == name)
     }
 
-    pub fn get_node_mut<T: RenderNode>(&mut self, name: &str) -> Option<&mut T> {
+    pub fn pass_mut(&mut self, name: &str) -> Option<&mut PassNode> {
+        self.nodes.iter_mut().find(|node| node.name() == name)?.pass_mut()
+    }
+
+    pub fn post_process_mut(&mut self, name: &str) -> Option<&mut PostProcessNode> {
         self.nodes
             .iter_mut()
-            .find(|n| n.name() == name)?
-            .as_any_mut()
-            .downcast_mut::<T>()
+            .find(|node| node.name() == name)?
+            .post_process_mut()
     }
 
     pub fn on_resize(

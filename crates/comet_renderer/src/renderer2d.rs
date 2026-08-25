@@ -50,6 +50,12 @@ pub struct Renderer2D {
     font_cache: std::collections::HashMap<FontKey, f32>,
     accumulated_font_glyphs: Vec<comet_assets::GlyphData>,
     sprite_instances: Vec<SpriteInstance>,
+    world_text_vertices: Vec<Vertex>,
+    world_text_indices: Vec<u16>,
+    screen_text_vertices: Vec<Vertex>,
+    screen_text_indices: Vec<u16>,
+    gizmo_vertices: Vec<Vertex>,
+    gizmo_indices: Vec<u16>,
 }
 
 pub struct RenderHandle2D {
@@ -334,6 +340,10 @@ impl RenderHandle2D {
         for (transform, render) in
             scene.query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
         {
+            if !render.is_visible() {
+                continue;
+            }
+
             let atlas_ref = match render.texture() {
                 ImageRef::Atlas(atlas_ref) => atlas_ref,
                 ImageRef::Unresolved(path) => {
@@ -368,10 +378,9 @@ impl RenderHandle2D {
                 scale: [transform.scale().x(), transform.scale().y()],
                 texture: atlas_ref,
                 draw_index: render.draw_index(),
-                visible: render.is_visible(),
+                visible: true,
             });
         }
-        draws.sort_by_key(|draw| draw.draw_index);
 
         let mut texts = Vec::new();
         for (transform, text, layout) in scene.query::<(
@@ -809,10 +818,10 @@ impl Renderer2D {
         if self.graph.has_node("Font") {
             let device = self.render_state.device();
             self.graph
-                .get_node_mut::<PassNode>("Font")
+                .pass_mut("Font")
                 .unwrap()
                 .set_texture(font_texture_arc.clone(), device);
-            if let Some(node) = self.graph.get_node_mut::<PassNode>("ScreenFont") {
+            if let Some(node) = self.graph.pass_mut("ScreenFont") {
                 node.set_texture(font_texture_arc, device);
             }
         } else {
@@ -1008,7 +1017,7 @@ impl Renderer2D {
             .insert_gpu_texture("atlas".to_string(), new_gpu_arc.clone());
 
         let device = self.render_state.device();
-        if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
+        if let Some(node) = self.graph.pass_mut("Universal") {
             node.set_texture(new_gpu_arc, device);
         }
 
@@ -1061,7 +1070,7 @@ impl Renderer2D {
     }
 
     fn set_pass_render_target(&mut self, label: &str, render_target: Option<String>) {
-        if let Some(node) = self.graph.get_node_mut::<PostProcessNode>(label) {
+        if let Some(node) = self.graph.post_process_mut(label) {
             node.set_render_target(render_target);
             self.graph.mark_dirty();
         } else {
@@ -1070,7 +1079,7 @@ impl Renderer2D {
     }
 
     fn set_pass_output(&mut self, label: &str, output: Option<PassOutput>) -> Option<PassOutput> {
-        if let Some(node) = self.graph.get_node_mut::<PostProcessNode>(label) {
+        if let Some(node) = self.graph.post_process_mut(label) {
             let result = output.clone();
             node.set_output(output.map(|p| p.0));
             self.graph.mark_dirty();
@@ -1126,7 +1135,9 @@ impl Renderer2D {
     ) -> v2 {
         let size = size.resolve(self.scale_factor() as f32);
         let mut bounds = v2::ZERO;
-        let _ = self.add_text_to_buffers(
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        self.add_text_to_buffers(
             text,
             font,
             size,
@@ -1136,6 +1147,8 @@ impl Renderer2D {
             comet_ecs::Anchor::TopLeft,
             comet_ecs::TextJustification::Left,
             &mut bounds,
+            &mut vertices,
+            &mut indices,
         );
         bounds
     }
@@ -1151,7 +1164,9 @@ impl Renderer2D {
         anchor: comet_ecs::Anchor,
         justification: comet_ecs::TextJustification,
         bounds: &mut comet_math::v2,
-    ) -> (Vec<Vertex>, Vec<u16>) {
+        vertex_data: &mut Vec<Vertex>,
+        index_data: &mut Vec<u16>,
+    ) {
         self.ensure_font_initialized(font, raster_size);
         let size = raster_size.pixels();
 
@@ -1208,8 +1223,6 @@ impl Renderer2D {
         );
 
         let mut y_offset = 0.0f32;
-        let mut vertex_data = Vec::new();
-        let mut index_data = Vec::new();
 
         for (line, line_width) in lines.into_iter().zip(line_widths) {
             let mut x_offset = match justification {
@@ -1268,8 +1281,6 @@ impl Renderer2D {
 
             y_offset += line_height;
         }
-
-        (vertex_data, index_data)
     }
 
     fn resolve_text_size(
@@ -1324,7 +1335,7 @@ impl Renderer2D {
                 let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
             }
         }
-        let (world_view, screen_view) = self.setup_camera_from_packet(camera);
+        let (world_view, screen_view) = self.resolve_camera_views(camera);
         draws.sort_by_key(|draw| draw.draw_index);
 
         let mut sprite_instances = std::mem::take(&mut self.sprite_instances);
@@ -1352,7 +1363,7 @@ impl Renderer2D {
         let device = self.render_state.device();
         let queue = self.render_state.queue();
 
-        if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
+        if let Some(node) = self.graph.pass_mut("Universal") {
             let instance_count = sprite_instances.len() as u32;
             let update_result = node
                 .write_vertex_stream(1, &sprite_instances, device, queue)
@@ -1369,8 +1380,10 @@ impl Renderer2D {
         }
         self.sprite_instances = sprite_instances;
 
-        let mut font_vertex_buffer: Vec<Vertex> = Vec::new();
-        let mut font_index_buffer: Vec<u16> = Vec::new();
+        let mut font_vertex_buffer = std::mem::take(&mut self.world_text_vertices);
+        let mut font_index_buffer = std::mem::take(&mut self.world_text_indices);
+        font_vertex_buffer.clear();
+        font_index_buffer.clear();
 
         for text in texts {
             if !text.visible {
@@ -1387,7 +1400,7 @@ impl Renderer2D {
 
             let (raster_size, geometry_scale) = self.resolve_text_size(text.size, world_view);
             let mut bounds = v2::ZERO;
-            let (mut vertices, indices) = self.add_text_to_buffers(
+            self.add_text_to_buffers(
                 &text.content,
                 text.font,
                 raster_size,
@@ -1397,27 +1410,29 @@ impl Renderer2D {
                 text.anchor,
                 text.justification,
                 &mut bounds,
+                &mut font_vertex_buffer,
+                &mut font_index_buffer,
             );
-
-            let offset = font_vertex_buffer.len() as u16;
-            font_vertex_buffer.append(&mut vertices);
-            font_index_buffer.extend(indices.iter().map(|i| i + offset));
         }
 
         {
             let device = self.render_state.device();
             let queue = self.render_state.queue();
-            if let Some(node) = self.graph.get_node_mut::<PassNode>("Font") {
+            if let Some(node) = self.graph.pass_mut("Font") {
                 if let Err(error) =
-                    node.set_geometry(font_vertex_buffer, font_index_buffer, device, queue)
+                    node.set_geometry(&font_vertex_buffer, &font_index_buffer, device, queue)
                 {
                     error!("Failed to update font draw batch: {}", error);
                 }
             }
         }
+        self.world_text_vertices = font_vertex_buffer;
+        self.world_text_indices = font_index_buffer;
 
-        let mut screen_font_vertex_buffer: Vec<Vertex> = Vec::new();
-        let mut screen_font_index_buffer: Vec<u16> = Vec::new();
+        let mut screen_font_vertex_buffer = std::mem::take(&mut self.screen_text_vertices);
+        let mut screen_font_index_buffer = std::mem::take(&mut self.screen_text_indices);
+        screen_font_vertex_buffer.clear();
+        screen_font_index_buffer.clear();
         let screen_size = screen_view.visible_world_size;
         for text in screen_texts {
             if !text.visible {
@@ -1446,7 +1461,7 @@ impl Renderer2D {
             };
             let (raster_size, geometry_scale) = self.resolve_text_size(text.size, screen_view);
             let mut bounds = v2::ZERO;
-            let (mut vertices, indices) = self.add_text_to_buffers(
+            self.add_text_to_buffers(
                 &text.content,
                 text.font,
                 raster_size,
@@ -1456,10 +1471,9 @@ impl Renderer2D {
                 text.text_anchor,
                 text.justification,
                 &mut bounds,
+                &mut screen_font_vertex_buffer,
+                &mut screen_font_index_buffer,
             );
-            let offset = screen_font_vertex_buffer.len() as u16;
-            screen_font_vertex_buffer.append(&mut vertices);
-            screen_font_index_buffer.extend(indices.iter().map(|index| index + offset));
         }
 
         let screen_camera = RenderCamera::new(screen_size, v3::ZERO);
@@ -1467,10 +1481,10 @@ impl Renderer2D {
         screen_uniform.update_view_proj(&screen_camera);
         let device = self.render_state.device();
         let queue = self.render_state.queue();
-        if let Some(node) = self.graph.get_node_mut::<PassNode>("ScreenFont") {
+        if let Some(node) = self.graph.pass_mut("ScreenFont") {
             if let Err(error) = node.set_geometry(
-                screen_font_vertex_buffer,
-                screen_font_index_buffer,
+                &screen_font_vertex_buffer,
+                &screen_font_index_buffer,
                 device,
                 queue,
             ) {
@@ -1479,12 +1493,16 @@ impl Renderer2D {
             node.set_camera(&screen_uniform, queue);
             node.set_viewport(Some(screen_view.viewport));
         }
+        self.screen_text_vertices = screen_font_vertex_buffer;
+        self.screen_text_indices = screen_font_index_buffer;
 
-        // Text processing lazily creates the Font pass, so update camera uniforms afterward.
-        self.setup_camera_from_packet(camera);
+        // Text processing lazily creates the Font pass, so apply camera uniforms afterward.
+        self.apply_camera_view(camera, world_view);
 
-        let mut gizmo_verts: Vec<Vertex> = Vec::new();
-        let mut gizmo_indices: Vec<u16> = Vec::new();
+        let mut gizmo_verts = std::mem::take(&mut self.gizmo_vertices);
+        let mut gizmo_indices = std::mem::take(&mut self.gizmo_indices);
+        gizmo_verts.clear();
+        gizmo_indices.clear();
 
         for shape in gizmo_shapes {
             match shape {
@@ -1569,15 +1587,17 @@ impl Renderer2D {
         let device = self.render_state.device();
         let queue = self.render_state.queue();
 
-        if let Some(node) = self.graph.get_node_mut::<PassNode>("Gizmo") {
-            if let Err(error) = node.set_geometry(gizmo_verts, gizmo_indices, device, queue) {
+        if let Some(node) = self.graph.pass_mut("Gizmo") {
+            if let Err(error) = node.set_geometry(&gizmo_verts, &gizmo_indices, device, queue) {
                 error!("Failed to update gizmo draw batch: {}", error);
             }
         }
+        self.gizmo_vertices = gizmo_verts;
+        self.gizmo_indices = gizmo_indices;
     }
 
-    fn setup_camera_from_packet(
-        &mut self,
+    fn resolve_camera_views(
+        &self,
         camera: CameraPacket2D,
     ) -> (
         crate::camera::ResolvedCameraViewport,
@@ -1627,6 +1647,14 @@ impl Renderer2D {
             output_bounds,
         );
 
+        (resolved, screen_view)
+    }
+
+    fn apply_camera_view(
+        &mut self,
+        camera: CameraPacket2D,
+        resolved: crate::camera::ResolvedCameraViewport,
+    ) {
         let view_proj: [[f32; 4]; 4] = match camera.projection {
             comet_ecs::Projection::Custom(matrix) => matrix.into(),
             _ => RenderCamera::new(
@@ -1642,20 +1670,18 @@ impl Renderer2D {
 
         let queue = self.render_state.queue();
 
-        if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
+        if let Some(node) = self.graph.pass_mut("Universal") {
             node.set_camera(&camera_uniform, queue);
             node.set_viewport(Some(resolved.viewport));
         }
-        if let Some(node) = self.graph.get_node_mut::<PassNode>("Font") {
+        if let Some(node) = self.graph.pass_mut("Font") {
             node.set_camera(&camera_uniform, queue);
             node.set_viewport(Some(resolved.viewport));
         }
-        if let Some(node) = self.graph.get_node_mut::<PassNode>("Gizmo") {
+        if let Some(node) = self.graph.pass_mut("Gizmo") {
             node.set_camera(&camera_uniform, queue);
             node.set_viewport(Some(resolved.viewport));
         }
-
-        (resolved, screen_view)
     }
 }
 
@@ -1678,6 +1704,12 @@ impl Renderer for Renderer2D {
             font_cache: std::collections::HashMap::new(),
             accumulated_font_glyphs: Vec::new(),
             sprite_instances: Vec::new(),
+            world_text_vertices: Vec::new(),
+            world_text_indices: Vec::new(),
+            screen_text_vertices: Vec::new(),
+            screen_text_indices: Vec::new(),
+            gizmo_vertices: Vec::new(),
+            gizmo_indices: Vec::new(),
         }
     }
 

@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::sync::Arc;
 use crate::{
     gpu_texture::GpuTexture,
@@ -261,5 +260,5 @@ impl RenderNode for PostProcessNode {
         self.cached_input_ptrs.clear();
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn post_process_mut(&mut self) -> Option<&mut PostProcessNode> { Some(self) }
 }
