@@ -5,8 +5,8 @@ use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan, ComponentChangeState};
 use crate::{
-    Component, ComponentTuple, Entity, EntityLocation, IdQueue, RequiredComponent,
-    RequiredComponents, Tick,
+    Component, ComponentTuple, Entity, EntityLocation, IdQueue, QueryTarget, QueryTargets,
+    RequiredComponent, RequiredComponents, Tick,
 };
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
@@ -32,6 +32,7 @@ pub struct Scene {
     component_index: HashMap<TypeId, usize>,
     component_info: HashMap<TypeId, ComponentInfo>,
     required_components: HashMap<TypeId, Vec<RequiredComponent>>,
+    query_targets: HashMap<TypeId, Vec<QueryTarget>>,
     entity_locations: Vec<Option<EntityLocation>>,
     archetypes: Archetypes,
     archetype_version: usize,
@@ -59,6 +60,7 @@ impl Scene {
             component_index: HashMap::new(),
             component_info: HashMap::new(),
             required_components: HashMap::new(),
+            query_targets: HashMap::new(),
             entity_locations: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
             archetypes: Archetypes::new(),
             archetype_version: 0,
@@ -630,6 +632,16 @@ impl Scene {
         self.required_components
             .insert(type_id, requirements.into_components());
 
+        let mut query_targets = QueryTargets::new::<C>();
+        query_targets.register_component::<C>();
+        C::register_query_targets(&mut query_targets);
+        for target in query_targets.into_targets() {
+            self.query_targets
+                .entry(target.target_type)
+                .or_default()
+                .push(target);
+        }
+
         if !self.component_index.contains_key(&type_id) {
             let index = if let Some((i, _)) = self
                 .component_registry
@@ -673,6 +685,11 @@ impl Scene {
             );
             return;
         }
+
+        self.query_targets.retain(|_, targets| {
+            targets.retain(|target| target.component_type != type_id);
+            !targets.is_empty()
+        });
 
         if let Some(index) = self.component_index.remove(&type_id) {
             if let Some(slot) = self.component_registry.get_mut(index) {
@@ -1192,6 +1209,13 @@ impl Scene {
         &self.archetypes
     }
 
+    pub(crate) fn query_targets(&self, target_type: TypeId) -> &[QueryTarget] {
+        self.query_targets
+            .get(&target_type)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
     pub(crate) fn query_change_state(&self) -> &HashMap<(u32, TypeId), ComponentChangeState> {
         &self.component_change_state
     }
@@ -1290,7 +1314,7 @@ impl Scene {
             let arch = self.archetypes.get_mut(old_arch_id);
             for component in components.drain(..) {
                 if let Some(col_idx) = arch.column_index(component.type_id) {
-                    (component.set_fn)(component.value, &mut arch.columns_mut()[col_idx], loc.row);
+                    component.set(&mut arch.columns_mut()[col_idx], loc.row);
                 }
             }
             for type_id in submitted_types {
@@ -1325,18 +1349,14 @@ impl Scene {
                     let _ = old_arch.columns_mut()[old_idx]
                         .move_last_to(&mut new_arch.columns_mut()[new_idx]);
                     if let Some(component) = Self::take_last_component_of_type(&mut components, t) {
-                        (component.set_fn)(
-                            component.value,
-                            &mut new_arch.columns_mut()[new_idx],
-                            new_row,
-                        );
+                        component.set(&mut new_arch.columns_mut()[new_idx], new_row);
                     }
                     continue;
                 }
 
                 let component = Self::take_last_component_of_type(&mut components, t)
                     .unwrap_or_else(|| panic!("Bundle missing component {:?}", t));
-                (component.push_fn)(component.value, &mut new_arch.columns_mut()[new_idx]);
+                component.push(&mut new_arch.columns_mut()[new_idx]);
             }
 
             for old_idx in 0..old_arch.types().len() {
@@ -1399,7 +1419,7 @@ impl Scene {
             let col_idx = arch
                 .column_index(type_id)
                 .unwrap_or_else(|| panic!("Archetype missing column for {:?}", type_id));
-            (component.push_fn)(component.value, &mut arch.columns_mut()[col_idx]);
+            component.push(&mut arch.columns_mut()[col_idx]);
             inserted_types.push(type_id);
         }
 

@@ -6,6 +6,7 @@ pub(crate) const MAX_QUERY_COMPONENTS: usize = 8;
 pub(crate) struct QueryComponent {
     pub(crate) type_id: TypeId,
     pub(crate) required: bool,
+    pub(crate) writes: bool,
 }
 
 pub(crate) trait QueryData<'a>: Sized {
@@ -16,11 +17,13 @@ pub(crate) trait QueryData<'a>: Sized {
         component_event_tick: Tick,
         entity: Entity,
         columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
     );
 
     unsafe fn fetch(
         entity: Entity,
         columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
         row: usize,
     ) -> Option<Self>;
 }
@@ -50,11 +53,12 @@ unsafe fn mark_component_changed(
 
 macro_rules! impl_query_data_leaf {
     ($data:ty) => {
-        impl<'a, C: Component> QueryData<'a> for $data {
+        impl<'a, C: ?Sized + Component> QueryData<'a> for $data {
             fn components() -> Vec<QueryComponent> {
                 vec![QueryComponent {
                     type_id: <Self as WriteFetch<'a>>::type_id(),
                     required: <Self as WriteFetch<'a>>::required(),
+                    writes: <Self as WriteFetch<'a>>::writes(),
                 }]
             }
 
@@ -63,6 +67,7 @@ macro_rules! impl_query_data_leaf {
                 component_event_tick: Tick,
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+                component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
             ) {
                 if <Self as WriteFetch<'a>>::writes() && !columns[0].is_null() {
                     unsafe {
@@ -70,7 +75,7 @@ macro_rules! impl_query_data_leaf {
                             change_state,
                             component_event_tick,
                             entity,
-                            <Self as WriteFetch<'a>>::type_id(),
+                            component_types[0].expect("query access is missing its component type"),
                         );
                     }
                 }
@@ -79,9 +84,10 @@ macro_rules! impl_query_data_leaf {
             unsafe fn fetch(
                 _entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+                casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
                 row: usize,
             ) -> Option<Self> {
-                unsafe { <Self as WriteFetch<'a>>::get(columns[0], row) }
+                unsafe { <Self as WriteFetch<'a>>::get(columns[0], casters[0].as_ref(), row) }
             }
         }
     };
@@ -92,8 +98,8 @@ impl_query_data_leaf!(&'a mut C);
 impl_query_data_leaf!(Option<&'a C>);
 impl_query_data_leaf!(Option<&'a mut C>);
 
-impl<'a, C: Component> ReadQueryData<'a> for &'a C {}
-impl<'a, C: Component> ReadQueryData<'a> for Option<&'a C> {}
+impl<'a, C: ?Sized + Component> ReadQueryData<'a> for &'a C {}
+impl<'a, C: ?Sized + Component> ReadQueryData<'a> for Option<&'a C> {}
 
 macro_rules! impl_tuple_query_data {
     ($($ty:ident: $index:literal),+) => {
@@ -106,6 +112,7 @@ macro_rules! impl_tuple_query_data {
                     $(QueryComponent {
                         type_id: <$ty as WriteFetch<'a>>::type_id(),
                         required: <$ty as WriteFetch<'a>>::required(),
+                        writes: <$ty as WriteFetch<'a>>::writes(),
                     }),+
                 ]
             }
@@ -115,6 +122,7 @@ macro_rules! impl_tuple_query_data {
                 component_event_tick: Tick,
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+                component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
             ) {
                 $(
                     if <$ty as WriteFetch<'a>>::writes() && !columns[$index].is_null() {
@@ -123,7 +131,8 @@ macro_rules! impl_tuple_query_data {
                                 change_state,
                                 component_event_tick,
                                 entity,
-                                <$ty as WriteFetch<'a>>::type_id(),
+                                component_types[$index]
+                                    .expect("query access is missing its component type"),
                             );
                         }
                     }
@@ -133,10 +142,15 @@ macro_rules! impl_tuple_query_data {
             unsafe fn fetch(
                 _entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+                casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
                 row: usize,
             ) -> Option<Self> {
                 unsafe {
-                    Some(($(<$ty as WriteFetch<'a>>::get(columns[$index], row)?,)+))
+                    Some(($(<$ty as WriteFetch<'a>>::get(
+                        columns[$index],
+                        casters[$index].as_ref(),
+                        row,
+                    )?,)+))
                 }
             }
         }
@@ -159,6 +173,7 @@ macro_rules! impl_entity_tuple_query_data {
                     $(QueryComponent {
                         type_id: <$ty as WriteFetch<'a>>::type_id(),
                         required: <$ty as WriteFetch<'a>>::required(),
+                        writes: <$ty as WriteFetch<'a>>::writes(),
                     }),+
                 ]
             }
@@ -168,6 +183,7 @@ macro_rules! impl_entity_tuple_query_data {
                 component_event_tick: Tick,
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+                component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
             ) {
                 $(
                     if <$ty as WriteFetch<'a>>::writes() && !columns[$index].is_null() {
@@ -176,7 +192,8 @@ macro_rules! impl_entity_tuple_query_data {
                                 change_state,
                                 component_event_tick,
                                 entity,
-                                <$ty as WriteFetch<'a>>::type_id(),
+                                component_types[$index]
+                                    .expect("query access is missing its component type"),
                             );
                         }
                     }
@@ -186,10 +203,15 @@ macro_rules! impl_entity_tuple_query_data {
             unsafe fn fetch(
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+                casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
                 row: usize,
             ) -> Option<Self> {
                 unsafe {
-                    Some((entity, $(<$ty as WriteFetch<'a>>::get(columns[$index], row)?,)+))
+                    Some((entity, $(<$ty as WriteFetch<'a>>::get(
+                        columns[$index],
+                        casters[$index].as_ref(),
+                        row,
+                    )?,)+))
                 }
             }
         }

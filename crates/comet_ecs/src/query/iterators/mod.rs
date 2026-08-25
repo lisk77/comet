@@ -100,8 +100,9 @@ impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
                     access.component_event_tick,
                     entity,
                     &access.columns,
+                    &access.component_types,
                 );
-                return Data::fetch(entity, &access.columns, row);
+                return Data::fetch(entity, &access.columns, &access.casters, row);
             }
         }
     }
