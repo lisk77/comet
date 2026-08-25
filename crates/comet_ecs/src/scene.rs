@@ -137,21 +137,6 @@ impl Scene {
         self.commands.delete_entity(entity);
     }
 
-    /// Queues component registration.
-    pub fn deferred_register_component<C: Component + 'static>(&mut self) {
-        self.commands.register_component::<C>();
-    }
-
-    /// Queues registration of a tuple of component types.
-    pub fn deferred_register_components<T: ComponentTuple>(&mut self) {
-        T::deferred_register_all(&mut self.commands);
-    }
-
-    /// Queues component deregistration.
-    pub fn deferred_deregister_component<C: Component + 'static>(&mut self) {
-        self.commands.deregister_component::<C>();
-    }
-
     /// Queues adding or setting multiple components on an entity.
     pub fn deferred_add_components<B: Bundle>(&mut self, entity: Entity, bundle: B) {
         self.commands
@@ -610,21 +595,16 @@ impl Scene {
             .any(|arch| arch.column_index(type_id).is_some() && !arch.is_empty())
     }
 
-    /// Registers a new component in the scene.
-    pub fn register_component<C: Component + 'static>(&mut self) {
-        self.register_component_immediate::<C>();
-    }
-
-    /// Registers a tuple of component types in the scene.
-    pub fn register_components<T: ComponentTuple>(&mut self) {
-        T::register_all(self);
-    }
-
-    #[doc(hidden)]
-    pub fn __ensure_component_registered<C: Component + 'static>(&mut self) {
+    /// Ensures that a component type is registered in the scene.
+    pub fn ensure_component<C: Component>(&mut self) {
         if !self.component_info.contains_key(&C::type_id()) {
             self.register_component_immediate::<C>();
         }
+    }
+
+    /// Ensures that a tuple of component types is registered in the scene.
+    pub fn ensure_components<T: ComponentTuple>(&mut self) {
+        T::ensure_all(self);
     }
 
     pub(crate) fn register_component_immediate<C: Component + 'static>(&mut self) {
@@ -1223,7 +1203,6 @@ impl Scene {
     }
 
     pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {
-        bundle.ensure_registered(self);
         bundle.spawn(self)
     }
 
@@ -1248,19 +1227,6 @@ impl Scene {
                 components.write_components_reserved(columns, column_indices, row);
             },
         )
-    }
-
-    pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> Entity {
-        bundle.ensure_registered(self);
-        bundle.spawn(self)
-    }
-
-    /// Spawns a batch of bundles immediately.
-    pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
-        if let Some(bundle) = bundles.first() {
-            bundle.ensure_registered(self);
-        }
-        B::spawn_batch(self, bundles)
     }
 
     pub(crate) fn add_with_components(
@@ -1709,7 +1675,7 @@ mod tests {
     #[test]
     fn deregister_component_is_blocked_while_live_instances_exist() {
         let mut scene = Scene::new();
-        scene.register_component::<A>();
+        scene.ensure_component::<A>();
 
         let e1 = scene.new_entity();
         scene.add_components(e1, A);
@@ -1737,23 +1703,23 @@ mod tests {
     #[should_panic(expected = "query called with duplicate component types")]
     fn query_mut_pair_rejects_identical_component_types() {
         let mut scene = Scene::new();
-        scene.register_component::<A>();
+        scene.ensure_component::<A>();
 
         let entity = scene.new_entity();
         scene.add_components(entity, A);
 
-        let _ = scene.query_mut::<(&mut A, &mut A), ()>().iter();
+        let _ = scene.query_mut::<(&mut A, &mut A), ()>();
     }
 
     #[test]
     fn query_includes_entity_id_for_read_tuples() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let e = scene.new_entity();
         scene.add_components(e, Value(42));
 
-        let mut iter = scene.query::<(crate::Entity, &Value), ()>().iter();
+        let mut iter = scene.query::<(crate::Entity, &Value), ()>();
         let (entity, value) = iter.next().expect("expected one result");
         assert_eq!(entity, e);
         assert_eq!(value.0, 42);
@@ -1763,12 +1729,12 @@ mod tests {
     #[test]
     fn query_mut_includes_entity_id_for_write_tuples() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let e = scene.new_entity();
         scene.add_components(e, Value(7));
 
-        let mut iter = scene.query_mut::<(crate::Entity, &mut Value), ()>().iter();
+        let mut iter = scene.query_mut::<(crate::Entity, &mut Value), ()>();
         let (entity, value) = iter.next().expect("expected one result");
         assert_eq!(entity, e);
         value.0 = 11;
@@ -1780,8 +1746,8 @@ mod tests {
     #[test]
     fn add_component_moves_entity_between_archetypes_and_preserves_swapped_entity_location() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<B>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<B>();
 
         let e1 = scene.new_entity();
         let e2 = scene.new_entity();
@@ -1799,9 +1765,9 @@ mod tests {
     #[test]
     fn remove_components_moves_entity_between_archetypes_and_preserves_remaining_components() {
         let mut scene = Scene::new();
-        scene.register_component::<A>();
-        scene.register_component::<B>();
-        scene.register_component::<Value>();
+        scene.ensure_component::<A>();
+        scene.ensure_component::<B>();
+        scene.ensure_component::<Value>();
 
         let entity = scene.new_entity();
         scene.add_components(entity, (A, B, Value(10)));
@@ -1837,9 +1803,9 @@ mod tests {
     #[test]
     fn query_with_and_without_filters_entities() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<IncludeTag>();
-        scene.register_component::<ExcludeTag>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<IncludeTag>();
+        scene.ensure_component::<ExcludeTag>();
 
         let keep = scene.new_entity();
         scene.add_components(keep, Value(10));
@@ -1852,7 +1818,6 @@ mod tests {
 
         let values: Vec<i32> = scene
             .query::<&Value, (crate::With<IncludeTag>, crate::Without<ExcludeTag>)>()
-            .iter()
             .map(|v| v.0)
             .collect();
 
@@ -1862,10 +1827,10 @@ mod tests {
     #[test]
     fn query_with_all_and_without_all_filters_entities() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<IncludeTag>();
-        scene.register_component::<ExcludeTag>();
-        scene.register_component::<B>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<IncludeTag>();
+        scene.ensure_component::<ExcludeTag>();
+        scene.ensure_component::<B>();
 
         let keep = scene.new_entity();
         scene.add_components(keep, Value(10));
@@ -1879,7 +1844,6 @@ mod tests {
 
         let values: Vec<i32> = scene
             .query::<&Value, (crate::With<IncludeTag>, crate::WithoutAny<(ExcludeTag, B)>)>()
-            .iter()
             .map(|v| v.0)
             .collect();
 
@@ -1889,9 +1853,9 @@ mod tests {
     #[test]
     fn query_with_any_filters_entities() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<IncludeTag>();
-        scene.register_component::<B>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<IncludeTag>();
+        scene.ensure_component::<B>();
 
         let include = scene.new_entity();
         scene.add_components(include, Value(10));
@@ -1906,7 +1870,6 @@ mod tests {
 
         let values: Vec<i32> = scene
             .query::<&Value, crate::WithAny<(IncludeTag, B)>>()
-            .iter()
             .map(|v| v.0)
             .collect();
 
@@ -1916,9 +1879,9 @@ mod tests {
     #[test]
     fn query_without_any_filters_entities() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<ExcludeTag>();
-        scene.register_component::<B>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<ExcludeTag>();
+        scene.ensure_component::<B>();
 
         let keep = scene.new_entity();
         scene.add_components(keep, Value(10));
@@ -1933,7 +1896,6 @@ mod tests {
 
         let values: Vec<i32> = scene
             .query::<&Value, crate::WithoutAny<(ExcludeTag, B)>>()
-            .iter()
             .map(|v| v.0)
             .collect();
 
@@ -1943,16 +1905,15 @@ mod tests {
     #[test]
     fn query_with_and_without_same_tag_is_empty() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<IncludeTag>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<IncludeTag>();
 
         let entity = scene.new_entity();
         scene.add_components(entity, Value(1));
         scene.add_components(entity, IncludeTag);
 
-        let mut iter = scene
-            .query::<&Value, (crate::With<IncludeTag>, crate::Without<IncludeTag>)>()
-            .iter();
+        let mut iter =
+            scene.query::<&Value, (crate::With<IncludeTag>, crate::Without<IncludeTag>)>();
 
         assert!(iter.next().is_none());
     }
@@ -1960,7 +1921,7 @@ mod tests {
     #[test]
     fn component_change_tracking_uses_component_event_tick() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         scene.set_component_event_tick(10);
         let entity = scene.new_entity();
@@ -1979,7 +1940,7 @@ mod tests {
     #[test]
     fn removed_since_tracks_component_removals() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(3);
@@ -1994,7 +1955,7 @@ mod tests {
     #[test]
     fn query_mut_marks_component_changed() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(10);
@@ -2002,7 +1963,7 @@ mod tests {
 
         scene.set_component_event_tick(20);
         {
-            let mut iter = scene.query_mut::<&mut Value, ()>().iter();
+            let mut iter = scene.query_mut::<&mut Value, ()>();
             let _ = iter.next();
         }
 
@@ -2012,8 +1973,8 @@ mod tests {
     #[test]
     fn query_mut_marks_only_mutable_fetches() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<A>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<A>();
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(10);
@@ -2022,7 +1983,7 @@ mod tests {
 
         scene.set_component_event_tick(30);
         {
-            let mut iter = scene.query_mut::<(&Value, &mut A), ()>().iter();
+            let mut iter = scene.query_mut::<(&Value, &mut A), ()>();
             let _ = iter.next();
         }
 
@@ -2033,14 +1994,14 @@ mod tests {
     #[test]
     fn temporal_query_filters_use_default_query_since_tick() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(5);
         scene.add_components(entity, Value(1));
 
         scene.set_default_query_since_tick(4);
-        let added_count = scene.query::<&Value, crate::Added<Value>>().iter().count();
+        let added_count = scene.query::<&Value, crate::Added<Value>>().count();
         assert_eq!(added_count, 1);
 
         scene.set_component_event_tick(9);
@@ -2048,18 +2009,15 @@ mod tests {
             value.0 = 2;
         }
 
-        let changed_count = scene
-            .query::<&Value, crate::Changed<Value>>()
-            .iter()
-            .count();
+        let changed_count = scene.query::<&Value, crate::Changed<Value>>().count();
         assert_eq!(changed_count, 1);
     }
 
     #[test]
     fn temporal_query_constraints_can_use_different_since_ticks_per_filter() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<A>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<A>();
 
         scene.set_component_event_tick(5);
         let entity = scene.new_entity();
@@ -2075,7 +2033,6 @@ mod tests {
             .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
             .added_since::<Value>(4)
             .changed_since::<A>(9)
-            .iter()
             .count();
         assert_eq!(matching, 1);
 
@@ -2083,7 +2040,6 @@ mod tests {
             .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
             .added_since::<Value>(6)
             .changed_since::<A>(10)
-            .iter()
             .count();
         assert_eq!(non_matching, 0);
     }
@@ -2091,8 +2047,8 @@ mod tests {
     #[test]
     fn query_optional_read_fetches_return_none_when_component_is_missing() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<A>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<A>();
 
         let with_a = scene.new_entity();
         scene.add_components(with_a, Value(1));
@@ -2103,7 +2059,6 @@ mod tests {
 
         let results: Vec<(i32, bool)> = scene
             .query::<(&Value, Option<&A>), ()>()
-            .iter()
             .map(|(value, maybe_a)| (value.0, maybe_a.is_some()))
             .collect();
 
@@ -2115,8 +2070,8 @@ mod tests {
     #[test]
     fn query_optional_write_fetches_do_not_mark_missing_components_as_changed() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<A>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<A>();
 
         let with_a = scene.new_entity();
         scene.set_component_event_tick(1);

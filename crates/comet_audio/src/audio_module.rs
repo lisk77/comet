@@ -30,7 +30,6 @@ impl AudioModule {
 
         for (entity, source, settings, state) in scene
             .query_mut::<(Entity, &AudioSource, &PlaybackSettings, &mut PlaybackState), ()>()
-            .iter()
         {
             if settings.playback() == Playback::Repeat(0) {
                 self.audio.stop(entity);

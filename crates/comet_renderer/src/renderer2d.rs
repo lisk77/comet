@@ -276,7 +276,6 @@ impl RenderHandle2D {
             self.pending_atlas_rebuild = false;
             for (_, render) in scene
                 .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
-                .iter()
             {
                 if let ImageRef::ResolvedHandle(h, _) = render.texture() {
                     render.set_image_ref(ImageRef::Handle(h));
@@ -298,7 +297,6 @@ impl RenderHandle2D {
                 &comet_ecs::Projection,
                 &comet_ecs::Screen,
             ), comet_ecs::With<comet_ecs::Camera2d>>()
-            .iter()
         {
             if !camera.is_enabled() {
                 continue;
@@ -324,7 +322,6 @@ impl RenderHandle2D {
         let mut referenced_handles = Vec::new();
         for (transform, render) in scene
             .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
-            .iter()
         {
             let atlas_ref = match render.texture() {
                 ImageRef::Atlas(atlas_ref) => atlas_ref,
@@ -372,7 +369,6 @@ impl RenderHandle2D {
                 &comet_ecs::Text,
                 Option<&comet_ecs::TextLayout>,
             ), comet_ecs::Without<comet_ecs::ScreenPosition>>()
-            .iter()
         {
             if !text.is_visible() {
                 continue;
@@ -407,7 +403,6 @@ impl RenderHandle2D {
                 &comet_ecs::Text,
                 Option<&comet_ecs::TextLayout>,
             ), comet_ecs::Without<comet_ecs::Transform>>()
-            .iter()
         {
             if !text.is_visible() {
                 continue;

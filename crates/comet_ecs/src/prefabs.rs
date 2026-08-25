@@ -12,7 +12,7 @@ pub struct ErasedComponent {
 impl ErasedComponent {
     pub fn new<C: crate::Component + 'static>(value: C) -> Self {
         fn register<C: crate::Component + 'static>(scene: &mut crate::Scene) {
-            scene.__ensure_component_registered::<C>();
+            scene.ensure_component::<C>();
         }
 
         fn push<C: crate::Component + 'static>(value: Box<dyn Any + Send>, column: &mut Column) {

@@ -35,7 +35,7 @@ impl RequiredComponents {
 
     pub fn require_with<C: Component>(&mut self, factory: fn() -> C) {
         fn register<C: Component>(scene: &mut crate::Scene) {
-            scene.__ensure_component_registered::<C>();
+            scene.ensure_component::<C>();
         }
 
         let type_id = C::type_id();

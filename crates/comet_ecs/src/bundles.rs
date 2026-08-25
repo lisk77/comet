@@ -12,6 +12,7 @@ pub trait Bundle {
     where
         Self: Sized,
     {
+        self.ensure_registered(scene);
         scene.spawn_with_components(self.into_components())
     }
 
@@ -20,16 +21,6 @@ pub trait Bundle {
         Self: Sized,
     {
         scene.add_with_components(entity, self.into_components());
-    }
-
-    fn spawn_batch(scene: &mut Scene, bundles: Vec<Self>) -> Vec<crate::Entity>
-    where
-        Self: Sized,
-    {
-        bundles
-            .into_iter()
-            .map(|bundle| bundle.spawn(scene))
-            .collect()
     }
 
     fn type_ids(&self) -> Vec<TypeId>;
@@ -72,7 +63,7 @@ macro_rules! bundle {
             }
 
             fn ensure_registered(&self, scene: &mut $crate::Scene) {
-                $(scene.__ensure_component_registered::<$ty>();)*
+                $(scene.ensure_component::<$ty>();)*
             }
 
             fn spawn(self, scene: &mut $crate::Scene) -> $crate::Entity {
@@ -103,39 +94,6 @@ macro_rules! bundle {
                 )
             }
 
-            fn spawn_batch(scene: &mut $crate::Scene, bundles: Vec<Self>) -> Vec<$crate::Entity> {
-                if let Some(bundle) = bundles.first() {
-                    bundle.ensure_registered(scene);
-                }
-                let component_types = [
-                    $(
-                        std::any::TypeId::of::<$ty>(),
-                    )*
-                ];
-                if scene.__bundle_has_required_components(&component_types) {
-                    return bundles
-                        .into_iter()
-                        .map(|bundle| scene.spawn_with_components(bundle.into_components()))
-                        .collect();
-                }
-                scene.__spawn_bundle_typed_batch(
-                    std::any::TypeId::of::<$name>(),
-                    &component_types,
-                    bundles,
-                    |columns, column_indices, _row, bundle| {
-                        let mut __bundle_col_i = 0usize;
-                        $(
-                            {
-                                let col_idx = column_indices[__bundle_col_i];
-                                __bundle_col_i += 1;
-                                unsafe {
-                                    columns[col_idx].push_unchecked_reserved::<$ty>(bundle.$field);
-                                }
-                            }
-                        )*
-                    },
-                )
-            }
         }
     };
 }

@@ -35,10 +35,6 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
         }
     }
 
-    pub fn iter(self) -> Self {
-        self
-    }
-
     pub fn added_since<C: Component>(mut self, tick: Tick) -> Self {
         set_since_filter(&mut self.added_since_filters, C::type_id(), tick);
         self
