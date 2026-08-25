@@ -9,7 +9,7 @@ pub struct CameraPacket2D {
     pub rotation_deg: f32,
     pub priority: i32,
     pub projection: Projection,
-    pub virtual_resolution: Option<[f32; 2]>,
+    pub virtual_resolution: Option<comet_math::ScreenSize>,
     pub resolution_scaling: comet_ecs::ResolutionScaling,
     pub magnification: f32,
     pub viewport: Option<comet_ecs::CameraViewport>,

@@ -1,3 +1,5 @@
+use crate::v2;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd)]
 pub struct Px(f32);
 
@@ -68,6 +70,36 @@ impl From<Px> for ScreenUnit {
 impl From<Dp> for ScreenUnit {
     fn from(value: Dp) -> Self {
         Self::Dp(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct ScreenSize {
+    width: ScreenUnit,
+    height: ScreenUnit,
+}
+
+impl ScreenSize {
+    pub fn new(width: impl Into<ScreenUnit>, height: impl Into<ScreenUnit>) -> Self {
+        Self {
+            width: width.into(),
+            height: height.into(),
+        }
+    }
+
+    pub const fn width(self) -> ScreenUnit {
+        self.width
+    }
+
+    pub const fn height(self) -> ScreenUnit {
+        self.height
+    }
+
+    pub fn resolve(self, scale_factor: f32) -> v2 {
+        v2::new(
+            self.width.resolve(scale_factor).pixels(),
+            self.height.resolve(scale_factor).pixels(),
+        )
     }
 }
 

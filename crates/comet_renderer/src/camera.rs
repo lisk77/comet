@@ -42,6 +42,7 @@ impl CameraManager {
 
             let base_size = screen
                 .virtual_resolution()
+                .map(|resolution| resolution.resolve(1.0))
                 .unwrap_or_else(|| v2::new(1.0, 1.0));
             let visible_size = base_size / projection.magnification();
             let render_cam = RenderCamera::new(

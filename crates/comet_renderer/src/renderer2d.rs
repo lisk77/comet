@@ -395,7 +395,7 @@ impl RenderHandle2D {
             });
         }
 
-        let virtual_resolution = screen.virtual_resolution().map(|size| [size.x(), size.y()]);
+        let virtual_resolution = screen.virtual_resolution();
         let mut screen_texts = Vec::new();
         for (position, text, layout) in scene
             .query::<(
@@ -1556,7 +1556,7 @@ impl Renderer2D {
         let scale_factor = self.scale_factor() as f32;
         let virtual_resolution = camera
             .virtual_resolution
-            .map(|size| v2::new(size[0], size[1]))
+            .map(|size| size.resolve(scale_factor))
             .unwrap_or_else(|| {
                 v2::new(
                     output_bounds.width as f32 / scale_factor,

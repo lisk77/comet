@@ -1,5 +1,6 @@
 use comet_app::{App, Module};
 use comet_macros::module;
+use comet_math::{px, Px};
 use comet_window::WinitModule;
 use gilrs::{Axis, Button as GilrsButton, EventType, Gilrs};
 use std::any::TypeId;
@@ -451,12 +452,15 @@ impl InputModule {
         self.state.mouse_released.contains(&button)
     }
 
-    pub fn mouse_position(&self) -> (f32, f32) {
-        self.state.mouse_position
+    pub fn mouse_position(&self) -> (Px, Px) {
+        (
+            px(self.state.mouse_position.0),
+            px(self.state.mouse_position.1),
+        )
     }
 
-    pub fn mouse_delta(&self) -> (f32, f32) {
-        self.state.mouse_delta
+    pub fn mouse_delta(&self) -> (Px, Px) {
+        (px(self.state.mouse_delta.0), px(self.state.mouse_delta.1))
     }
 
     pub fn mouse_moved(&self) -> bool {

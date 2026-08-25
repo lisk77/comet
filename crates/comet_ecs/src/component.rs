@@ -3,7 +3,7 @@
 // Also just as a nomenclature: bundles are a component made up of multiple components,
 // so it's a collection of components bundled together (like Transform2d)
 // They are intended to work with the base suite of systems provided by the engine.
-use crate::math::{deg, dp, m4, v2, v3, v4, Dp, EulerAngles, Px, Rad, ScreenUnit};
+use crate::math::{deg, dp, m4, v2, v3, v4, Dp, EulerAngles, Px, Rad, ScreenSize, ScreenUnit};
 use comet_assets::{AssetSource, Image, ImageRef};
 use comet_colors::{Color, LinearRgba};
 use comet_gizmos::{Gizmo, GizmoBuffer};
@@ -626,7 +626,7 @@ impl Camera {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Screen {
-    virtual_resolution: Option<v2>,
+    virtual_resolution: Option<ScreenSize>,
     resolution_scaling: ResolutionScaling,
     viewport: Option<CameraViewport>,
 }
@@ -648,7 +648,11 @@ impl Screen {
         Self::default()
     }
 
-    pub fn with_virtual_resolution(mut self, width: u32, height: u32) -> Self {
+    pub fn with_virtual_resolution(
+        mut self,
+        width: impl Into<ScreenUnit>,
+        height: impl Into<ScreenUnit>,
+    ) -> Self {
         self.set_virtual_resolution(width, height);
         self
     }
@@ -663,16 +667,25 @@ impl Screen {
         self
     }
 
-    pub fn virtual_resolution(&self) -> Option<v2> {
+    pub fn virtual_resolution(&self) -> Option<ScreenSize> {
         self.virtual_resolution
     }
 
-    pub fn set_virtual_resolution(&mut self, width: u32, height: u32) {
+    pub fn set_virtual_resolution(
+        &mut self,
+        width: impl Into<ScreenUnit>,
+        height: impl Into<ScreenUnit>,
+    ) {
+        let resolution = ScreenSize::new(width, height);
+        let resolved = resolution.resolve(1.0);
         assert!(
-            width > 0 && height > 0,
-            "virtual resolution dimensions must be non-zero"
+            resolved.x().is_finite()
+                && resolved.y().is_finite()
+                && resolved.x() > 0.0
+                && resolved.y() > 0.0,
+            "virtual resolution dimensions must be finite and greater than zero"
         );
-        self.virtual_resolution = Some(v2::new(width as f32, height as f32));
+        self.virtual_resolution = Some(resolution);
     }
 
     pub fn clear_virtual_resolution(&mut self) {

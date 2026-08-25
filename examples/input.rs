@@ -57,12 +57,12 @@ fn update(app: &mut App, _dt: f32) {
 
     if app.mouse_moved() {
         let (x, y) = app.mouse_position();
-        info!("Mouse position: ({:.1}, {:.1})", x, y);
+        info!("Mouse position: ({:.1}, {:.1})", x.pixels(), y.pixels());
     }
 
     let (dx, dy) = app.mouse_delta();
-    if dx != 0.0 || dy != 0.0 {
-        info!("Mouse delta: ({:.1}, {:.1})", dx, dy);
+    if dx != Px::ZERO || dy != Px::ZERO {
+        info!("Mouse delta: ({:.1}, {:.1})", dx.pixels(), dy.pixels());
     }
 
     let (sx, sy) = app.scroll_delta();
