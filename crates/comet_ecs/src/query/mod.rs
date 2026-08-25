@@ -1,9 +1,8 @@
 use crate::scene_internals::ComponentChangeState;
 use crate::{Component, ComponentTuple, Entity, Scene, Tick};
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 mod arities;
 mod builders;

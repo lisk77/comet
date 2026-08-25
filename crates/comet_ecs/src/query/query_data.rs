@@ -23,7 +23,7 @@ pub(crate) trait QueryData<'a>: Sized {
     unsafe fn fetch(
         entity: Entity,
         columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
-        casters: &[Option<Arc<dyn Any + Send + Sync>>; MAX_QUERY_COMPONENTS],
+        casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
         row: usize,
     ) -> Option<Self>;
 }
@@ -84,10 +84,10 @@ macro_rules! impl_query_data_leaf {
             unsafe fn fetch(
                 _entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
-                casters: &[Option<Arc<dyn Any + Send + Sync>>; MAX_QUERY_COMPONENTS],
+                casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
                 row: usize,
             ) -> Option<Self> {
-                unsafe { <Self as WriteFetch<'a>>::get(columns[0], casters[0].as_deref(), row) }
+                unsafe { <Self as WriteFetch<'a>>::get(columns[0], casters[0].as_ref(), row) }
             }
         }
     };
@@ -142,13 +142,13 @@ macro_rules! impl_tuple_query_data {
             unsafe fn fetch(
                 _entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
-                casters: &[Option<Arc<dyn Any + Send + Sync>>; MAX_QUERY_COMPONENTS],
+                casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
                 row: usize,
             ) -> Option<Self> {
                 unsafe {
                     Some(($(<$ty as WriteFetch<'a>>::get(
                         columns[$index],
-                        casters[$index].as_deref(),
+                        casters[$index].as_ref(),
                         row,
                     )?,)+))
                 }
@@ -203,13 +203,13 @@ macro_rules! impl_entity_tuple_query_data {
             unsafe fn fetch(
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
-                casters: &[Option<Arc<dyn Any + Send + Sync>>; MAX_QUERY_COMPONENTS],
+                casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
                 row: usize,
             ) -> Option<Self> {
                 unsafe {
                     Some((entity, $(<$ty as WriteFetch<'a>>::get(
                         columns[$index],
-                        casters[$index].as_deref(),
+                        casters[$index].as_ref(),
                         row,
                     )?,)+))
                 }

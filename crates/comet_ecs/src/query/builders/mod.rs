@@ -220,7 +220,7 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
         let arch = scene.archetypes().get(arch_id);
         let mut columns = [ptr::null_mut(); MAX_QUERY_COMPONENTS];
         let mut component_types = [None; MAX_QUERY_COMPONENTS];
-        let mut casters: [Option<Arc<dyn Any + Send + Sync>>; MAX_QUERY_COMPONENTS] =
+        let mut casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS] =
             std::array::from_fn(|_| None);
 
         for (slot, target) in targets.into_iter().enumerate() {
@@ -268,7 +268,7 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
         let columns_ptr = arch.columns_mut().as_mut_ptr();
         let mut columns = [ptr::null_mut(); MAX_QUERY_COMPONENTS];
         let mut component_types = [None; MAX_QUERY_COMPONENTS];
-        let mut casters: [Option<Arc<dyn Any + Send + Sync>>; MAX_QUERY_COMPONENTS] =
+        let mut casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS] =
             std::array::from_fn(|_| None);
 
         for (slot, target) in targets.into_iter().enumerate() {

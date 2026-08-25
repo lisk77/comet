@@ -1,45 +1,48 @@
 use comet_structs::{Column, FlatMap};
-use std::any::{Any, TypeId};
+use std::any::TypeId;
+
+trait ErasedComponentValue: Send {
+    fn push(self: Box<Self>, column: &mut Column);
+    fn set(self: Box<Self>, column: &mut Column, row: usize);
+}
+
+struct ComponentValue<C: crate::Component>(C);
+
+impl<C: crate::Component> ErasedComponentValue for ComponentValue<C> {
+    fn push(self: Box<Self>, column: &mut Column) {
+        column.push::<C>(self.0);
+    }
+
+    fn set(self: Box<Self>, column: &mut Column, row: usize) {
+        let _ = column.set::<C>(row, self.0);
+    }
+}
 
 pub struct ErasedComponent {
     pub(crate) type_id: TypeId,
     pub(crate) register_fn: fn(&mut crate::Scene),
-    pub(crate) push_fn: fn(Box<dyn Any + Send>, &mut Column),
-    pub(crate) set_fn: fn(Box<dyn Any + Send>, &mut Column, usize),
-    pub(crate) value: Box<dyn Any + Send>,
+    value: Box<dyn ErasedComponentValue>,
 }
 
 impl ErasedComponent {
-    pub fn new<C: crate::Component + 'static>(value: C) -> Self {
-        fn register<C: crate::Component + 'static>(scene: &mut crate::Scene) {
+    pub fn new<C: crate::Component>(value: C) -> Self {
+        fn register<C: crate::Component>(scene: &mut crate::Scene) {
             scene.ensure_component::<C>();
-        }
-
-        fn push<C: crate::Component + 'static>(value: Box<dyn Any + Send>, column: &mut Column) {
-            let value = *value
-                .downcast::<C>()
-                .expect("ErasedComponent type mismatch");
-            column.push::<C>(value);
-        }
-
-        fn set<C: crate::Component + 'static>(
-            value: Box<dyn Any + Send>,
-            column: &mut Column,
-            row: usize,
-        ) {
-            let value = *value
-                .downcast::<C>()
-                .expect("ErasedComponent type mismatch");
-            let _ = column.set::<C>(row, value);
         }
 
         Self {
             type_id: TypeId::of::<C>(),
             register_fn: register::<C>,
-            push_fn: push::<C>,
-            set_fn: set::<C>,
-            value: Box::new(value),
+            value: Box::new(ComponentValue(value)),
         }
+    }
+
+    pub(crate) fn push(self, column: &mut Column) {
+        self.value.push(column);
+    }
+
+    pub(crate) fn set(self, column: &mut Column, row: usize) {
+        self.value.set(column, row);
     }
 }
 

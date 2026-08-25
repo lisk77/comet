@@ -4,7 +4,7 @@ pub(crate) struct QueryAccess {
     pub(crate) entities: *const Entity,
     pub(crate) columns: [*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
     pub(crate) component_types: [Option<TypeId>; MAX_QUERY_COMPONENTS],
-    pub(crate) casters: [Option<Arc<dyn Any + Send + Sync>>; MAX_QUERY_COMPONENTS],
+    pub(crate) casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
     pub(crate) change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
     pub(crate) component_event_tick: Tick,
     pub(crate) len: usize,
@@ -44,7 +44,7 @@ pub trait WriteFetch<'a> {
 
     unsafe fn get(
         col: *mut comet_structs::Column,
-        caster: Option<&(dyn Any + Send + Sync)>,
+        caster: Option<&crate::QueryCaster>,
         row: usize,
     ) -> Option<Self::Item>;
 
@@ -61,12 +61,12 @@ impl<'a, C: ?Sized + Component> WriteFetch<'a> for &'a mut C {
 
     unsafe fn get(
         col: *mut comet_structs::Column,
-        caster: Option<&(dyn Any + Send + Sync)>,
+        caster: Option<&crate::QueryCaster>,
         row: usize,
     ) -> Option<Self::Item> {
-        let caster = caster?.downcast_ref::<crate::QueryCaster<C>>()?;
+        let caster = caster?;
         let value = unsafe { (&*col).get_raw(row) };
-        Some(unsafe { &mut *caster.cast_mut(value) })
+        Some(unsafe { &mut *caster.cast_mut::<C>(value) })
     }
 
     fn writes() -> bool {
@@ -80,12 +80,12 @@ impl<'a, C: ?Sized + Component> WriteFetch<'a> for &'a C {
 
     unsafe fn get(
         col: *mut comet_structs::Column,
-        caster: Option<&(dyn Any + Send + Sync)>,
+        caster: Option<&crate::QueryCaster>,
         row: usize,
     ) -> Option<Self::Item> {
-        let caster = caster?.downcast_ref::<crate::QueryCaster<C>>()?;
+        let caster = caster?;
         let value = unsafe { (&*col).get_raw(row) };
-        Some(unsafe { &*caster.cast_ref(value) })
+        Some(unsafe { &*caster.cast_ref::<C>(value) })
     }
 
     fn writes() -> bool {
@@ -99,15 +99,15 @@ impl<'a, C: ?Sized + Component> WriteFetch<'a> for Option<&'a C> {
 
     unsafe fn get(
         col: *mut comet_structs::Column,
-        caster: Option<&(dyn Any + Send + Sync)>,
+        caster: Option<&crate::QueryCaster>,
         row: usize,
     ) -> Option<Self::Item> {
         if col.is_null() {
             return Some(None);
         }
-        let caster = caster?.downcast_ref::<crate::QueryCaster<C>>()?;
+        let caster = caster?;
         let value = unsafe { (&*col).get_raw(row) };
-        Some(Some(unsafe { &*caster.cast_ref(value) }))
+        Some(Some(unsafe { &*caster.cast_ref::<C>(value) }))
     }
 
     fn writes() -> bool {
@@ -125,15 +125,15 @@ impl<'a, C: ?Sized + Component> WriteFetch<'a> for Option<&'a mut C> {
 
     unsafe fn get(
         col: *mut comet_structs::Column,
-        caster: Option<&(dyn Any + Send + Sync)>,
+        caster: Option<&crate::QueryCaster>,
         row: usize,
     ) -> Option<Self::Item> {
         if col.is_null() {
             return Some(None);
         }
-        let caster = caster?.downcast_ref::<crate::QueryCaster<C>>()?;
+        let caster = caster?;
         let value = unsafe { (&*col).get_raw(row) };
-        Some(Some(unsafe { &mut *caster.cast_mut(value) }))
+        Some(Some(unsafe { &mut *caster.cast_mut::<C>(value) }))
     }
 
     fn writes() -> bool {

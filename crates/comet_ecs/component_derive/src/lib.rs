@@ -49,11 +49,15 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
     let query_target_registrations = query_traits.iter().map(|query_trait| {
         quote! {
             targets.register::<dyn #query_trait>(
-                |value| unsafe {
-                    (&*(value as *const Self)) as &dyn #query_trait as *const dyn #query_trait
+                |value, output| unsafe {
+                    let value =
+                        (&*(value as *const Self)) as &dyn #query_trait as *const dyn #query_trait;
+                    output.cast::<*const dyn #query_trait>().write(value);
                 },
-                |value| unsafe {
-                    (&mut *(value as *mut Self)) as &mut dyn #query_trait as *mut dyn #query_trait
+                |value, output| unsafe {
+                    let value =
+                        (&mut *(value as *mut Self)) as &mut dyn #query_trait as *mut dyn #query_trait;
+                    output.cast::<*mut dyn #query_trait>().write(value);
                 },
             );
         }

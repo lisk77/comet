@@ -30,7 +30,7 @@ pub trait Bundle {
         Self: Sized,
     {
         for (i, component) in self.into_components().into_iter().enumerate() {
-            (component.push_fn)(component.value, &mut columns[column_indices[i]]);
+            component.push(&mut columns[column_indices[i]]);
         }
     }
 

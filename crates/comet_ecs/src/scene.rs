@@ -1314,7 +1314,7 @@ impl Scene {
             let arch = self.archetypes.get_mut(old_arch_id);
             for component in components.drain(..) {
                 if let Some(col_idx) = arch.column_index(component.type_id) {
-                    (component.set_fn)(component.value, &mut arch.columns_mut()[col_idx], loc.row);
+                    component.set(&mut arch.columns_mut()[col_idx], loc.row);
                 }
             }
             for type_id in submitted_types {
@@ -1349,18 +1349,14 @@ impl Scene {
                     let _ = old_arch.columns_mut()[old_idx]
                         .move_last_to(&mut new_arch.columns_mut()[new_idx]);
                     if let Some(component) = Self::take_last_component_of_type(&mut components, t) {
-                        (component.set_fn)(
-                            component.value,
-                            &mut new_arch.columns_mut()[new_idx],
-                            new_row,
-                        );
+                        component.set(&mut new_arch.columns_mut()[new_idx], new_row);
                     }
                     continue;
                 }
 
                 let component = Self::take_last_component_of_type(&mut components, t)
                     .unwrap_or_else(|| panic!("Bundle missing component {:?}", t));
-                (component.push_fn)(component.value, &mut new_arch.columns_mut()[new_idx]);
+                component.push(&mut new_arch.columns_mut()[new_idx]);
             }
 
             for old_idx in 0..old_arch.types().len() {
@@ -1423,7 +1419,7 @@ impl Scene {
             let col_idx = arch
                 .column_index(type_id)
                 .unwrap_or_else(|| panic!("Archetype missing column for {:?}", type_id));
-            (component.push_fn)(component.value, &mut arch.columns_mut()[col_idx]);
+            component.push(&mut arch.columns_mut()[col_idx]);
             inserted_types.push(type_id);
         }
 

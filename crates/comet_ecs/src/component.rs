@@ -8,8 +8,8 @@ use comet_assets::{AssetSource, Image, ImageRef};
 use comet_colors::{Color, LinearRgba};
 use comet_gizmos::{Gizmo, GizmoBuffer};
 use component_derive::Component;
-use std::any::{Any, TypeId};
-use std::marker::PhantomData;
+use std::any::TypeId;
+use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -61,30 +61,30 @@ impl RequiredComponents {
 }
 
 #[doc(hidden)]
-pub struct QueryCaster<T: ?Sized + 'static> {
-    cast_ref: unsafe fn(*const u8) -> *const T,
-    cast_mut: unsafe fn(*mut u8) -> *mut T,
-    _marker: PhantomData<fn() -> T>,
+#[derive(Clone, Copy)]
+pub struct QueryCaster {
+    cast_ref: unsafe fn(*const u8, *mut ()),
+    cast_mut: unsafe fn(*mut u8, *mut ()),
 }
 
-impl<T: ?Sized + 'static> QueryCaster<T> {
+impl QueryCaster {
     pub fn new(
-        cast_ref: unsafe fn(*const u8) -> *const T,
-        cast_mut: unsafe fn(*mut u8) -> *mut T,
+        cast_ref: unsafe fn(*const u8, *mut ()),
+        cast_mut: unsafe fn(*mut u8, *mut ()),
     ) -> Self {
-        Self {
-            cast_ref,
-            cast_mut,
-            _marker: PhantomData,
-        }
+        Self { cast_ref, cast_mut }
     }
 
-    pub(crate) unsafe fn cast_ref(&self, value: *const u8) -> *const T {
-        unsafe { (self.cast_ref)(value) }
+    pub(crate) unsafe fn cast_ref<T: ?Sized>(&self, value: *const u8) -> *const T {
+        let mut output = MaybeUninit::<*const T>::uninit();
+        unsafe { (self.cast_ref)(value, output.as_mut_ptr().cast()) };
+        unsafe { output.assume_init() }
     }
 
-    pub(crate) unsafe fn cast_mut(&self, value: *mut u8) -> *mut T {
-        unsafe { (self.cast_mut)(value) }
+    pub(crate) unsafe fn cast_mut<T: ?Sized>(&self, value: *mut u8) -> *mut T {
+        let mut output = MaybeUninit::<*mut T>::uninit();
+        unsafe { (self.cast_mut)(value, output.as_mut_ptr().cast()) };
+        unsafe { output.assume_init() }
     }
 }
 
@@ -92,7 +92,7 @@ impl<T: ?Sized + 'static> QueryCaster<T> {
 pub(crate) struct QueryTarget {
     pub(crate) component_type: TypeId,
     pub(crate) target_type: TypeId,
-    pub(crate) caster: Arc<dyn Any + Send + Sync>,
+    pub(crate) caster: QueryCaster,
 }
 
 #[doc(hidden)]
@@ -111,8 +111,8 @@ impl QueryTargets {
 
     pub fn register<T: ?Sized + Component>(
         &mut self,
-        cast_ref: unsafe fn(*const u8) -> *const T,
-        cast_mut: unsafe fn(*mut u8) -> *mut T,
+        cast_ref: unsafe fn(*const u8, *mut ()),
+        cast_mut: unsafe fn(*mut u8, *mut ()),
     ) {
         assert!(
             self.targets
@@ -123,17 +123,17 @@ impl QueryTargets {
         self.targets.push(QueryTarget {
             component_type: self.component_type,
             target_type: TypeId::of::<T>(),
-            caster: Arc::new(QueryCaster::<T>::new(cast_ref, cast_mut)),
+            caster: QueryCaster::new(cast_ref, cast_mut),
         });
     }
 
     pub(crate) fn register_component<C: Component>(&mut self) {
-        unsafe fn cast_ref<C: Component>(value: *const u8) -> *const C {
-            value.cast::<C>()
+        unsafe fn cast_ref<C: Component>(value: *const u8, output: *mut ()) {
+            unsafe { output.cast::<*const C>().write(value.cast::<C>()) };
         }
 
-        unsafe fn cast_mut<C: Component>(value: *mut u8) -> *mut C {
-            value.cast::<C>()
+        unsafe fn cast_mut<C: Component>(value: *mut u8, output: *mut ()) {
+            unsafe { output.cast::<*mut C>().write(value.cast::<C>()) };
         }
 
         self.register::<C>(cast_ref::<C>, cast_mut::<C>);
