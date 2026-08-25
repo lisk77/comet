@@ -237,7 +237,7 @@ impl Scene {
         entity: Entity,
         last_seen_tick: Tick,
     ) -> bool {
-        self.component_added_since_type(entity, C::type_id(), last_seen_tick)
+        self.component_added_since_type(entity, TypeId::of::<C>(), last_seen_tick)
     }
 
     pub(crate) fn component_added_since_type(
@@ -257,7 +257,7 @@ impl Scene {
         entity: Entity,
         last_seen_tick: Tick,
     ) -> bool {
-        self.component_changed_since_type(entity, C::type_id(), last_seen_tick)
+        self.component_changed_since_type(entity, TypeId::of::<C>(), last_seen_tick)
     }
 
     pub(crate) fn component_changed_since_type(
@@ -274,7 +274,7 @@ impl Scene {
     /// Returns entities where `C` was removed since the given tick.
     pub fn removed_since<C: Component + 'static>(&self, last_seen_tick: Tick) -> Vec<Entity> {
         self.removed_component_events
-            .get(&C::type_id())
+            .get(&TypeId::of::<C>())
             .map(|events| {
                 events
                     .iter()
@@ -597,7 +597,7 @@ impl Scene {
 
     /// Ensures that a component type is registered in the scene.
     pub fn ensure_component<C: Component>(&mut self) {
-        if !self.component_info.contains_key(&C::type_id()) {
+        if !self.component_info.contains_key(&TypeId::of::<C>()) {
             self.register_component_immediate::<C>();
         }
     }
@@ -608,9 +608,12 @@ impl Scene {
     }
 
     pub(crate) fn register_component_immediate<C: Component + 'static>(&mut self) {
-        let type_id = C::type_id();
+        let type_id = TypeId::of::<C>();
         if self.component_info.contains_key(&type_id) {
-            warn!("Component {} is already registered!", C::type_name());
+            warn!(
+                "Component {} is already registered!",
+                std::any::type_name::<C>()
+            );
             return;
         }
 
@@ -646,7 +649,7 @@ impl Scene {
         self.bundle_spawn_cache.clear();
         self.bundle_add_cache.clear();
 
-        info!("Registered component: {}", C::type_name());
+        info!("Registered component: {}", std::any::type_name::<C>());
     }
 
     /// Deregisters a component from the scene.
@@ -655,16 +658,19 @@ impl Scene {
     }
 
     pub(crate) fn deregister_component_immediate<C: Component + 'static>(&mut self) {
-        let type_id = C::type_id();
+        let type_id = TypeId::of::<C>();
         if !self.component_info.contains_key(&type_id) {
-            warn!("Component {} was not registered!", C::type_name());
+            warn!(
+                "Component {} was not registered!",
+                std::any::type_name::<C>()
+            );
             return;
         }
 
         if self.has_live_component_instances(type_id) {
             error!(
                 "Cannot deregister component {} while live entities still contain it",
-                C::type_name()
+                std::any::type_name::<C>()
             );
             return;
         }
@@ -683,9 +689,12 @@ impl Scene {
         self.required_components.remove(&type_id);
 
         if self.component_info.remove(&type_id).is_some() {
-            info!("Deregistered component: {}", C::type_name());
+            info!("Deregistered component: {}", std::any::type_name::<C>());
         } else {
-            warn!("Component {} was not registered!", C::type_name());
+            warn!(
+                "Component {} was not registered!",
+                std::any::type_name::<C>()
+            );
         }
     }
 
@@ -1000,7 +1009,7 @@ impl Scene {
         if !self.is_alive(entity_id) {
             return;
         }
-        let type_id = C::type_id();
+        let type_id = TypeId::of::<C>();
         let loc = match self.get_location(entity_id) {
             Some(loc) => loc,
             None => return,
@@ -1062,7 +1071,7 @@ impl Scene {
 
         info!(
             "Removed component {} from entity {}!",
-            C::type_name(),
+            std::any::type_name::<C>(),
             entity_id.index
         );
     }
@@ -1074,7 +1083,7 @@ impl Scene {
         }
         let loc = self.get_location(entity_id)?;
         let arch = self.archetypes.get(loc.archetype);
-        let col_idx = arch.column_index(C::type_id())?;
+        let col_idx = arch.column_index(TypeId::of::<C>())?;
         arch.columns().get(col_idx)?.get::<C>(loc.row)
     }
 
@@ -1085,10 +1094,10 @@ impl Scene {
         if !self.is_alive(entity_id) {
             return None;
         }
-        self.mark_component_changed(entity_id, C::type_id());
+        self.mark_component_changed(entity_id, TypeId::of::<C>());
         let loc = self.get_location(entity_id)?;
         let arch = self.archetypes.get_mut(loc.archetype);
-        let col_idx = arch.column_index(C::type_id())?;
+        let col_idx = arch.column_index(TypeId::of::<C>())?;
         arch.columns_mut().get_mut(col_idx)?.get_mut::<C>(loc.row)
     }
 
@@ -1653,6 +1662,7 @@ impl Scene {
 mod tests {
     use super::Scene;
     use crate::{Component, ErasedComponent, RequiredComponents};
+    use std::any::TypeId;
 
     #[derive(Component)]
     struct A;
@@ -1786,15 +1796,12 @@ mod tests {
     #[test]
     fn normalized_components_are_order_independent_and_deduplicated() {
         let components_abab = Scene::normalized_components(&[
-            A::type_id(),
-            B::type_id(),
-            A::type_id(),
-            B::type_id(),
+            TypeId::of::<A>(),
+            TypeId::of::<B>(),
+            TypeId::of::<A>(),
+            TypeId::of::<B>(),
         ]);
-        let components_ba = Scene::normalized_components(&[
-            B::type_id(),
-            A::type_id(),
-        ]);
+        let components_ba = Scene::normalized_components(&[TypeId::of::<B>(), TypeId::of::<A>()]);
 
         assert_eq!(components_abab, components_ba);
         assert_eq!(components_abab.len(), 2);

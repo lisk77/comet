@@ -59,13 +59,13 @@ impl QueryFilterSet for () {
 
 impl<C: Component> QueryFilterSet for With<C> {
     fn apply(_scene: &Scene, state: &mut QueryFilterState) {
-        state.with_components.push(C::type_id());
+        state.with_components.push(TypeId::of::<C>());
     }
 }
 
 impl<C: Component> QueryFilterSet for Without<C> {
     fn apply(_scene: &Scene, state: &mut QueryFilterState) {
-        state.without_components.push(C::type_id());
+        state.without_components.push(TypeId::of::<C>());
     }
 }
 
@@ -83,13 +83,13 @@ impl<Cs: ComponentTuple> QueryFilterSet for WithoutAny<Cs> {
 
 impl<C: Component> QueryFilterSet for Added<C> {
     fn apply(scene: &Scene, state: &mut QueryFilterState) {
-        state.set_added_since_filter(C::type_id(), scene.default_query_since_tick());
+        state.set_added_since_filter(TypeId::of::<C>(), scene.default_query_since_tick());
     }
 }
 
 impl<C: Component> QueryFilterSet for Changed<C> {
     fn apply(scene: &Scene, state: &mut QueryFilterState) {
-        state.set_changed_since_filter(C::type_id(), scene.default_query_since_tick());
+        state.set_changed_since_filter(TypeId::of::<C>(), scene.default_query_since_tick());
     }
 }
 

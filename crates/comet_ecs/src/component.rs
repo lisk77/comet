@@ -38,7 +38,7 @@ impl RequiredComponents {
             scene.ensure_component::<C>();
         }
 
-        let type_id = C::type_id();
+        let type_id = TypeId::of::<C>();
         if self
             .components
             .iter()
@@ -65,14 +65,6 @@ pub trait Component: Send + Sync + 'static {
         Self: Sized + Default,
     {
         Default::default()
-    }
-
-    fn type_id() -> std::any::TypeId {
-        std::any::TypeId::of::<Self>()
-    }
-
-    fn type_name() -> String {
-        std::any::type_name::<Self>().to_string()
     }
 
     fn register_required_components(_requirements: &mut RequiredComponents) {}

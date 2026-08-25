@@ -109,7 +109,13 @@ pub mod prelude {
     pub use comet_colors::{
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
-    pub use comet_ecs::{EcsModule, EcsModuleExt, *};
+    pub use comet_ecs::{
+        bundle, register_prefab, spawn_prefab, Added, Anchor, Bundle, Camera, Camera2d, Camera3d,
+        CameraViewport, Changed, Collider, Component, ComponentTuple, EcsModule, EcsModuleExt,
+        Entity, OrthographicProjection, PerspectiveProjection, Projection, Query, RequiredComponents,
+        ResolutionScaling, Scene, Screen, ScreenPosition, Sprite, Text, TextJustification, TextLayout,
+        TextSize, Tick, Timer, Transform, With, WithAny, Without, WithoutAny,
+    };
     pub use comet_input::{keyboard::Key, mouse::Button, input_module::{Binding, AxisBinding, AxisDirection, InputState, GamepadState, GamepadButton, GamepadAxis, GamepadId}, Action, InputModule, InputModuleExt};
     pub use comet_log::*;
     pub use comet_math::*;

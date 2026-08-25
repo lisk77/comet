@@ -17,7 +17,7 @@ impl ComponentTuple for () {
 
 impl<C: Component> ComponentTuple for C {
     fn type_ids() -> Vec<TypeId> {
-        vec![C::type_id()]
+        vec![TypeId::of::<C>()]
     }
 
     fn ensure_all(scene: &mut Scene) {
@@ -56,7 +56,7 @@ impl<C: Component> Bundle for C {
     }
 
     fn type_ids(&self) -> Vec<TypeId> {
-        vec![C::type_id()]
+        vec![TypeId::of::<C>()]
     }
 
     fn ensure_registered(&self, scene: &mut Scene) {
@@ -87,7 +87,7 @@ macro_rules! impl_component_tuple {
     ($($name:ident),+ $(,)?) => {
         impl<$($name: Component),+> ComponentTuple for ($($name,)+) {
             fn type_ids() -> Vec<TypeId> {
-                vec![$($name::type_id()),+]
+                vec![$(TypeId::of::<$name>()),+]
             }
 
             fn ensure_all(scene: &mut Scene) {

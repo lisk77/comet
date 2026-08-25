@@ -34,7 +34,7 @@ impl ErasedComponent {
         }
 
         Self {
-            type_id: C::type_id(),
+            type_id: TypeId::of::<C>(),
             register_fn: register::<C>,
             push_fn: push::<C>,
             set_fn: set::<C>,

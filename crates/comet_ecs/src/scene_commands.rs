@@ -93,7 +93,7 @@ impl SceneCommands {
     /// Queues component type registration.
     pub fn register_component<C: Component>(&mut self) {
         self.push(SceneCommand::RegisterComponent {
-            type_id: C::type_id(),
+            type_id: TypeId::of::<C>(),
             register_fn: register_component_impl::<C>,
         });
     }
@@ -101,7 +101,7 @@ impl SceneCommands {
     /// Queues component type deregistration.
     pub fn deregister_component<C: Component>(&mut self) {
         self.push(SceneCommand::DeregisterComponent {
-            type_id: C::type_id(),
+            type_id: TypeId::of::<C>(),
             deregister_fn: deregister_component_impl::<C>,
         });
     }
@@ -115,7 +115,7 @@ impl SceneCommands {
     pub fn remove_component<C: Component>(&mut self, entity: Entity) {
         self.push(SceneCommand::RemoveComponent {
             entity,
-            type_id: C::type_id(),
+            type_id: TypeId::of::<C>(),
             remove_fn: remove_component_impl::<C>,
         });
     }
