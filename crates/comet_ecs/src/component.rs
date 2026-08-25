@@ -8,7 +8,8 @@ use comet_assets::{AssetSource, Image, ImageRef};
 use comet_colors::{Color, LinearRgba};
 use comet_gizmos::{Gizmo, GizmoBuffer};
 use component_derive::Component;
-use std::any::TypeId;
+use std::any::{Any, TypeId};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -59,6 +60,90 @@ impl RequiredComponents {
     }
 }
 
+#[doc(hidden)]
+pub struct QueryCaster<T: ?Sized + 'static> {
+    cast_ref: unsafe fn(*const u8) -> *const T,
+    cast_mut: unsafe fn(*mut u8) -> *mut T,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T: ?Sized + 'static> QueryCaster<T> {
+    pub fn new(
+        cast_ref: unsafe fn(*const u8) -> *const T,
+        cast_mut: unsafe fn(*mut u8) -> *mut T,
+    ) -> Self {
+        Self {
+            cast_ref,
+            cast_mut,
+            _marker: PhantomData,
+        }
+    }
+
+    pub(crate) unsafe fn cast_ref(&self, value: *const u8) -> *const T {
+        unsafe { (self.cast_ref)(value) }
+    }
+
+    pub(crate) unsafe fn cast_mut(&self, value: *mut u8) -> *mut T {
+        unsafe { (self.cast_mut)(value) }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct QueryTarget {
+    pub(crate) component_type: TypeId,
+    pub(crate) target_type: TypeId,
+    pub(crate) caster: Arc<dyn Any + Send + Sync>,
+}
+
+#[doc(hidden)]
+pub struct QueryTargets {
+    component_type: TypeId,
+    targets: Vec<QueryTarget>,
+}
+
+impl QueryTargets {
+    pub(crate) fn new<C: Component>() -> Self {
+        Self {
+            component_type: TypeId::of::<C>(),
+            targets: Vec::new(),
+        }
+    }
+
+    pub fn register<T: ?Sized + Component>(
+        &mut self,
+        cast_ref: unsafe fn(*const u8) -> *const T,
+        cast_mut: unsafe fn(*mut u8) -> *mut T,
+    ) {
+        assert!(
+            self.targets
+                .iter()
+                .all(|target| target.target_type != TypeId::of::<T>()),
+            "component registered the same query target more than once"
+        );
+        self.targets.push(QueryTarget {
+            component_type: self.component_type,
+            target_type: TypeId::of::<T>(),
+            caster: Arc::new(QueryCaster::<T>::new(cast_ref, cast_mut)),
+        });
+    }
+
+    pub(crate) fn register_component<C: Component>(&mut self) {
+        unsafe fn cast_ref<C: Component>(value: *const u8) -> *const C {
+            value.cast::<C>()
+        }
+
+        unsafe fn cast_mut<C: Component>(value: *mut u8) -> *mut C {
+            value.cast::<C>()
+        }
+
+        self.register::<C>(cast_ref::<C>, cast_mut::<C>);
+    }
+
+    pub(crate) fn into_targets(self) -> Vec<QueryTarget> {
+        self.targets
+    }
+}
+
 pub trait Component: Send + Sync + 'static {
     fn new() -> Self
     where
@@ -67,7 +152,17 @@ pub trait Component: Send + Sync + 'static {
         Default::default()
     }
 
-    fn register_required_components(_requirements: &mut RequiredComponents) {}
+    fn register_required_components(_requirements: &mut RequiredComponents)
+    where
+        Self: Sized,
+    {
+    }
+
+    fn register_query_targets(_targets: &mut QueryTargets)
+    where
+        Self: Sized,
+    {
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

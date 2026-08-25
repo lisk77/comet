@@ -1,8 +1,9 @@
 use crate::scene_internals::ComponentChangeState;
 use crate::{Component, ComponentTuple, Entity, Scene, Tick};
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 mod arities;
 mod builders;
@@ -18,7 +19,7 @@ pub(crate) use builders::{build_query_accesses, build_query_accesses_mut};
 pub(crate) use fetch::{EntityFetch, QueryAccess, ReadFetch, WriteFetch};
 pub(crate) use filters::{typed_filters, QueryFilterSet, QueryFilterState};
 pub use filters::{Added, Changed, QueryParam, With, WithAny, Without, WithoutAny};
-pub(crate) use query_data::{QueryData, MAX_QUERY_COMPONENTS};
+pub(crate) use query_data::{QueryComponent, QueryData, MAX_QUERY_COMPONENTS};
 pub use query_types::Query;
 
 /// Describes data that can be fetched by a read-only query.

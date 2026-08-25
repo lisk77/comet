@@ -5,8 +5,8 @@ use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan, ComponentChangeState};
 use crate::{
-    Component, ComponentTuple, Entity, EntityLocation, IdQueue, RequiredComponent,
-    RequiredComponents, Tick,
+    Component, ComponentTuple, Entity, EntityLocation, IdQueue, QueryTarget, QueryTargets,
+    RequiredComponent, RequiredComponents, Tick,
 };
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
@@ -32,6 +32,7 @@ pub struct Scene {
     component_index: HashMap<TypeId, usize>,
     component_info: HashMap<TypeId, ComponentInfo>,
     required_components: HashMap<TypeId, Vec<RequiredComponent>>,
+    query_targets: HashMap<TypeId, Vec<QueryTarget>>,
     entity_locations: Vec<Option<EntityLocation>>,
     archetypes: Archetypes,
     archetype_version: usize,
@@ -59,6 +60,7 @@ impl Scene {
             component_index: HashMap::new(),
             component_info: HashMap::new(),
             required_components: HashMap::new(),
+            query_targets: HashMap::new(),
             entity_locations: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
             archetypes: Archetypes::new(),
             archetype_version: 0,
@@ -630,6 +632,16 @@ impl Scene {
         self.required_components
             .insert(type_id, requirements.into_components());
 
+        let mut query_targets = QueryTargets::new::<C>();
+        query_targets.register_component::<C>();
+        C::register_query_targets(&mut query_targets);
+        for target in query_targets.into_targets() {
+            self.query_targets
+                .entry(target.target_type)
+                .or_default()
+                .push(target);
+        }
+
         if !self.component_index.contains_key(&type_id) {
             let index = if let Some((i, _)) = self
                 .component_registry
@@ -673,6 +685,11 @@ impl Scene {
             );
             return;
         }
+
+        self.query_targets.retain(|_, targets| {
+            targets.retain(|target| target.component_type != type_id);
+            !targets.is_empty()
+        });
 
         if let Some(index) = self.component_index.remove(&type_id) {
             if let Some(slot) = self.component_registry.get_mut(index) {
@@ -1190,6 +1207,13 @@ impl Scene {
 
     pub(crate) fn archetypes(&self) -> &crate::archetypes::Archetypes {
         &self.archetypes
+    }
+
+    pub(crate) fn query_targets(&self, target_type: TypeId) -> &[QueryTarget] {
+        self.query_targets
+            .get(&target_type)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     pub(crate) fn query_change_state(&self) -> &HashMap<(u32, TypeId), ComponentChangeState> {

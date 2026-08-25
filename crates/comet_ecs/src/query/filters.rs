@@ -2,8 +2,8 @@ use super::*;
 
 pub struct QueryParam<Data, Filters = ()>(PhantomData<(Data, Filters)>);
 
-pub struct With<C: Component>(PhantomData<C>);
-pub struct Without<C: Component>(PhantomData<C>);
+pub struct With<C: ?Sized + Component>(PhantomData<C>);
+pub struct Without<C: ?Sized + Component>(PhantomData<C>);
 pub struct WithAny<Cs: ComponentTuple>(PhantomData<Cs>);
 pub struct WithoutAny<Cs: ComponentTuple>(PhantomData<Cs>);
 pub struct Added<C: Component>(PhantomData<C>);
@@ -57,13 +57,13 @@ impl QueryFilterSet for () {
     fn apply(_scene: &Scene, _state: &mut QueryFilterState) {}
 }
 
-impl<C: Component> QueryFilterSet for With<C> {
+impl<C: ?Sized + Component> QueryFilterSet for With<C> {
     fn apply(_scene: &Scene, state: &mut QueryFilterState) {
         state.with_components.push(TypeId::of::<C>());
     }
 }
 
-impl<C: Component> QueryFilterSet for Without<C> {
+impl<C: ?Sized + Component> QueryFilterSet for Without<C> {
     fn apply(_scene: &Scene, state: &mut QueryFilterState) {
         state.without_components.push(TypeId::of::<C>());
     }

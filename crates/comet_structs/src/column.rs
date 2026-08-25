@@ -179,6 +179,11 @@ impl Column {
         self.data.as_ptr().add(index * self.stride)
     }
 
+    #[inline(always)]
+    pub unsafe fn get_raw(&self, index: usize) -> *mut u8 {
+        unsafe { self.elem_ptr(index) }
+    }
+
     fn push_raw_from(&mut self, src: *const u8) {
         debug_assert!(self.item_layout.size() != 0);
         self.reserve_exact(1);
