@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use notify::{EventKind, RecursiveMode, Watcher};
-use crate::{AssetManager, Asset};
+use crate::{AssetManager, Asset, AssetPath, AssetSource};
 use crate::asset_manager::Loadable;
 use crate::image::Image;
 use crate::texture_atlas::TextureAtlas;
@@ -159,8 +159,8 @@ impl AssetProvider {
     }
 
     /// Loads multiple assets of the same type in the background. Returns handles immediately.
-    pub fn load_assets<T: Loadable>(&self, paths: &[&str]) -> Vec<Asset<T>> {
-        paths.iter().map(|p| self.load(p)).collect()
+    pub fn load_assets<T: Loadable>(&self, paths: &[impl Clone + Into<AssetPath>]) -> Vec<Asset<T>> {
+        paths.iter().cloned().map(|path| self.load(path)).collect()
     }
 
     /// Unloads a batch of handles returned by `load_assets`.
@@ -169,7 +169,9 @@ impl AssetProvider {
     }
 
     /// Loads an asset from `path` in the background. Returns a typed handle immediately.
-    pub fn load<T: Loadable>(&self, path: &str) -> Asset<T> {
+    pub fn load<T: Loadable>(&self, path: impl Into<AssetPath>) -> Asset<T> {
+        let path = path.into();
+        let path = path.as_str();
         let resolved = comet_app::resolve_asset_path(path);
 
         let ext = match file_extension(&resolved, path) {
@@ -234,9 +236,23 @@ impl AssetProvider {
         handle
     }
 
+    /// Resolves a path or existing typed handle into the canonical asset handle.
+    pub fn resolve<T: Loadable>(&self, source: impl Into<AssetSource<T>>) -> Asset<T> {
+        match source.into() {
+            AssetSource::Path(path) => self.load(path),
+            AssetSource::Handle(handle) => handle,
+        }
+    }
+
     /// Registers a handle (created via `add`) for hot reload watching.
     /// Call this after `add` when you have a known file path for the asset.
-    pub fn track_for_reload<T: Loadable>(&self, handle: Asset<T>, path: &str) {
+    pub fn track_for_reload<T: Loadable>(
+        &self,
+        handle: Asset<T>,
+        path: impl Into<AssetPath>,
+    ) {
+        let path = path.into();
+        let path = path.as_str();
         let resolved = comet_app::resolve_asset_path(path);
         let ext = match file_extension(&resolved, path) {
             Ok(e) => e,
@@ -338,8 +354,15 @@ impl AssetProvider {
     }
 
     /// Finds a previously loaded asset by its original load path.
-    pub fn find_by_path<T: Loadable>(&self, path: &str) -> Option<Asset<T>> {
-        self.inner.read().ok().and_then(|m| m.find_by_path::<T>(path))
+    pub fn find_by_path<T: Loadable>(
+        &self,
+        path: impl Into<AssetPath>,
+    ) -> Option<Asset<T>> {
+        let path = path.into();
+        self.inner
+            .read()
+            .ok()
+            .and_then(|m| m.find_by_path::<T>(path.as_str()))
     }
 
     /// Finds a previously loaded asset by the stem of its original path.

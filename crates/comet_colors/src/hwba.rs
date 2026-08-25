@@ -1,17 +1,18 @@
 use crate::{sRgba, Color, Hsla, Hsva, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza};
-use comet_math::v4;
+use comet_math::{v4, Deg};
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Hwba {
-    hue: f32,
+    hue: Deg,
     whiteness: f32,
     blackness: f32,
     alpha: f32,
 }
 
 impl Hwba {
-    pub fn new(hue: f32, whiteness: f32, blackness: f32, alpha: f32) -> Self {
-        assert!((0.0..=360.0).contains(&hue) && (0.0..=1.0).contains(&whiteness) && (0.0..=1.0).contains(&blackness) && (0.0..=1.0).contains(&alpha), "Hue needs to be in range 0..360\nWhiteness needs to be in range 0..1\nBlackness needs to be in range 0..1\nAlpha needs to be in range 0..1");
+    pub fn new(hue: impl Into<Deg>, whiteness: f32, blackness: f32, alpha: f32) -> Self {
+        let hue = hue.into();
+        assert!((0.0..=360.0).contains(&hue.degrees()) && (0.0..=1.0).contains(&whiteness) && (0.0..=1.0).contains(&blackness) && (0.0..=1.0).contains(&alpha), "Hue needs to be in range 0..360\nWhiteness needs to be in range 0..1\nBlackness needs to be in range 0..1\nAlpha needs to be in range 0..1");
         Self {
             hue,
             whiteness,
@@ -20,7 +21,7 @@ impl Hwba {
         }
     }
 
-    pub fn hue(&self) -> f32 {
+    pub fn hue(&self) -> Deg {
         self.hue
     }
 
@@ -61,7 +62,7 @@ impl Hwba {
         let hue = if hue < 0.0 { hue + 360.0 } else { hue };
 
         Self {
-            hue,
+            hue: Deg::new(hue),
             whiteness,
             blackness,
             alpha: rgba.alpha(),
@@ -92,7 +93,7 @@ impl Hwba {
         let w = self.whiteness.min(1.0 - self.blackness);
         let c = 1.0 - self.whiteness - self.blackness;
 
-        let hue = (self.hue % 360.0 + 360.0) % 360.0;
+        let hue = (self.hue.degrees() % 360.0 + 360.0) % 360.0;
         let h_prime = hue / 60.0;
 
         let x = c * (1.0 - (h_prime % 2.0 - 1.0).abs());
@@ -160,10 +161,10 @@ impl Color for Hwba {
     }
 
     fn to_vec(&self) -> v4 {
-        v4::new(self.hue, self.whiteness, self.blackness, self.alpha)
+        v4::new(self.hue.degrees(), self.whiteness, self.blackness, self.alpha)
     }
 
     fn from_vec(color: v4) -> Self {
-        Self::new(color.x(), color.y(), color.z(), color.w())
+        Self::new(Deg::new(color.x()), color.y(), color.z(), color.w())
     }
 }

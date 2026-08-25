@@ -1,17 +1,19 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU64, Ordering};
 use comet_app::{App, Module};
 use comet_macros::module;
+use comet_math::{px, Px};
 use comet_window::WinitModule;
 use gilrs::{Axis, Button as GilrsButton, EventType, Gilrs};
+use std::any::TypeId;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use winit::event::{DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 pub use crate::keyboard::Key;
 pub use crate::mouse::Button;
-pub use gilrs::Button as GamepadButton;
 pub use gilrs::Axis as GamepadAxis;
+pub use gilrs::Button as GamepadButton;
 pub use gilrs::GamepadId;
 
 const DEFAULT_DEADZONE: f32 = 0.2;
@@ -32,6 +34,10 @@ impl AxisBinding {
     }
 }
 
+pub trait Action: Send + Sync + 'static {
+    fn id(self) -> u64;
+}
+
 pub trait Binding: Send + 'static {
     fn strength(&self, state: &InputState) -> f32;
 
@@ -48,52 +54,95 @@ pub trait Binding: Send + 'static {
 
 impl Binding for Key {
     fn strength(&self, state: &InputState) -> f32 {
-        if state.keys_held.contains(self) { 1.0 } else { 0.0 }
+        if state.keys_held.contains(self) {
+            1.0
+        } else {
+            0.0
+        }
     }
 
-    fn pressed(&self, state: &InputState) -> bool { state.keys_pressed.contains(self) }
-    fn held(&self, state: &InputState) -> bool { state.keys_held.contains(self) }
-    fn released(&self, state: &InputState) -> bool { state.keys_released.contains(self) }
+    fn pressed(&self, state: &InputState) -> bool {
+        state.keys_pressed.contains(self)
+    }
+    fn held(&self, state: &InputState) -> bool {
+        state.keys_held.contains(self)
+    }
+    fn released(&self, state: &InputState) -> bool {
+        state.keys_released.contains(self)
+    }
 }
 
 impl Binding for Button {
     fn strength(&self, state: &InputState) -> f32 {
-        if state.mouse_held.contains(self) { 1.0 } else { 0.0 }
+        if state.mouse_held.contains(self) {
+            1.0
+        } else {
+            0.0
+        }
     }
-    
-    fn pressed(&self, state: &InputState) -> bool { state.mouse_pressed.contains(self) }
-    fn held(&self, state: &InputState) -> bool { state.mouse_held.contains(self) }
-    fn released(&self, state: &InputState) -> bool { state.mouse_released.contains(self) }
+
+    fn pressed(&self, state: &InputState) -> bool {
+        state.mouse_pressed.contains(self)
+    }
+    fn held(&self, state: &InputState) -> bool {
+        state.mouse_held.contains(self)
+    }
+    fn released(&self, state: &InputState) -> bool {
+        state.mouse_released.contains(self)
+    }
 }
 
 impl Binding for GamepadButton {
     fn strength(&self, state: &InputState) -> f32 {
-        if state.gamepads.values().any(|gp| gp.buttons_held.contains(self)) { 1.0 } else { 0.0 }
+        if state
+            .gamepads
+            .values()
+            .any(|gp| gp.buttons_held.contains(self))
+        {
+            1.0
+        } else {
+            0.0
+        }
     }
 
     fn pressed(&self, state: &InputState) -> bool {
-        state.gamepads.values().any(|gp| gp.buttons_pressed.contains(self))
+        state
+            .gamepads
+            .values()
+            .any(|gp| gp.buttons_pressed.contains(self))
     }
 
     fn held(&self, state: &InputState) -> bool {
-        state.gamepads.values().any(|gp| gp.buttons_held.contains(self))
+        state
+            .gamepads
+            .values()
+            .any(|gp| gp.buttons_held.contains(self))
     }
 
     fn released(&self, state: &InputState) -> bool {
-        state.gamepads.values().any(|gp| gp.buttons_released.contains(self))
+        state
+            .gamepads
+            .values()
+            .any(|gp| gp.buttons_released.contains(self))
     }
 }
 
 impl Binding for AxisBinding {
     fn strength(&self, state: &InputState) -> f32 {
-        let raw = state.gamepads.values()
+        let raw = state
+            .gamepads
+            .values()
             .filter_map(|gp| gp.axes.get(&self.axis).copied())
             .fold(0.0f32, |a, b| if b.abs() > a.abs() { b } else { a });
         let value = match self.direction {
             AxisDirection::Positive => raw.max(0.0),
             AxisDirection::Negative => (-raw).max(0.0),
         };
-        if value < DEFAULT_DEADZONE { 0.0 } else { value }
+        if value < DEFAULT_DEADZONE {
+            0.0
+        } else {
+            value
+        }
     }
 
     fn released(&self, state: &InputState) -> bool {
@@ -128,21 +177,47 @@ impl_binding_tuple!(A, B);
 impl_binding_tuple!(A, B, C);
 impl_binding_tuple!(A, B, C, D);
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct ActionKey {
+    action_type: TypeId,
+    id: u64,
+}
+
+impl ActionKey {
+    fn new<A: Action>(action: A) -> Self {
+        Self {
+            action_type: TypeId::of::<A>(),
+            id: action.id(),
+        }
+    }
+}
+
 pub struct InputMap {
-    bindings: HashMap<String, Vec<Box<dyn Binding>>>,
+    bindings: HashMap<ActionKey, Vec<Box<dyn Binding>>>,
 }
 
 impl InputMap {
     fn new() -> Self {
-        Self { bindings: HashMap::new() }
+        Self {
+            bindings: HashMap::new(),
+        }
     }
 
-    fn bind(&mut self, action: impl Into<String>, binding: impl Binding) {
-        self.bindings.entry(action.into()).or_default().push(Box::new(binding));
+    fn bind<A: Action>(&mut self, action: A, binding: impl Binding) {
+        self.bindings
+            .entry(ActionKey::new(action))
+            .or_default()
+            .push(Box::new(binding));
     }
 
-    fn unbind(&mut self, action: &str) {
-        self.bindings.remove(action);
+    fn unbind<A: Action>(&mut self, action: A) {
+        self.bindings.remove(&ActionKey::new(action));
+    }
+
+    fn bindings<A: Action>(&self, action: A) -> Option<&[Box<dyn Binding>]> {
+        self.bindings
+            .get(&ActionKey::new(action))
+            .map(Vec::as_slice)
     }
 }
 
@@ -314,7 +389,11 @@ impl InputModule {
         }
 
         while let Some(gilrs::Event { id, event, .. }) = self.gilrs.next_event() {
-            let gp = self.state.gamepads.entry(id).or_insert_with(GamepadState::new);
+            let gp = self
+                .state
+                .gamepads
+                .entry(id)
+                .or_insert_with(GamepadState::new);
             match event {
                 EventType::ButtonPressed(btn, _) => {
                     if gp.buttons_held.insert(btn) {
@@ -373,12 +452,15 @@ impl InputModule {
         self.state.mouse_released.contains(&button)
     }
 
-    pub fn mouse_position(&self) -> (f32, f32) {
-        self.state.mouse_position
+    pub fn mouse_position(&self) -> (Px, Px) {
+        (
+            px(self.state.mouse_position.0),
+            px(self.state.mouse_position.1),
+        )
     }
 
-    pub fn mouse_delta(&self) -> (f32, f32) {
-        self.state.mouse_delta
+    pub fn mouse_delta(&self) -> (Px, Px) {
+        (px(self.state.mouse_delta.0), px(self.state.mouse_delta.1))
     }
 
     pub fn mouse_moved(&self) -> bool {
@@ -402,55 +484,76 @@ impl InputModule {
     }
 
     pub fn gamepad_button_pressed(&self, id: GamepadId, button: GamepadButton) -> bool {
-        self.state.gamepads.get(&id).map_or(false, |gp| gp.buttons_pressed.contains(&button))
+        self.state
+            .gamepads
+            .get(&id)
+            .map_or(false, |gp| gp.buttons_pressed.contains(&button))
     }
 
     pub fn gamepad_button_held(&self, id: GamepadId, button: GamepadButton) -> bool {
-        self.state.gamepads.get(&id).map_or(false, |gp| gp.buttons_held.contains(&button))
+        self.state
+            .gamepads
+            .get(&id)
+            .map_or(false, |gp| gp.buttons_held.contains(&button))
     }
 
     pub fn gamepad_button_released(&self, id: GamepadId, button: GamepadButton) -> bool {
-        self.state.gamepads.get(&id).map_or(false, |gp| gp.buttons_released.contains(&button))
+        self.state
+            .gamepads
+            .get(&id)
+            .map_or(false, |gp| gp.buttons_released.contains(&button))
     }
 
     pub fn gamepad_axis(&self, id: GamepadId, axis: GamepadAxis) -> f32 {
-        self.state.gamepads.get(&id).and_then(|gp| gp.axes.get(&axis)).copied().unwrap_or(0.0)
+        self.state
+            .gamepads
+            .get(&id)
+            .and_then(|gp| gp.axes.get(&axis))
+            .copied()
+            .unwrap_or(0.0)
     }
 
     pub fn connected_gamepads(&self) -> Vec<GamepadId> {
         self.state.gamepads.keys().copied().collect()
     }
 
-    pub fn bind(&mut self, action: impl Into<String>, binding: impl Binding) {
+    pub fn bind<A: Action>(&mut self, action: A, binding: impl Binding) {
         self.input_map.bind(action, binding);
     }
 
-    pub fn unbind(&mut self, action: impl Into<String>) {
-        self.input_map.unbind(&action.into());
+    pub fn unbind<A: Action>(&mut self, action: A) {
+        self.input_map.unbind(action);
     }
 
-    pub fn action_strength(&self, action: &str) -> f32 {
-        self.input_map.bindings.get(action)
-            .map_or(0.0, |bs| bs.iter().map(|b| b.strength(&self.state)).fold(0.0f32, f32::max))
+    pub fn action_strength<A: Action>(&self, action: A) -> f32 {
+        self.input_map.bindings(action).map_or(0.0, |bindings| {
+            bindings
+                .iter()
+                .map(|binding| binding.strength(&self.state))
+                .fold(0.0, f32::max)
+        })
     }
 
-    pub fn get_axis(&self, negative: &str, positive: &str) -> f32 {
+    pub fn axis<A: Action>(&self, negative: A, positive: A) -> f32 {
         self.action_strength(positive) - self.action_strength(negative)
     }
 
-    pub fn action_pressed(&self, action: &str) -> bool {
-        self.input_map.bindings.get(action)
-            .map_or(false, |bs| bs.iter().any(|b| b.pressed(&self.state)))
+    pub fn action_pressed<A: Action>(&self, action: A) -> bool {
+        self.input_map
+            .bindings(action)
+            .is_some_and(|bindings| bindings.iter().any(|binding| binding.pressed(&self.state)))
     }
 
-    pub fn action_held(&self, action: &str) -> bool {
-        self.input_map.bindings.get(action)
-            .map_or(false, |bs| bs.iter().any(|b| b.held(&self.state)))
+    pub fn action_held<A: Action>(&self, action: A) -> bool {
+        self.input_map
+            .bindings(action)
+            .is_some_and(|bindings| bindings.iter().any(|binding| binding.held(&self.state)))
     }
 
-    pub fn action_released(&self, action: &str) -> bool {
-        self.input_map.bindings.get(action)
-            .map_or(false, |bs| bs.iter().any(|b| b.released(&self.state)))
+    pub fn action_released<A: Action>(&self, action: A) -> bool {
+        self.input_map
+            .bindings(action)
+            .is_some_and(|bindings| bindings.iter().any(|binding| binding.released(&self.state)))
     }
 }
 
@@ -467,54 +570,58 @@ impl Module for InputModule {
     fn build(&mut self, app: &mut App) {
         let queue = Arc::clone(&self.queue);
         let frame_gen = Arc::clone(&self.frame_gen);
-        app.get_module_mut::<WinitModule>().add_event_hook(move |event| {
-            if matches!(event, Event::AboutToWait) {
-                frame_gen.fetch_add(1, Ordering::Relaxed);
-                return;
-            }
+        app.get_module_mut::<WinitModule>()
+            .add_event_hook(move |event| {
+                if matches!(event, Event::AboutToWait) {
+                    frame_gen.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
 
-            let raw: Option<RawInputEvent> = match event {
-                Event::WindowEvent { event, .. } => match event {
-                    WindowEvent::KeyboardInput { event: key_event, .. } => {
-                        if let PhysicalKey::Code(keycode) = key_event.physical_key {
-                            Some(match key_event.state {
-                                ElementState::Pressed => RawInputEvent::KeyPressed(keycode),
-                                ElementState::Released => RawInputEvent::KeyReleased(keycode),
-                            })
-                        } else {
-                            None
+                let raw: Option<RawInputEvent> = match event {
+                    Event::WindowEvent { event, .. } => match event {
+                        WindowEvent::KeyboardInput {
+                            event: key_event, ..
+                        } => {
+                            if let PhysicalKey::Code(keycode) = key_event.physical_key {
+                                Some(match key_event.state {
+                                    ElementState::Pressed => RawInputEvent::KeyPressed(keycode),
+                                    ElementState::Released => RawInputEvent::KeyReleased(keycode),
+                                })
+                            } else {
+                                None
+                            }
                         }
-                    }
-                    WindowEvent::MouseInput { state, button, .. } => Some(match state {
-                        ElementState::Pressed => RawInputEvent::MousePressed(*button),
-                        ElementState::Released => RawInputEvent::MouseReleased(*button),
-                    }),
-                    WindowEvent::CursorMoved { position, .. } => {
-                        Some(RawInputEvent::MouseMoved(position.x as f32, position.y as f32))
-                    }
-                    WindowEvent::MouseWheel { delta, .. } => {
-                        let (x, y) = match delta {
-                            MouseScrollDelta::LineDelta(x, y) => (*x, *y),
-                            MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
-                        };
-                        Some(RawInputEvent::MouseScrolled(x, y))
-                    }
-                    WindowEvent::CursorEntered { .. } => Some(RawInputEvent::CursorEntered),
-                    WindowEvent::CursorLeft { .. } => Some(RawInputEvent::CursorLeft),
-                    WindowEvent::Focused(false) => Some(RawInputEvent::FocusLost),
+                        WindowEvent::MouseInput { state, button, .. } => Some(match state {
+                            ElementState::Pressed => RawInputEvent::MousePressed(*button),
+                            ElementState::Released => RawInputEvent::MouseReleased(*button),
+                        }),
+                        WindowEvent::CursorMoved { position, .. } => Some(
+                            RawInputEvent::MouseMoved(position.x as f32, position.y as f32),
+                        ),
+                        WindowEvent::MouseWheel { delta, .. } => {
+                            let (x, y) = match delta {
+                                MouseScrollDelta::LineDelta(x, y) => (*x, *y),
+                                MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
+                            };
+                            Some(RawInputEvent::MouseScrolled(x, y))
+                        }
+                        WindowEvent::CursorEntered { .. } => Some(RawInputEvent::CursorEntered),
+                        WindowEvent::CursorLeft { .. } => Some(RawInputEvent::CursorLeft),
+                        WindowEvent::Focused(false) => Some(RawInputEvent::FocusLost),
+                        _ => None,
+                    },
+                    Event::DeviceEvent {
+                        event: DeviceEvent::MouseMotion { delta },
+                        ..
+                    } => Some(RawInputEvent::MouseDelta(delta.0 as f32, delta.1 as f32)),
                     _ => None,
-                },
-                Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
-                    Some(RawInputEvent::MouseDelta(delta.0 as f32, delta.1 as f32))
+                };
+                if let Some(e) = raw {
+                    if let Ok(mut q) = queue.lock() {
+                        q.push(e);
+                    }
                 }
-                _ => None,
-            };
-            if let Some(e) = raw {
-                if let Ok(mut q) = queue.lock() {
-                    q.push(e);
-                }
-            }
-        });
+            });
 
         app.add_pre_tick_hook(input_pre_tick);
     }

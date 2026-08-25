@@ -17,7 +17,7 @@
 //!fn main() {
 //!    App::with_preset(App2D)
 //!        .with_title("Comet App")
-//!        .with_size(1920, 1080)
+//!        .with_size(dp(1920.0), dp(1080.0))
 //!        .run(setup, update)
 //!}
 //!```
@@ -103,21 +103,34 @@ impl AppPreset for App3D {
 
 /// Everything you normally need to get started with Comet.
 pub mod prelude {
+    pub use crate::{App2D, App3D, AppPreset, AppPresets, Headless};
     pub use comet_app::{App, Module};
-    pub use comet_window::{WinitModule, WinitModuleExt, Renderer, RendererHandle};
-    pub use comet_assets::*;
+    pub use comet_assets::{
+        Asset, AssetModule, AssetModuleExt, AssetPath, AssetSource, AtlasRef, AudioClip, Font,
+        Image, ImageFormat, ImageRef, LoadState, TextureAtlas,
+    };
+    pub use comet_audio::{
+        AudioModule, AudioModuleExt, AudioSource, Playback, PlaybackSettings, PlaybackState,
+    };
     pub use comet_colors::{
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
-    pub use comet_ecs::{EcsModule, EcsModuleExt, *};
-    pub use comet_input::{keyboard::Key, mouse::Button, input_module::{Binding, AxisBinding, AxisDirection, InputState, GamepadState, GamepadButton, GamepadAxis, GamepadId}, InputModule, InputModuleExt};
+    pub use comet_ecs::{
+        bundle, register_prefab, spawn_prefab, Added, Anchor, Bundle, Camera, Camera2d, Camera3d,
+        CameraViewport, Changed, Collider, Component, EcsModule, EcsModuleExt, Entity,
+        OrthographicProjection, PerspectiveProjection, Projection, Query, RequiredComponents,
+        ResolutionScaling, Scene, Screen, ScreenPosition, Sprite, Text, TextJustification,
+        TextLayout, TextSize, Timer, Transform, With, WithAny, Without, WithoutAny,
+    };
+    pub use comet_gizmos::{Gizmo, GizmoBuffer};
+    pub use comet_input::{
+        input_module::{AxisBinding, AxisDirection, GamepadAxis, GamepadButton, GamepadId},
+        keyboard::Key,
+        mouse::Button,
+        Action, InputModule, InputModuleExt,
+    };
     pub use comet_log::*;
     pub use comet_math::*;
-    pub use comet_renderer::{
-        renderer2d::{RenderHandle2D, RenderHandle2DExt, Renderer2D},
-        LoadOp, PassDescriptor, PassOutput, Renderer2DModule,
-    };
-    pub use comet_audio::{AudioModule, AudioModuleExt, KiraAudio};
-    pub use comet_gizmos::{Gizmo, GizmoBuffer};
-    pub use crate::{AppPreset, AppPresets, App2D, App3D, Headless};
+    pub use comet_renderer::{RenderHandle2D, RenderHandle2DExt, Renderer2DModule};
+    pub use comet_window::{WinitModule, WinitModuleExt};
 }

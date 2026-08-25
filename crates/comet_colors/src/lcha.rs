@@ -1,17 +1,18 @@
 use crate::{sRgba, Color, Hsla, Hsva, Hwba, Laba, LinearRgba, Oklaba, Oklcha, Xyza};
-use comet_math::v4;
+use comet_math::{v4, Deg, Rad};
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Lcha {
     lightness: f32,
     chroma: f32,
-    hue: f32,
+    hue: Deg,
     alpha: f32,
 }
 
 impl Lcha {
-    pub fn new(lightness: f32, chroma: f32, hue: f32, alpha: f32) -> Self {
-        assert!((0.0..=1.5).contains(&lightness) && (0.0..=1.5).contains(&chroma) && (0.0..=360.0).contains(&hue) && (0.0..=1.0).contains(&alpha), "Ligthness needs to be in range 0..1.5\nChroma needs to be in range 0..1.5\nHue needs to be in range 0..360\nAlpha needs to be in range 0..1");
+    pub fn new(lightness: f32, chroma: f32, hue: impl Into<Deg>, alpha: f32) -> Self {
+        let hue = hue.into();
+        assert!((0.0..=1.5).contains(&lightness) && (0.0..=1.5).contains(&chroma) && (0.0..=360.0).contains(&hue.degrees()) && (0.0..=1.0).contains(&alpha), "Ligthness needs to be in range 0..1.5\nChroma needs to be in range 0..1.5\nHue needs to be in range 0..360\nAlpha needs to be in range 0..1");
         Self {
             lightness,
             chroma,
@@ -28,7 +29,7 @@ impl Lcha {
         self.chroma
     }
 
-    pub fn hue(&self) -> f32 {
+    pub fn hue(&self) -> Deg {
         self.hue
     }
 
@@ -37,11 +38,11 @@ impl Lcha {
     }
 
     pub fn from_laba(laba: Laba) -> Self {
-        let atan: f32 = laba.b().atan2(laba.a());
+        let hue = Deg::from(Rad::new(laba.b().atan2(laba.a()))).degrees();
         Self {
             lightness: laba.lightness(),
             chroma: (laba.a() * laba.a() + laba.b() * laba.b()).sqrt(),
-            hue: if atan >= 0.0 { atan } else { atan + 360.0 },
+            hue: Deg::new(if hue >= 0.0 { hue } else { hue + 360.0 }),
             alpha: laba.alpha(),
         }
     }
@@ -49,8 +50,8 @@ impl Lcha {
     pub fn to_laba(&self) -> Laba {
         Laba::new(
             self.lightness,
-            self.chroma * self.hue.to_radians().cos(),
-            self.chroma * self.hue.to_radians().sin(),
+            self.chroma * self.hue.to_radians().radians().cos(),
+            self.chroma * self.hue.to_radians().radians().sin(),
             self.alpha,
         )
     }
@@ -101,10 +102,10 @@ impl Color for Lcha {
     }
 
     fn to_vec(&self) -> v4 {
-        v4::new(self.lightness, self.chroma, self.hue, self.alpha)
+        v4::new(self.lightness, self.chroma, self.hue.degrees(), self.alpha)
     }
 
     fn from_vec(color: v4) -> Self {
-        Self::new(color.x(), color.y(), color.z(), color.w())
+        Self::new(color.x(), color.y(), Deg::new(color.z()), color.w())
     }
 }

@@ -1,17 +1,18 @@
 use crate::{sRgba, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Xyza};
-use comet_math::v4;
+use comet_math::{v4, Deg, Rad};
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Oklcha {
     lightness: f32,
     chroma: f32,
-    hue: f32,
+    hue: Deg,
     alpha: f32,
 }
 
 impl Oklcha {
-    pub fn new(lightness: f32, chroma: f32, hue: f32, alpha: f32) -> Self {
-        assert!((0.0..=1.0).contains(&lightness) && (0.0..=1.0).contains(&chroma) && (0.0..=360.0).contains(&hue) && (0.0..=1.0).contains(&alpha), "Ligthness needs to be in range 0..1\nChroma needs to be in range 0..1\nHue needs to be in range 0..360\nAlpha needs to be in range 0..1");
+    pub fn new(lightness: f32, chroma: f32, hue: impl Into<Deg>, alpha: f32) -> Self {
+        let hue = hue.into();
+        assert!((0.0..=1.0).contains(&lightness) && (0.0..=1.0).contains(&chroma) && (0.0..=360.0).contains(&hue.degrees()) && (0.0..=1.0).contains(&alpha), "Ligthness needs to be in range 0..1\nChroma needs to be in range 0..1\nHue needs to be in range 0..360\nAlpha needs to be in range 0..1");
         Self {
             lightness,
             chroma,
@@ -28,7 +29,7 @@ impl Oklcha {
         self.chroma
     }
 
-    pub fn hue(&self) -> f32 {
+    pub fn hue(&self) -> Deg {
         self.hue
     }
 
@@ -37,11 +38,11 @@ impl Oklcha {
     }
 
     pub fn from_oklaba(oklaba: Oklaba) -> Self {
-        let hue = oklaba.b().atan2(oklaba.a()).to_degrees();
+        let hue = Deg::from(Rad::new(oklaba.b().atan2(oklaba.a()))).degrees();
         Self {
             lightness: oklaba.lightness(),
             chroma: (oklaba.a() * oklaba.a() + oklaba.b() * oklaba.b()).sqrt(),
-            hue: if hue >= 0.0 { hue } else { hue + 360.0 },
+            hue: Deg::new(if hue >= 0.0 { hue } else { hue + 360.0 }),
             alpha: oklaba.alpha(),
         }
     }
@@ -49,8 +50,8 @@ impl Oklcha {
     pub fn to_oklaba(&self) -> Oklaba {
         Oklaba::new(
             self.lightness(),
-            self.chroma() * self.hue().to_radians().cos(),
-            self.chroma() * self.hue().to_radians().sin(),
+            self.chroma() * self.hue().to_radians().radians().cos(),
+            self.chroma() * self.hue().to_radians().radians().sin(),
             self.alpha(),
         )
     }
@@ -101,10 +102,10 @@ impl Color for Oklcha {
     }
 
     fn to_vec(&self) -> v4 {
-        v4::new(self.lightness, self.chroma, self.hue, self.alpha)
+        v4::new(self.lightness, self.chroma, self.hue.degrees(), self.alpha)
     }
 
     fn from_vec(color: v4) -> Self {
-        Self::new(color.x(), color.y(), color.z(), color.w())
+        Self::new(color.x(), color.y(), Deg::new(color.z()), color.w())
     }
 }

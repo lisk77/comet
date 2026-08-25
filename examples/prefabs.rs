@@ -1,19 +1,10 @@
-// This is the simple_move_2d example but using prefabs
 use comet::prelude::*;
 
 #[derive(Component)]
 struct Player;
 
 fn setup(app: &mut App) {
-    app.register_component::<Player>();
-
-    register_prefab!(
-        app,
-        "camera",
-        Transform::new(),
-        Camera::new(1.0, 1, Projection::Orthographic)
-    );
-
+    register_prefab!(app, "camera", Camera2d, Camera::default().with_priority(1));
     register_prefab!(
         app,
         "player",
@@ -27,27 +18,41 @@ fn setup(app: &mut App) {
 }
 
 fn update(app: &mut App, dt: f32) {
-    handle_input(app, dt);
+    let direction = movement_direction(app);
+
+    move_players(app.query::<&mut Transform, With<Player>>(), direction, dt);
 }
 
-fn handle_input(app: &mut App, dt: f32) {
+fn movement_direction(app: &App) -> v2 {
     let mut direction = v2::ZERO;
-    if app.key_held(Key::KeyW) { direction += v2::Y; }
-    if app.key_held(Key::KeyA) { direction -= v2::X; }
-    if app.key_held(Key::KeyS) { direction -= v2::Y; }
-    if app.key_held(Key::KeyD) { direction += v2::X; }
+    if app.key_held(Key::KeyW) {
+        direction += v2::Y;
+    }
+    if app.key_held(Key::KeyA) {
+        direction -= v2::X;
+    }
+    if app.key_held(Key::KeyS) {
+        direction -= v2::Y;
+    }
+    if app.key_held(Key::KeyD) {
+        direction += v2::X;
+    }
+    direction
+}
 
-    if direction != v2::ZERO {
-        app.query::<&mut Transform, With<Player>>().for_each(|t| {
-            let normalized_dir = direction.normalize();
-            let displacement = normalized_dir * 777.7 * dt;
-            t.translate(displacement.into());
-        });
+fn move_players(players: Query<&mut Transform, With<Player>>, direction: v2, dt: f32) {
+    if direction == v2::ZERO {
+        return;
+    }
+
+    let displacement = direction.normalize() * 777.7 * dt;
+    for transform in players {
+        transform.translate(displacement.into());
     }
 }
 
 fn main() {
     App::with_preset(App2D)
-        .with_title("Prefabs Example")
+        .with_title("Prefabs")
         .run(setup, update);
 }

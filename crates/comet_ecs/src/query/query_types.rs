@@ -1,67 +1,58 @@
 use super::*;
 
-pub struct QueryIter<'a, P: ReadFetch<'a>> {
+pub struct Query<'a, Data, Filters = ()> {
     pub(crate) accesses: Vec<QueryAccess>,
     pub(crate) idx: usize,
     pub(crate) added_since_filters: Vec<(TypeId, Tick)>,
     pub(crate) changed_since_filters: Vec<(TypeId, Tick)>,
-    pub(crate) _marker: PhantomData<&'a P>,
+    pub(crate) _marker: PhantomData<(&'a (), Data, Filters)>,
 }
 
-pub struct QueryIterMut<'a, P: WriteFetch<'a>> {
-    pub(crate) accesses: Vec<QueryMutAccess>,
-    pub(crate) idx: usize,
-    pub(crate) added_since_filters: Vec<(TypeId, Tick)>,
-    pub(crate) changed_since_filters: Vec<(TypeId, Tick)>,
-    pub(crate) _marker: PhantomData<&'a P>,
+impl<'a, Data, Filters> Query<'a, Data, Filters> {
+    pub(crate) fn from_state(scene: &'a Scene, state: QueryFilterState) -> Self
+    where
+        Data: QueryData<'a>,
+    {
+        Self {
+            accesses: build_query_accesses::<Data>(scene, &state),
+            idx: 0,
+            added_since_filters: state.added_since_filters,
+            changed_since_filters: state.changed_since_filters,
+            _marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn from_state_mut(scene: &'a mut Scene, state: QueryFilterState) -> Self
+    where
+        Data: QueryData<'a>,
+    {
+        Self {
+            accesses: build_query_accesses_mut::<Data>(scene, &state),
+            idx: 0,
+            added_since_filters: state.added_since_filters,
+            changed_since_filters: state.changed_since_filters,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn added_since<C: Component>(mut self, tick: Tick) -> Self {
+        set_since_filter(&mut self.added_since_filters, TypeId::of::<C>(), tick);
+        self
+    }
+
+    pub fn changed_since<C: Component>(mut self, tick: Tick) -> Self {
+        set_since_filter(&mut self.changed_since_filters, TypeId::of::<C>(), tick);
+        self
+    }
 }
 
-pub struct QueryBuilder<'a, P: ReadFetch<'a>, Filters = ()> {
-    pub(crate) scene: &'a Scene,
-    pub(crate) state: QueryFilterState,
-    pub(crate) _marker: PhantomData<(P, Filters)>,
-}
-
-pub struct Query<'a, P, Filters = ()> {
-    pub(crate) scene: *mut Scene,
-    pub(crate) state: QueryFilterState,
-    pub(crate) _marker: PhantomData<(&'a (), P, Filters)>,
-}
-
-pub struct QueryBuilderFiltered<'a, P: ReadFetch<'a>, Filters, F>
-where
-    F: Fn(&P::Component) -> bool + 'a,
-{
-    pub(crate) scene: &'a Scene,
-    pub(crate) state: QueryFilterState,
-    pub(crate) filter: F,
-    pub(crate) _marker: PhantomData<(P, Filters)>,
-}
-
-pub struct QueryFiltered<'a, P: WriteFetch<'a>, Filters, F>
-where
-    F: Fn(&P::Component) -> bool + 'a,
-{
-    pub(crate) scene: *mut Scene,
-    pub(crate) state: QueryFilterState,
-    pub(crate) filter: F,
-    pub(crate) _marker: PhantomData<(&'a (), P, Filters)>,
-}
-
-pub struct QueryIterFiltered<'a, P: ReadFetch<'a>, F>
-where
-    F: Fn(&P::Component) -> bool + 'a,
-{
-    pub(crate) inner: QueryIter<'a, P>,
-    pub(crate) filter: F,
-    pub(crate) _marker: PhantomData<&'a P>,
-}
-
-pub struct QueryIterMutFiltered<'a, P: WriteFetch<'a>, F>
-where
-    F: Fn(&P::Component) -> bool + 'a,
-{
-    pub(crate) inner: QueryIterMut<'a, P>,
-    pub(crate) filter: F,
-    pub(crate) _marker: PhantomData<&'a P>,
+fn set_since_filter(filters: &mut Vec<(TypeId, Tick)>, type_id: TypeId, tick: Tick) {
+    if let Some((_, existing_tick)) = filters
+        .iter_mut()
+        .find(|(existing_type_id, _)| *existing_type_id == type_id)
+    {
+        *existing_tick = tick;
+    } else {
+        filters.push((type_id, tick));
+    }
 }

@@ -9,6 +9,7 @@ const DEFAULT_ARCHETYPE_CAPACITY: usize = 64;
 #[derive(Clone)]
 pub struct ComponentInfo {
     pub type_id: TypeId,
+    pub type_name: &'static str,
     pub layout: Layout,
     pub drop_fn: unsafe fn(*mut u8),
 }

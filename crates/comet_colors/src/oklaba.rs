@@ -1,5 +1,5 @@
 use crate::{sRgba, Color, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklcha, Xyza};
-use comet_math::v4;
+use comet_math::{v4, Deg, Rad};
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Oklaba {
@@ -85,11 +85,11 @@ impl Oklaba {
     }
 
     pub fn to_oklcha(&self) -> Oklcha {
-        let hue = self.b.atan2(self.a).to_degrees();
+        let hue = Deg::from(Rad::new(self.b.atan2(self.a))).degrees();
         Oklcha::new(
             self.lightness,
             (self.a * self.a + self.b * self.b).sqrt(),
-            if hue >= 0.0 { hue } else { hue + 360.0 },
+            Deg::new(if hue >= 0.0 { hue } else { hue + 360.0 }),
             self.alpha,
         )
     }

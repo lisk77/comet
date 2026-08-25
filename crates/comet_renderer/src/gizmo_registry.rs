@@ -19,7 +19,7 @@ impl GizmoRegistry {
 
     pub fn show<C: Component + Gizmo + 'static>(&mut self, entity: Entity) {
         self.enabled
-            .entry(C::type_id())
+            .entry(TypeId::of::<C>())
             .or_insert_with(|| {
                 let draw: DrawFn = Box::new(|entity, scene, buffer| {
                     if let (Some(comp), Some(transform)) = (
@@ -36,7 +36,7 @@ impl GizmoRegistry {
     }
 
     pub fn hide<C: Component + Gizmo + 'static>(&mut self, entity: Entity) {
-        if let Some((set, _)) = self.enabled.get_mut(&C::type_id()) {
+        if let Some((set, _)) = self.enabled.get_mut(&TypeId::of::<C>()) {
             set.remove(&entity);
         }
     }
@@ -44,12 +44,12 @@ impl GizmoRegistry {
     #[allow(dead_code)]
     pub fn is_enabled<C: Component + Gizmo + 'static>(&self, entity: Entity) -> bool {
         self.enabled
-            .get(&C::type_id())
+            .get(&TypeId::of::<C>())
             .map_or(false, |(set, _)| set.contains(&entity))
     }
 
     pub fn show_all<C: Component + Gizmo + 'static>(&mut self) {
-        self.show_all.entry(C::type_id()).or_insert_with(|| {
+        self.show_all.entry(TypeId::of::<C>()).or_insert_with(|| {
             Box::new(|scene: &Scene, buffer: &mut GizmoBuffer| {
                 for entity in scene.entities().iter().flatten().copied() {
                     if let (Some(comp), Some(transform)) = (
@@ -64,7 +64,7 @@ impl GizmoRegistry {
     }
 
     pub fn hide_all<C: Component + Gizmo + 'static>(&mut self) {
-        self.show_all.remove(&C::type_id());
+        self.show_all.remove(&TypeId::of::<C>());
     }
 
     pub fn flush(&self, scene: &Scene, buffer: &mut GizmoBuffer) {

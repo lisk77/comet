@@ -1,8 +1,8 @@
 use crate::gizmo_registry::GizmoRegistry;
 use crate::{
-    camera::{CameraUniform, RenderCamera},
+    camera::{resolve_camera_viewport, CameraUniform, RenderCamera, ResolvedViewport},
     gpu_texture::GpuTexture,
-    render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, Text2D},
+    render_commands::{CameraPacket2D, Draw2D, Renderer2DCommand, ScreenText2D, Text2D},
     render_events::Renderer2DEvent,
     render_graph::{
         nodes::{PassNode, PostProcessNode},
@@ -13,7 +13,7 @@ use crate::{
     Vertex,
 };
 use comet_app::{App, Module};
-use comet_assets::{texture_atlas::*, AtlasRef, ImageRef};
+use comet_assets::{texture_atlas::*, AssetPath, AtlasRef, ImageRef};
 use comet_colors::Color;
 use comet_ecs::Component;
 use comet_ecs::EcsModuleExt;
@@ -59,7 +59,7 @@ pub struct RenderHandle2D {
 impl RenderHandle2D {
     fn resolve_atlas_ref(
         &mut self,
-        path: &'static str,
+        path: AssetPath,
     ) -> Option<(AtlasRef, Option<comet_assets::Asset<comet_assets::Image>>)> {
         let _ = self
             .command_sender
@@ -123,14 +123,14 @@ impl RenderHandle2D {
         &mut self,
         text: &str,
         font: comet_assets::Asset<comet_assets::Font>,
-        font_size: f32,
+        font_size: impl Into<comet_math::ScreenUnit>,
     ) -> v2 {
         let _ = self
             .command_sender
             .send(Renderer2DCommand::PrecomputedTextBounds {
                 text: text.to_string(),
                 font,
-                font_size,
+                font_size: font_size.into(),
             });
         self.recv_matching_event(Duration::from_secs(5), |event| {
             matches!(event, Renderer2DEvent::PrecomputedTextBounds { .. })
@@ -276,7 +276,6 @@ impl RenderHandle2D {
             self.pending_atlas_rebuild = false;
             for (_, render) in scene
                 .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
-                .iter()
             {
                 if let ImageRef::ResolvedHandle(h, _) = render.texture() {
                     render.set_image_ref(ImageRef::Handle(h));
@@ -284,27 +283,38 @@ impl RenderHandle2D {
             }
         }
 
-        let mut selected_camera: Option<([f32; 2], f32, f32, u8, comet_ecs::Projection)> = None;
-        for (transform, camera) in scene
-            .query::<(&comet_ecs::Transform, &comet_ecs::Camera), ()>()
-            .iter()
+        let mut selected_camera: Option<(
+            [f32; 2],
+            f32,
+            comet_ecs::Camera,
+            comet_ecs::Projection,
+            comet_ecs::Screen,
+        )> = None;
+        for (transform, camera, projection, screen) in scene
+            .query::<(
+                &comet_ecs::Transform,
+                &comet_ecs::Camera,
+                &comet_ecs::Projection,
+                &comet_ecs::Screen,
+            ), comet_ecs::With<comet_ecs::Camera2d>>()
         {
+            if !camera.is_enabled() {
+                continue;
+            }
             let should_replace = selected_camera
                 .as_ref()
-                .is_none_or(|(_, _, _, current_priority, _)| camera.priority() < *current_priority);
+                .is_none_or(|(_, _, current, _, _)| camera.priority() > current.priority());
             if should_replace {
                 selected_camera = Some((
                     [transform.position().x(), transform.position().y()],
-                    transform.rotation().z().to_degrees(),
-                    camera.zoom(),
-                    camera.priority(),
-                    camera.projection().clone(),
+                    transform.rotation().as_degrees().z(),
+                    *camera,
+                    *projection,
+                    screen.clone(),
                 ));
             }
         }
-        let Some((camera_pos, camera_rot, camera_zoom, camera_priority, camera_projection)) =
-            selected_camera
-        else {
+        let Some((camera_pos, camera_rot, camera, projection, screen)) = selected_camera else {
             return;
         };
 
@@ -312,7 +322,6 @@ impl RenderHandle2D {
         let mut referenced_handles = Vec::new();
         for (transform, render) in scene
             .query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
-            .iter()
         {
             let atlas_ref = match render.texture() {
                 ImageRef::Atlas(atlas_ref) => atlas_ref,
@@ -344,7 +353,7 @@ impl RenderHandle2D {
 
             draws.push(Draw2D {
                 position: [transform.position().x(), transform.position().y()],
-                rotation_deg: transform.rotation().z().to_degrees(),
+                rotation_deg: transform.rotation().as_degrees().z(),
                 scale: [transform.scale().x(), transform.scale().y()],
                 texture: atlas_ref,
                 draw_index: render.draw_index(),
@@ -354,16 +363,60 @@ impl RenderHandle2D {
         draws.sort_by_key(|draw| draw.draw_index);
 
         let mut texts = Vec::new();
-        for (transform, text) in scene
-            .query::<(&comet_ecs::Transform, &comet_ecs::Text), ()>()
-            .iter()
+        for (transform, text, layout) in scene
+            .query::<(
+                &comet_ecs::Transform,
+                &comet_ecs::Text,
+                Option<&comet_ecs::TextLayout>,
+            ), comet_ecs::Without<comet_ecs::ScreenPosition>>()
         {
             if !text.is_visible() {
                 continue;
             }
             let color = text.color().to_wgpu();
+            let anchor = layout.map_or(comet_ecs::Anchor::TopLeft, |layout| layout.anchor());
+            let justification = layout.map_or(comet_ecs::TextJustification::Left, |layout| {
+                layout.justification()
+            });
             texts.push(Text2D {
                 position: [transform.position().x(), transform.position().y()],
+                anchor,
+                justification,
+                content: text.content().to_string(),
+                font: text.font(),
+                size: text.font_size(),
+                color: [
+                    color.r as f32,
+                    color.g as f32,
+                    color.b as f32,
+                    color.a as f32,
+                ],
+                visible: true,
+            });
+        }
+
+        let virtual_resolution = screen.virtual_resolution();
+        let mut screen_texts = Vec::new();
+        for (position, text, layout) in scene
+            .query::<(
+                &comet_ecs::ScreenPosition,
+                &comet_ecs::Text,
+                Option<&comet_ecs::TextLayout>,
+            ), comet_ecs::Without<comet_ecs::Transform>>()
+        {
+            if !text.is_visible() {
+                continue;
+            }
+            let color = text.color().to_wgpu();
+            let text_anchor = layout.map_or(comet_ecs::Anchor::TopLeft, |layout| layout.anchor());
+            let justification = layout.map_or(comet_ecs::TextJustification::Left, |layout| {
+                layout.justification()
+            });
+            screen_texts.push(ScreenText2D {
+                anchor: position.anchor(),
+                offset: [position.offset().x(), position.offset().y()],
+                text_anchor,
+                justification,
                 content: text.content().to_string(),
                 font: text.font(),
                 size: text.font_size(),
@@ -380,9 +433,12 @@ impl RenderHandle2D {
         let camera_packet = CameraPacket2D {
             position: camera_pos,
             rotation_deg: camera_rot,
-            zoom: camera_zoom,
-            priority: camera_priority,
-            projection: camera_projection,
+            priority: camera.priority(),
+            projection,
+            virtual_resolution,
+            resolution_scaling: screen.resolution_scaling(),
+            magnification: projection.magnification(),
+            viewport: screen.viewport(),
         };
 
         self.gizmo_registry.flush(scene, &mut self.gizmo_buffer);
@@ -392,6 +448,7 @@ impl RenderHandle2D {
             camera_packet,
             draws,
             texts,
+            screen_texts,
             referenced_handles,
             gizmo_shapes,
         ));
@@ -584,12 +641,12 @@ impl Renderer2D {
     fn ensure_font_initialized(
         &mut self,
         handle: comet_assets::Asset<comet_assets::Font>,
-        size: f32,
+        size: comet_math::Px,
     ) {
         let key = FontKey {
             index: handle.index(),
             generation: handle.generation(),
-            size_bits: size.to_bits(),
+            size_bits: size.pixels().to_bits(),
         };
         if self.font_cache.contains_key(&key) {
             return;
@@ -611,7 +668,7 @@ impl Renderer2D {
             }
         };
 
-        let prefix = format!("{}@{}::", handle.index(), size.to_bits());
+        let prefix = format!("{}@{}::", handle.index(), size.pixels().to_bits());
         for g in &mut glyphs {
             g.name = format!("{}{}", prefix, g.name);
         }
@@ -657,7 +714,10 @@ impl Renderer2D {
             self.graph
                 .get_node_mut::<PassNode>("Font")
                 .unwrap()
-                .set_texture(font_texture_arc, device);
+                .set_texture(font_texture_arc.clone(), device);
+            if let Some(node) = self.graph.get_node_mut::<PassNode>("ScreenFont") {
+                node.set_texture(font_texture_arc, device);
+            }
         } else {
             let format = self.render_state.config().format;
             let width = self.render_state.config().width;
@@ -667,8 +727,23 @@ impl Renderer2D {
                     "Font",
                     SPRITE_SHADER,
                     wgpu::PrimitiveTopology::TriangleList,
-                    Some(font_texture_arc),
+                    Some(font_texture_arc.clone()),
                     vec!["Universal"],
+                    LoadOp::Load,
+                ),
+                self.render_state.device(),
+                self.render_state.queue(),
+                format,
+                width,
+                height,
+            );
+            self.graph.add_node(
+                PassNode::new(
+                    "ScreenFont",
+                    SPRITE_SHADER,
+                    wgpu::PrimitiveTopology::TriangleList,
+                    Some(font_texture_arc),
+                    vec!["Gizmo"],
                     LoadOp::Load,
                 ),
                 self.render_state.device(),
@@ -950,11 +1025,21 @@ impl Renderer2D {
         &mut self,
         text: &str,
         font: comet_assets::Asset<comet_assets::Font>,
-        size: f32,
+        size: comet_math::ScreenUnit,
     ) -> v2 {
+        let size = size.resolve(self.scale_factor() as f32);
         let mut bounds = v2::ZERO;
-        let _ =
-            self.add_text_to_buffers(text, font, size, v2::ZERO, wgpu::Color::WHITE, &mut bounds);
+        let _ = self.add_text_to_buffers(
+            text,
+            font,
+            size,
+            1.0,
+            v2::ZERO,
+            wgpu::Color::WHITE,
+            comet_ecs::Anchor::TopLeft,
+            comet_ecs::TextJustification::Left,
+            &mut bounds,
+        );
         bounds
     }
 
@@ -962,12 +1047,16 @@ impl Renderer2D {
         &mut self,
         text: &str,
         font: comet_assets::Asset<comet_assets::Font>,
-        size: f32,
+        raster_size: comet_math::Px,
+        geometry_scale: f32,
         position: comet_math::v2,
         color: wgpu::Color,
+        anchor: comet_ecs::Anchor,
+        justification: comet_ecs::TextJustification,
         bounds: &mut comet_math::v2,
     ) -> (Vec<Vertex>, Vec<u16>) {
-        self.ensure_font_initialized(font, size);
+        self.ensure_font_initialized(font, raster_size);
+        let size = raster_size.pixels();
 
         let cache_key = FontKey {
             index: font.index(),
@@ -983,7 +1072,7 @@ impl Renderer2D {
             color.a as f32,
         ];
 
-        let line_height = line_height_px;
+        let line_height = line_height_px * geometry_scale;
         let screen_position = position;
 
         let lines: Vec<String> = text
@@ -991,36 +1080,57 @@ impl Renderer2D {
             .map(|s| s.chars().map(|c| if c == '\t' { ' ' } else { c }).collect())
             .collect();
 
-        let mut max_line_width = 0.0f32;
-        for line in &lines {
-            let line_width: f32 = line
-                .chars()
-                .map(|c| self.get_glyph_region(c, font, size).advance())
-                .sum();
-            if line_width > max_line_width {
-                max_line_width = line_width;
-            }
-        }
+        let line_widths: Vec<f32> = lines
+            .iter()
+            .map(|line| {
+                line.chars()
+                    .map(|c| self.get_glyph_region(c, font, size).advance())
+                    .sum::<f32>()
+                    * geometry_scale
+            })
+            .collect();
+        let max_line_width = line_widths.iter().copied().fold(0.0, f32::max);
+        let block_height = lines.len() as f32 * line_height;
         bounds.set_x(max_line_width);
-        bounds.set_y(lines.len() as f32 * line_height_px);
+        bounds.set_y(block_height);
 
-        let mut x_offset = 0.0f32;
+        let (anchor_x, anchor_y) = match anchor {
+            comet_ecs::Anchor::TopLeft => (0.0, 0.0),
+            comet_ecs::Anchor::TopCenter => (0.5, 0.0),
+            comet_ecs::Anchor::TopRight => (1.0, 0.0),
+            comet_ecs::Anchor::CenterLeft => (0.0, 0.5),
+            comet_ecs::Anchor::Center => (0.5, 0.5),
+            comet_ecs::Anchor::CenterRight => (1.0, 0.5),
+            comet_ecs::Anchor::BottomLeft => (0.0, 1.0),
+            comet_ecs::Anchor::BottomCenter => (0.5, 1.0),
+            comet_ecs::Anchor::BottomRight => (1.0, 1.0),
+        };
+        let block_origin = v2::new(
+            screen_position.x() - max_line_width * anchor_x,
+            screen_position.y() + block_height * anchor_y,
+        );
+
         let mut y_offset = 0.0f32;
         let mut vertex_data = Vec::new();
         let mut index_data = Vec::new();
 
-        for line in lines {
+        for (line, line_width) in lines.into_iter().zip(line_widths) {
+            let mut x_offset = match justification {
+                comet_ecs::TextJustification::Left => 0.0,
+                comet_ecs::TextJustification::Center => (max_line_width - line_width) * 0.5,
+                comet_ecs::TextJustification::Right => max_line_width - line_width,
+            };
             for c in line.chars() {
                 let region = self.get_glyph_region(c, font, size);
 
                 let (dim_x, dim_y) = region.dimensions();
-                let w = dim_x as f32;
-                let h = dim_y as f32;
-                let offset_x = region.offset_x();
-                let offset_y = region.offset_y();
+                let w = dim_x as f32 * geometry_scale;
+                let h = dim_y as f32 * geometry_scale;
+                let offset_x = region.offset_x() * geometry_scale;
+                let offset_y = region.offset_y() * geometry_scale;
 
-                let glyph_left = screen_position.x() + x_offset + offset_x;
-                let glyph_top = screen_position.y() - offset_y - y_offset;
+                let glyph_left = block_origin.x() + x_offset + offset_x;
+                let glyph_top = block_origin.y() - offset_y - y_offset;
                 let glyph_right = glyph_left + w;
                 let glyph_bottom = glyph_top - h;
 
@@ -1056,14 +1166,32 @@ impl Renderer2D {
                     buffer_size + 3,
                 ]);
 
-                x_offset += region.advance();
+                x_offset += region.advance() * geometry_scale;
             }
 
             y_offset += line_height;
-            x_offset = 0.0;
         }
 
         (vertex_data, index_data)
+    }
+
+    fn resolve_text_size(
+        &self,
+        size: comet_ecs::TextSize,
+        view: crate::camera::ResolvedCameraViewport,
+    ) -> (comet_math::Px, f32) {
+        let world_units_per_pixel =
+            view.visible_world_size.y() / view.viewport.height.max(1) as f32;
+        match size {
+            comet_ecs::TextSize::Screen(size) => {
+                let raster_size = size.resolve(self.scale_factor() as f32);
+                (raster_size, world_units_per_pixel)
+            }
+            comet_ecs::TextSize::World(world_size) => {
+                let raster_size = comet_math::px(world_size / world_units_per_pixel);
+                (raster_size, world_units_per_pixel)
+            }
+        }
     }
 
     pub fn submit_frame(
@@ -1071,6 +1199,7 @@ impl Renderer2D {
         camera: CameraPacket2D,
         mut draws: Vec<Draw2D>,
         texts: Vec<Text2D>,
+        screen_texts: Vec<ScreenText2D>,
         referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
         gizmo_shapes: Vec<GizmoShape>,
     ) {
@@ -1098,7 +1227,7 @@ impl Renderer2D {
                 let _ = self.event_sender.send(Renderer2DEvent::AtlasRebuilt);
             }
         }
-        self.setup_camera_from_packet(camera);
+        let (world_view, screen_view) = self.setup_camera_from_packet(camera);
 
         draws.sort_by_key(|draw| draw.draw_index);
 
@@ -1216,13 +1345,17 @@ impl Renderer2D {
                 a: text.color[3] as f64,
             };
 
+            let (raster_size, geometry_scale) = self.resolve_text_size(text.size, world_view);
             let mut bounds = v2::ZERO;
             let (mut vertices, indices) = self.add_text_to_buffers(
                 &text.content,
                 text.font,
-                text.size,
+                raster_size,
+                geometry_scale,
                 position,
                 color,
+                text.anchor,
+                text.justification,
                 &mut bounds,
             );
 
@@ -1231,11 +1364,74 @@ impl Renderer2D {
             font_index_buffer.extend(indices.iter().map(|i| i + offset));
         }
 
+        {
+            let device = self.render_state.device();
+            let queue = self.render_state.queue();
+            if let Some(node) = self.graph.get_node_mut::<PassNode>("Font") {
+                node.set_geometry(font_vertex_buffer, font_index_buffer, device, queue);
+            }
+        }
+
+        let mut screen_font_vertex_buffer: Vec<Vertex> = Vec::new();
+        let mut screen_font_index_buffer: Vec<u16> = Vec::new();
+        let screen_size = screen_view.visible_world_size;
+        for text in screen_texts {
+            if !text.visible {
+                continue;
+            }
+
+            let half_width = screen_size.x() * 0.5;
+            let half_height = screen_size.y() * 0.5;
+            let anchor = match text.anchor {
+                comet_ecs::Anchor::TopLeft => v2::new(-half_width, half_height),
+                comet_ecs::Anchor::TopCenter => v2::new(0.0, half_height),
+                comet_ecs::Anchor::TopRight => v2::new(half_width, half_height),
+                comet_ecs::Anchor::CenterLeft => v2::new(-half_width, 0.0),
+                comet_ecs::Anchor::Center => v2::ZERO,
+                comet_ecs::Anchor::CenterRight => v2::new(half_width, 0.0),
+                comet_ecs::Anchor::BottomLeft => v2::new(-half_width, -half_height),
+                comet_ecs::Anchor::BottomCenter => v2::new(0.0, -half_height),
+                comet_ecs::Anchor::BottomRight => v2::new(half_width, -half_height),
+            };
+            let position = anchor + v2::new(text.offset[0], -text.offset[1]);
+            let color = wgpu::Color {
+                r: text.color[0] as f64,
+                g: text.color[1] as f64,
+                b: text.color[2] as f64,
+                a: text.color[3] as f64,
+            };
+            let (raster_size, geometry_scale) = self.resolve_text_size(text.size, screen_view);
+            let mut bounds = v2::ZERO;
+            let (mut vertices, indices) = self.add_text_to_buffers(
+                &text.content,
+                text.font,
+                raster_size,
+                geometry_scale,
+                position,
+                color,
+                text.text_anchor,
+                text.justification,
+                &mut bounds,
+            );
+            let offset = screen_font_vertex_buffer.len() as u16;
+            screen_font_vertex_buffer.append(&mut vertices);
+            screen_font_index_buffer.extend(indices.iter().map(|index| index + offset));
+        }
+
+        let screen_camera = RenderCamera::new(screen_size, v3::ZERO);
+        let mut screen_uniform = CameraUniform::new();
+        screen_uniform.update_view_proj(&screen_camera);
         let device = self.render_state.device();
         let queue = self.render_state.queue();
-
-        if let Some(node) = self.graph.get_node_mut::<PassNode>("Font") {
-            node.set_geometry(font_vertex_buffer, font_index_buffer, device, queue);
+        if let Some(node) = self.graph.get_node_mut::<PassNode>("ScreenFont") {
+            node.set_geometry(
+                screen_font_vertex_buffer,
+                screen_font_index_buffer,
+                device,
+                queue,
+            );
+            node.set_camera(&screen_uniform, queue);
+            node.set_viewport(Some(screen_view.viewport));
         }
 
         let mut gizmo_verts: Vec<Vertex> = Vec::new();
@@ -1329,22 +1525,65 @@ impl Renderer2D {
         }
     }
 
-    fn setup_camera_from_packet(&mut self, camera: CameraPacket2D) {
-        use comet_ecs::Projection;
-
-        let width = self.render_state.config().width as f32;
-        let height = self.render_state.config().height as f32;
+    fn setup_camera_from_packet(
+        &mut self,
+        camera: CameraPacket2D,
+    ) -> (
+        crate::camera::ResolvedCameraViewport,
+        crate::camera::ResolvedCameraViewport,
+    ) {
+        let output_bounds = if let Some(viewport) = camera.viewport {
+            let x = (viewport.x().pixels().floor() as u32)
+                .min(self.render_state.config().width.saturating_sub(1));
+            let y = (viewport.y().pixels().floor() as u32)
+                .min(self.render_state.config().height.saturating_sub(1));
+            let width = viewport.width().pixels().round().max(1.0) as u32;
+            let height = viewport.height().pixels().round().max(1.0) as u32;
+            ResolvedViewport {
+                x,
+                y,
+                width: width.min(self.render_state.config().width - x),
+                height: height.min(self.render_state.config().height - y),
+            }
+        } else {
+            ResolvedViewport {
+                x: 0,
+                y: 0,
+                width: self.render_state.config().width,
+                height: self.render_state.config().height,
+            }
+        };
+        let scale_factor = self.scale_factor() as f32;
+        let virtual_resolution = camera
+            .virtual_resolution
+            .map(|size| size.resolve(scale_factor))
+            .unwrap_or_else(|| {
+                v2::new(
+                    output_bounds.width as f32 / scale_factor,
+                    output_bounds.height as f32 / scale_factor,
+                )
+            });
+        let resolved = resolve_camera_viewport(
+            virtual_resolution,
+            camera.resolution_scaling,
+            camera.magnification,
+            output_bounds,
+        );
+        let screen_view = resolve_camera_viewport(
+            virtual_resolution,
+            camera.resolution_scaling,
+            1.0,
+            output_bounds,
+        );
 
         let view_proj: [[f32; 4]; 4] = match camera.projection {
-            Projection::Custom { matrix } => matrix.into(),
-            _ => {
-                let render_camera = RenderCamera::new(
-                    camera.zoom,
-                    v2::new(width, height),
-                    v3::new(camera.position[0], camera.position[1], 0.0),
-                );
-                render_camera.build_view_projection_matrix().into()
-            }
+            comet_ecs::Projection::Custom(matrix) => matrix.into(),
+            _ => RenderCamera::new(
+                resolved.visible_world_size,
+                v3::new(camera.position[0], camera.position[1], 0.0),
+            )
+            .build_view_projection_matrix()
+            .into(),
         };
 
         let mut camera_uniform = CameraUniform::new();
@@ -1354,13 +1593,18 @@ impl Renderer2D {
 
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Universal") {
             node.set_camera(&camera_uniform, queue);
+            node.set_viewport(Some(resolved.viewport));
         }
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Font") {
             node.set_camera(&camera_uniform, queue);
+            node.set_viewport(Some(resolved.viewport));
         }
         if let Some(node) = self.graph.get_node_mut::<PassNode>("Gizmo") {
             node.set_camera(&camera_uniform, queue);
+            node.set_viewport(Some(resolved.viewport));
         }
+
+        (resolved, screen_view)
     }
 }
 
@@ -1405,7 +1649,7 @@ impl Renderer for Renderer2D {
                             .with(handle, |atlas| {
                                 atlas
                                     .textures()
-                                    .get(path)
+                                    .get(path.as_str())
                                     .copied()
                                     .map(|region| AtlasRef::new(region, handle))
                             })
@@ -1415,12 +1659,12 @@ impl Renderer for Renderer2D {
                 let mut dynamic_image_handle: Option<comet_assets::Asset<comet_assets::Image>> =
                     None;
                 let atlas_ref = atlas_ref.or_else(|| {
-                    let fs_path = comet_assets::resolve_asset_path(path);
+                    let fs_path = comet_assets::resolve_asset_path(path.as_str());
                     let bytes = std::fs::read(&fs_path).ok()?;
                     let image = comet_assets::Image::from_bytes(&bytes, false).ok()?;
                     let image_handle = self.asset_provider.add(image)?;
                     self.asset_provider
-                        .track_for_reload::<comet_assets::Image>(image_handle, path);
+                        .track_for_reload::<comet_assets::Image>(image_handle, path.clone());
                     let result = self.ensure_image_in_atlas(image_handle);
                     if result.is_some() {
                         dynamic_image_handle = Some(image_handle);
@@ -1463,9 +1707,17 @@ impl Renderer for Renderer2D {
                 camera,
                 draws,
                 texts,
+                screen_texts,
                 referenced_handles,
                 gizmo_shapes,
-            ) => self.submit_frame(camera, draws, texts, referenced_handles, gizmo_shapes),
+            ) => self.submit_frame(
+                camera,
+                draws,
+                texts,
+                screen_texts,
+                referenced_handles,
+                gizmo_shapes,
+            ),
             Renderer2DCommand::AddRenderPass(desc) => {
                 let pass_output = self.add_pass(desc);
                 let _ = self

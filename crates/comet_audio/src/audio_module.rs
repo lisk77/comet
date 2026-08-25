@@ -1,7 +1,6 @@
-use comet_macros::module;
+use crate::{audio::Audio, AudioSource, KiraAudio, Playback, PlaybackSettings, PlaybackState};
 use comet_app::{App, Module};
-use crate::kira::KiraAudio;
-use crate::audio::Audio;
+use comet_ecs::{EcsModule, EcsModuleExt, Entity, Scene};
 
 pub struct AudioModule {
     audio: KiraAudio,
@@ -13,46 +12,126 @@ impl AudioModule {
             audio: KiraAudio::new(),
         }
     }
+
+    fn update(&mut self, scene: &mut Scene, dt: f32) {
+        for (entity, state) in self.audio.update(dt) {
+            if state == PlaybackState::Finished {
+                if let Some(playback_state) = scene.get_component_mut::<PlaybackState>(entity) {
+                    playback_state.finish();
+                }
+            }
+        }
+
+        for (entity, source, settings, state) in
+            scene.query_mut::<(Entity, &AudioSource, &PlaybackSettings, &mut PlaybackState), ()>()
+        {
+            if settings.playback() == Playback::Repeat(0) {
+                self.audio.stop(entity);
+                state.finish();
+                continue;
+            }
+
+            match *state {
+                PlaybackState::Playing => self.audio.ensure_playing(
+                    entity,
+                    source.clip(),
+                    settings.playback(),
+                    settings.volume(),
+                ),
+                PlaybackState::Paused => self.audio.pause(entity),
+                PlaybackState::Stopped | PlaybackState::Finished => self.audio.stop(entity),
+            }
+        }
+    }
+
+    fn stop_orphaned_sources(&mut self, scene: &Scene) {
+        for entity in self.audio.active_entities() {
+            if scene.get_component::<AudioSource>(entity).is_none() {
+                self.audio.stop(entity);
+            }
+        }
+    }
 }
 
 impl Module for AudioModule {
-    fn dependencies(app: &mut App) where Self: Sized {
+    fn dependencies(app: &mut App)
+    where
+        Self: Sized,
+    {
         if !app.has_module::<comet_assets::AssetModule>() {
             app.add_module(comet_assets::AssetModule::new());
+        }
+        if !app.has_module::<EcsModule>() {
+            app.add_module(EcsModule::new());
         }
     }
 
     fn build(&mut self, app: &mut App) {
-        self.audio.set_asset_provider(app.context::<comet_assets::AssetProvider>().clone());
+        self.audio
+            .set_asset_provider(app.context::<comet_assets::AssetProvider>().clone());
         app.add_tick_system(|app, dt| {
-            app.get_module_mut::<AudioModule>().audio.update(dt);
+            let mut audio = app.take_module::<AudioModule>().unwrap();
+            let mut ecs = app.take_module::<EcsModule>().unwrap();
+            audio.update(&mut ecs.scene, dt);
+            app.reinsert_module(ecs);
+            app.reinsert_module(audio);
+        });
+        app.add_post_tick_hook(|app| {
+            let mut audio = app.take_module::<AudioModule>().unwrap();
+            let ecs = app.get_module::<EcsModule>();
+            audio.stop_orphaned_sources(&ecs.scene);
+            app.reinsert_module(audio);
         });
     }
 }
 
-#[module]
-impl AudioModule {
-    pub fn play_audio(&mut self, name: &str, looped: bool) {
-        self.audio.play(name, looped);
+pub trait AudioModuleExt {
+    fn pause_audio(&mut self, entity: Entity);
+    fn resume_audio(&mut self, entity: Entity);
+    fn stop_audio(&mut self, entity: Entity);
+    fn stop_all_audio(&mut self);
+    fn is_audio_playing(&self, entity: Entity) -> bool;
+    fn audio_state(&self, entity: Entity) -> Option<PlaybackState>;
+    fn set_audio_volume(&mut self, entity: Entity, volume: f32);
+}
+
+impl AudioModuleExt for App {
+    fn pause_audio(&mut self, entity: Entity) {
+        if let Some(state) = self.get_component_mut::<PlaybackState>(entity) {
+            state.pause();
+        }
     }
 
-    pub fn pause_audio(&mut self, name: &str) {
-        self.audio.pause(name);
+    fn resume_audio(&mut self, entity: Entity) {
+        if let Some(state) = self.get_component_mut::<PlaybackState>(entity) {
+            state.play();
+        }
     }
 
-    pub fn stop_audio(&mut self, name: &str) {
-        self.audio.stop(name);
+    fn stop_audio(&mut self, entity: Entity) {
+        if let Some(state) = self.get_component_mut::<PlaybackState>(entity) {
+            state.stop();
+        }
     }
 
-    pub fn stop_all_audio(&mut self) {
-        self.audio.stop_all();
+    fn stop_all_audio(&mut self) {
+        for state in self.query::<&mut PlaybackState, ()>() {
+            state.stop();
+        }
+        self.get_module_mut::<AudioModule>().audio.stop_all();
     }
 
-    pub fn is_playing(&self, name: &str) -> bool {
-        self.audio.is_playing(name)
+    fn is_audio_playing(&self, entity: Entity) -> bool {
+        self.audio_state(entity) == Some(PlaybackState::Playing)
     }
 
-    pub fn set_volume(&mut self, name: &str, volume: f32) {
-        self.audio.set_volume(name, volume);
+    fn audio_state(&self, entity: Entity) -> Option<PlaybackState> {
+        self.get_component::<PlaybackState>(entity).copied()
+    }
+
+    fn set_audio_volume(&mut self, entity: Entity, volume: f32) {
+        if let Some(settings) = self.get_component_mut::<PlaybackSettings>(entity) {
+            settings.set_volume(volume);
+        }
     }
 }

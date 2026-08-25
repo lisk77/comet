@@ -1,278 +1,153 @@
 use super::*;
-use crate::{ComponentTuple, Tick};
-use std::any::TypeId;
+use std::ptr;
 
-macro_rules! impl_query_state_methods_scene_ref {
-    () => {
-        pub fn with<Co: Component>(mut self) -> Self {
-            self.state.with_components.push(Co::type_id());
-            self
-        }
-
-        pub fn without<Co: Component>(mut self) -> Self {
-            self.state.without_components.push(Co::type_id());
-            self
-        }
-
-        pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.with_any_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.without_any_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.with_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.without_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn added<Co: Component>(mut self) -> Self {
-            self.state
-                .set_added_since_filter(Co::type_id(), self.scene.default_query_since_tick());
-            self
-        }
-
-        pub fn changed<Co: Component>(mut self) -> Self {
-            self.state
-                .set_changed_since_filter(Co::type_id(), self.scene.default_query_since_tick());
-            self
-        }
-
-        pub fn added_since<Co: Component>(mut self, tick: Tick) -> Self {
-            self.state.set_added_since_filter(Co::type_id(), tick);
-            self
-        }
-
-        pub fn changed_since<Co: Component>(mut self, tick: Tick) -> Self {
-            self.state.set_changed_since_filter(Co::type_id(), tick);
-            self
-        }
-    };
-}
-
-macro_rules! impl_query_state_methods_write_ptr {
-    () => {
-        pub fn with<Co: Component>(mut self) -> Self {
-            self.state.with_components.push(Co::type_id());
-            self
-        }
-
-        pub fn without<Co: Component>(mut self) -> Self {
-            self.state.without_components.push(Co::type_id());
-            self
-        }
-
-        pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.with_any_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.without_any_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.with_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.without_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn added<Co: Component>(mut self) -> Self {
-            self.state.set_added_since_filter(Co::type_id(), unsafe {
-                (&*self.scene).default_query_since_tick()
-            });
-            self
-        }
-
-        pub fn changed<Co: Component>(mut self) -> Self {
-            self.state.set_changed_since_filter(Co::type_id(), unsafe {
-                (&*self.scene).default_query_since_tick()
-            });
-            self
-        }
-
-        pub fn added_since<Co: Component>(mut self, tick: Tick) -> Self {
-            self.state.set_added_since_filter(Co::type_id(), tick);
-            self
-        }
-
-        pub fn changed_since<Co: Component>(mut self, tick: Tick) -> Self {
-            self.state.set_changed_since_filter(Co::type_id(), tick);
-            self
-        }
-    };
-}
-
-macro_rules! impl_query_state_methods_scene_mut {
-    () => {
-        pub fn with<Co: Component>(mut self) -> Self {
-            self.state.with_components.push(Co::type_id());
-            self
-        }
-
-        pub fn without<Co: Component>(mut self) -> Self {
-            self.state.without_components.push(Co::type_id());
-            self
-        }
-
-        pub fn with_any<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.with_any_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn without_any<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.without_any_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn with_all<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.with_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn without_all<Cs: ComponentTuple>(mut self) -> Self {
-            self.state.without_components.extend(Cs::type_ids());
-            self
-        }
-
-        pub fn added<Co: Component>(mut self) -> Self {
-            self.state
-                .set_added_since_filter(Co::type_id(), self.scene.default_query_since_tick());
-            self
-        }
-
-        pub fn changed<Co: Component>(mut self) -> Self {
-            self.state
-                .set_changed_since_filter(Co::type_id(), self.scene.default_query_since_tick());
-            self
-        }
-
-        pub fn added_since<Co: Component>(mut self, tick: Tick) -> Self {
-            self.state.set_added_since_filter(Co::type_id(), tick);
-            self
-        }
-
-        pub fn changed_since<Co: Component>(mut self, tick: Tick) -> Self {
-            self.state.set_changed_since_filter(Co::type_id(), tick);
-            self
-        }
-    };
-}
-
-fn cached_single_plan_for(
-    scene: &Scene,
+pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
+    scene: &'a Scene,
     state: &QueryFilterState,
-    type_id: TypeId,
-) -> Vec<(usize, usize)> {
-    scene.cached_single_plan(
-        type_id,
+) -> Vec<QueryAccess> {
+    let components = Data::components();
+    assert!(
+        !components.is_empty(),
+        "query must fetch at least one component"
+    );
+    assert!(
+        components.len() <= MAX_QUERY_COMPONENTS,
+        "query fetches more than {MAX_QUERY_COMPONENTS} components"
+    );
+    assert!(
+        components[0].required,
+        "the first query fetch cannot be optional"
+    );
+
+    let component_types = components
+        .iter()
+        .map(|component| component.type_id)
+        .collect::<Vec<_>>();
+    assert!(
+        !has_duplicate_type_ids(&component_types),
+        "query called with duplicate component types"
+    );
+
+    let change_state = scene.query_change_state() as *const _ as *mut _;
+    let component_event_tick = scene.component_event_tick();
+    let mut accesses = Vec::new();
+    for (arch_id, _) in scene.cached_single_plan(
+        components[0].type_id,
         &state.with_components,
         &state.without_components,
         &state.with_any_components,
         &state.without_any_components,
-    )
-}
+    ) {
+        let arch = scene.archetypes().get(arch_id);
+        let mut columns: [*mut comet_structs::Column; MAX_QUERY_COMPONENTS] =
+            [ptr::null_mut(); MAX_QUERY_COMPONENTS];
 
-fn assert_unique_query_types(required: &[TypeId]) {
-    assert!(
-        !has_duplicate_type_ids(required),
-        "query called with duplicate component types"
-    );
-}
+        for (slot, component) in components.iter().enumerate() {
+            columns[slot] = match arch.column_index(component.type_id) {
+                Some(column_index) => {
+                    &arch.columns()[column_index] as *const comet_structs::Column as *mut _
+                }
+                None if !component.required => ptr::null_mut(),
+                None => continue,
+            };
+        }
 
-fn for_each_matching_archetype(
-    scene: &Scene,
-    state: &QueryFilterState,
-    primary_type: TypeId,
-    required_types: &[TypeId],
-    mut f: impl FnMut(&Scene, usize, usize),
-) {
-    assert_unique_query_types(required_types);
-    for (arch_id, first_idx) in cached_single_plan_for(scene, state, primary_type) {
-        f(scene, arch_id, first_idx);
+        if components
+            .iter()
+            .enumerate()
+            .any(|(slot, component)| component.required && columns[slot].is_null())
+        {
+            continue;
+        }
+
+        accesses.push(QueryAccess {
+            entities: arch.entities().as_ptr(),
+            columns,
+            change_state,
+            component_event_tick,
+            len: arch.len(),
+            row: 0,
+        });
     }
+
+    accesses
 }
 
-fn for_each_matching_archetype_mut(
-    scene: &Scene,
-    state: &QueryFilterState,
-    primary_type: TypeId,
-    required_types: &[TypeId],
-    mut f: impl FnMut(&Scene, usize, usize),
-) {
-    assert_unique_query_types(required_types);
-    for (arch_id, first_idx) in cached_single_plan_for(scene, state, primary_type) {
-        f(scene, arch_id, first_idx);
-    }
-}
-
-fn build_single_read_accesses<'a, P: ReadFetch<'a>>(
-    scene: &'a Scene,
+pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
+    scene: &'a mut Scene,
     state: &QueryFilterState,
 ) -> Vec<QueryAccess> {
-    let mut accesses = Vec::new();
-    for_each_matching_archetype(
-        scene,
-        state,
-        P::type_id(),
-        &[P::type_id()],
-        |scene, arch_id, col_idx| {
-            let arch = scene.archetypes().get(arch_id);
-            let col = &arch.columns()[col_idx] as *const _;
-            let entities = arch.entities().as_ptr();
-            let scene = scene as *const Scene;
-            accesses.push(QueryAccess {
-                entities,
-                scene,
-                col,
-                len: arch.len(),
-                row: 0,
-            });
-        },
+    let components = Data::components();
+    assert!(
+        !components.is_empty(),
+        "query must fetch at least one component"
     );
+    assert!(
+        components.len() <= MAX_QUERY_COMPONENTS,
+        "query fetches more than {MAX_QUERY_COMPONENTS} components"
+    );
+    assert!(
+        components[0].required,
+        "the first query fetch cannot be optional"
+    );
+
+    let component_types = components
+        .iter()
+        .map(|component| component.type_id)
+        .collect::<Vec<_>>();
+    assert!(
+        !has_duplicate_type_ids(&component_types),
+        "query called with duplicate component types"
+    );
+
+    let plan = scene.cached_single_plan(
+        components[0].type_id,
+        &state.with_components,
+        &state.without_components,
+        &state.with_any_components,
+        &state.without_any_components,
+    );
+    let (archetypes, change_state, component_event_tick) = scene.query_parts_mut();
+    let change_state = change_state as *mut _;
+    let mut accesses = Vec::new();
+
+    for (arch_id, _) in plan {
+        let arch = archetypes.get_mut(arch_id);
+        let mut column_indices = [None; MAX_QUERY_COMPONENTS];
+
+        for (slot, component) in components.iter().enumerate() {
+            column_indices[slot] = arch.column_index(component.type_id);
+        }
+
+        if components
+            .iter()
+            .enumerate()
+            .any(|(slot, component)| component.required && column_indices[slot].is_none())
+        {
+            continue;
+        }
+
+        let entities = arch.entities().as_ptr();
+        let len = arch.len();
+        let columns_ptr = arch.columns_mut().as_mut_ptr();
+        let mut columns: [*mut comet_structs::Column; MAX_QUERY_COMPONENTS] =
+            [ptr::null_mut(); MAX_QUERY_COMPONENTS];
+
+        for (slot, column_index) in column_indices.into_iter().enumerate() {
+            if let Some(column_index) = column_index {
+                columns[slot] = unsafe { columns_ptr.add(column_index) };
+            }
+        }
+
+        accesses.push(QueryAccess {
+            entities,
+            columns,
+            change_state,
+            component_event_tick,
+            len,
+            row: 0,
+        });
+    }
+
     accesses
 }
-
-fn build_single_write_accesses<'a, P: WriteFetch<'a>>(
-    scene: *mut Scene,
-    state: &QueryFilterState,
-) -> Vec<QueryMutAccess> {
-    let mut accesses = Vec::new();
-    let scene_ref = unsafe { &*scene };
-    for_each_matching_archetype_mut(
-        scene_ref,
-        state,
-        P::type_id(),
-        &[P::type_id()],
-        |scene, arch_id, col_idx| {
-            let arch = scene.archetypes().get(arch_id);
-            let len = arch.len();
-            let col = &arch.columns()[col_idx] as *const _ as *mut _;
-            let entities = arch.entities().as_ptr();
-            accesses.push(QueryMutAccess {
-                entities,
-                col,
-                scene: scene as *const Scene as *mut Scene,
-                len,
-                row: 0,
-            });
-        },
-    );
-    accesses
-}
-
-mod single;
-mod tuples;

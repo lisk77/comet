@@ -1,5 +1,6 @@
 use ab_glyph::{point, Font as AbFont, FontArc, Glyph, PxScale, ScaleFont};
 use comet_log::error;
+use comet_math::Px;
 use image::{DynamicImage, Rgba, RgbaImage};
 
 #[derive(Clone)]
@@ -26,7 +27,7 @@ impl Font {
         &self.name
     }
 
-    pub fn rasterize(&self, size: f32) -> Option<(Vec<GlyphData>, f32)> {
+    pub fn rasterize(&self, size: Px) -> Option<(Vec<GlyphData>, f32)> {
         let font = match FontArc::try_from_vec(self.data.clone()) {
             Ok(f) => f,
             Err(e) => {
@@ -35,7 +36,7 @@ impl Font {
             }
         };
 
-        let scale = PxScale::from(size);
+        let scale = PxScale::from(size.pixels());
         let scaled_font = font.as_scaled(scale);
         let mut glyphs: Vec<GlyphData> = Vec::new();
 

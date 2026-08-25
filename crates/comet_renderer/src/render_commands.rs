@@ -1,15 +1,18 @@
+use crate::render_pass::LoadOp;
 use comet_assets::AtlasRef;
 use comet_ecs::Projection;
 use comet_gizmos::GizmoShape;
-use crate::render_pass::LoadOp;
 
 #[derive(Clone, Copy, Debug)]
 pub struct CameraPacket2D {
     pub position: [f32; 2],
     pub rotation_deg: f32,
-    pub zoom: f32,
-    pub priority: u8,
+    pub priority: i32,
     pub projection: Projection,
+    pub virtual_resolution: Option<comet_math::ScreenSize>,
+    pub resolution_scaling: comet_ecs::ResolutionScaling,
+    pub magnification: f32,
+    pub viewport: Option<comet_ecs::CameraViewport>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -25,9 +28,24 @@ pub struct Draw2D {
 #[derive(Clone, Debug)]
 pub struct Text2D {
     pub position: [f32; 2],
+    pub anchor: comet_ecs::Anchor,
+    pub justification: comet_ecs::TextJustification,
     pub content: String,
     pub font: comet_assets::Asset<comet_assets::Font>,
-    pub size: f32,
+    pub size: comet_ecs::TextSize,
+    pub color: [f32; 4],
+    pub visible: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScreenText2D {
+    pub anchor: comet_ecs::Anchor,
+    pub offset: [f32; 2],
+    pub text_anchor: comet_ecs::Anchor,
+    pub justification: comet_ecs::TextJustification,
+    pub content: String,
+    pub font: comet_assets::Asset<comet_assets::Font>,
+    pub size: comet_ecs::TextSize,
     pub color: [f32; 4],
     pub visible: bool,
 }
@@ -44,16 +62,23 @@ pub struct PassDescriptor {
 
 pub enum Renderer2DCommand {
     Clear,
-    ResolveAtlasRef(&'static str),
+    ResolveAtlasRef(comet_assets::AssetPath),
     EnsureHandleInAtlas(comet_assets::Asset<comet_assets::Image>),
     Size,
     ScaleFactor,
     PrecomputedTextBounds {
         text: String,
         font: comet_assets::Asset<comet_assets::Font>,
-        font_size: f32,
+        font_size: comet_math::ScreenUnit,
     },
-    SubmitFrame(CameraPacket2D, Vec<Draw2D>, Vec<Text2D>, Vec<comet_assets::Asset<comet_assets::Image>>, Vec<GizmoShape>),
+    SubmitFrame(
+        CameraPacket2D,
+        Vec<Draw2D>,
+        Vec<Text2D>,
+        Vec<ScreenText2D>,
+        Vec<comet_assets::Asset<comet_assets::Image>>,
+        Vec<GizmoShape>,
+    ),
     AddRenderPass(PassDescriptor),
     RemoveRenderPass(String),
     SetPassOutput(String, Option<crate::render_pass::PassOutput>),

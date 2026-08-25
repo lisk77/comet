@@ -13,6 +13,6 @@ fn main() {
     // Instead of using new, you can also use a preset which will add some default modules.
     // For custom configurations, just use `with_module` and add the modules you want.
     App::with_preset(App2D)
-        .with_title("Hello world")
+        .with_title("Hello World")
         .run(setup, update);
 }

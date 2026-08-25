@@ -3,6 +3,7 @@ use std::any::{Any, TypeId};
 
 pub struct ErasedComponent {
     pub(crate) type_id: TypeId,
+    pub(crate) register_fn: fn(&mut crate::Scene),
     pub(crate) push_fn: fn(Box<dyn Any + Send>, &mut Column),
     pub(crate) set_fn: fn(Box<dyn Any + Send>, &mut Column, usize),
     pub(crate) value: Box<dyn Any + Send>,
@@ -10,6 +11,10 @@ pub struct ErasedComponent {
 
 impl ErasedComponent {
     pub fn new<C: crate::Component + 'static>(value: C) -> Self {
+        fn register<C: crate::Component + 'static>(scene: &mut crate::Scene) {
+            scene.ensure_component::<C>();
+        }
+
         fn push<C: crate::Component + 'static>(value: Box<dyn Any + Send>, column: &mut Column) {
             let value = *value
                 .downcast::<C>()
@@ -29,7 +34,8 @@ impl ErasedComponent {
         }
 
         Self {
-            type_id: C::type_id(),
+            type_id: TypeId::of::<C>(),
+            register_fn: register::<C>,
             push_fn: push::<C>,
             set_fn: set::<C>,
             value: Box::new(value),

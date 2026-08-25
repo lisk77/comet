@@ -4,7 +4,7 @@ use std::any::TypeId;
 /// A deferred operation that can be applied to a [`Scene`].
 pub enum SceneCommand {
     SpawnEntity,
-    DeleteEntity(Entity),
+    Despawn(Entity),
     RegisterComponent {
         type_id: TypeId,
         register_fn: fn(&mut Scene),
@@ -26,7 +26,7 @@ pub enum SceneCommand {
         entity: Entity,
         type_ids: Vec<TypeId>,
     },
-    DeleteEntitiesWith(Vec<TypeId>),
+    DespawnWith(Vec<TypeId>),
     RegisterPrefab {
         name: String,
         factory: PrefabFactory,
@@ -86,14 +86,14 @@ impl SceneCommands {
     }
 
     /// Queues deleting an entity.
-    pub fn delete_entity(&mut self, entity: Entity) {
-        self.push(SceneCommand::DeleteEntity(entity));
+    pub fn despawn(&mut self, entity: Entity) {
+        self.push(SceneCommand::Despawn(entity));
     }
 
     /// Queues component type registration.
     pub fn register_component<C: Component>(&mut self) {
         self.push(SceneCommand::RegisterComponent {
-            type_id: C::type_id(),
+            type_id: TypeId::of::<C>(),
             register_fn: register_component_impl::<C>,
         });
     }
@@ -101,7 +101,7 @@ impl SceneCommands {
     /// Queues component type deregistration.
     pub fn deregister_component<C: Component>(&mut self) {
         self.push(SceneCommand::DeregisterComponent {
-            type_id: C::type_id(),
+            type_id: TypeId::of::<C>(),
             deregister_fn: deregister_component_impl::<C>,
         });
     }
@@ -115,7 +115,7 @@ impl SceneCommands {
     pub fn remove_component<C: Component>(&mut self, entity: Entity) {
         self.push(SceneCommand::RemoveComponent {
             entity,
-            type_id: C::type_id(),
+            type_id: TypeId::of::<C>(),
             remove_fn: remove_component_impl::<C>,
         });
     }
@@ -126,8 +126,8 @@ impl SceneCommands {
     }
 
     /// Queues deletion of all entities matching a component tuple.
-    pub fn delete_entities_with<Cs: ComponentTuple>(&mut self) {
-        self.push(SceneCommand::DeleteEntitiesWith(Cs::type_ids()));
+    pub fn despawn_with<Cs: ComponentTuple>(&mut self) {
+        self.push(SceneCommand::DespawnWith(Cs::type_ids()));
     }
 
     /// Queues prefab registration.
@@ -157,7 +157,7 @@ impl SceneCommands {
             SceneCommand::SpawnEntity => {
                 let _ = scene.new_entity_immediate();
             }
-            SceneCommand::DeleteEntity(entity) => scene.delete_entity_immediate(entity),
+            SceneCommand::Despawn(entity) => scene.despawn_immediate(entity),
             SceneCommand::RegisterComponent {
                 type_id: _type_id,
                 register_fn,
@@ -177,9 +177,7 @@ impl SceneCommands {
             SceneCommand::RemoveComponents { entity, type_ids } => {
                 scene.remove_with_components_immediate(entity, type_ids);
             }
-            SceneCommand::DeleteEntitiesWith(type_ids) => {
-                scene.delete_entities_with_immediate(type_ids)
-            }
+            SceneCommand::DespawnWith(type_ids) => scene.despawn_with_immediate(type_ids),
             SceneCommand::RegisterPrefab { name, factory } => {
                 scene.register_prefab_immediate(&name, factory)
             }

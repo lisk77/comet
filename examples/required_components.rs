@@ -1,22 +1,21 @@
 use comet::prelude::*;
 
+// Spawning this tag also inserts its required components.
 #[derive(Component)]
+#[require(Transform, Sprite = player_sprite)]
 struct Player;
 
-// Bundles name reusable groups of components.
-bundle!(Comet {
-    player: Player,
-    transform: Transform,
-    sprite: Sprite
-});
+fn player_sprite() -> Sprite {
+    Sprite::with_texture("res://textures/comet-128.png")
+}
 
 fn setup(app: &mut App) {
     app.spawn(Camera2d);
-    app.spawn(Comet {
-        player: Player,
-        transform: Transform::new(),
-        sprite: Sprite::with_texture("res://textures/comet-128.png"),
-    });
+    // You can also add your own specific components even if they are already required
+    // app.spawn((Player, Transform::at(v3::ZERO)));
+    // This will still add the Sprite component but overrides the Transform component
+    // with your self defined variant
+    app.spawn(Player);
 }
 
 fn update(app: &mut App, dt: f32) {
@@ -55,6 +54,6 @@ fn move_players(players: Query<&mut Transform, With<Player>>, direction: v2, dt:
 
 fn main() {
     App::with_preset(App2D)
-        .with_title("Bundles")
+        .with_title("Required Components")
         .run(setup, update);
 }

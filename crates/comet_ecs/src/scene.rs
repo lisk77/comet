@@ -5,14 +5,15 @@ use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan, ComponentChangeState};
 use crate::{
-    Component, ComponentTuple, Entity, EntityLocation, IdQueue, Tick,
+    Component, ComponentTuple, Entity, EntityLocation, IdQueue, RequiredComponent,
+    RequiredComponents, Tick,
 };
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
 use std::any::TypeId;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ptr;
 use std::slice;
 use std::sync::Arc;
@@ -30,6 +31,7 @@ pub struct Scene {
     component_registry: Vec<Option<TypeId>>,
     component_index: HashMap<TypeId, usize>,
     component_info: HashMap<TypeId, ComponentInfo>,
+    required_components: HashMap<TypeId, Vec<RequiredComponent>>,
     entity_locations: Vec<Option<EntityLocation>>,
     archetypes: Archetypes,
     archetype_version: usize,
@@ -56,6 +58,7 @@ impl Scene {
             component_registry: Vec::new(),
             component_index: HashMap::new(),
             component_info: HashMap::new(),
+            required_components: HashMap::new(),
             entity_locations: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
             archetypes: Archetypes::new(),
             archetype_version: 0,
@@ -130,31 +133,12 @@ impl Scene {
     }
 
     /// Queues deleting an entity.
-    pub fn deferred_delete_entity(&mut self, entity: Entity) {
-        self.commands.delete_entity(entity);
-    }
-
-    /// Queues component registration.
-    pub fn deferred_register_component<C: Component + 'static>(&mut self) {
-        self.commands.register_component::<C>();
-    }
-
-    /// Queues registration of a tuple of component types.
-    pub fn deferred_register_components<T: ComponentTuple>(&mut self) {
-        T::deferred_register_all(&mut self.commands);
-    }
-
-    /// Queues component deregistration.
-    pub fn deferred_deregister_component<C: Component + 'static>(&mut self) {
-        self.commands.deregister_component::<C>();
+    pub fn deferred_despawn(&mut self, entity: Entity) {
+        self.commands.despawn(entity);
     }
 
     /// Queues adding or setting multiple components on an entity.
-    pub fn deferred_add_components<B: Bundle>(
-        &mut self,
-        entity: Entity,
-        bundle: B,
-    ) {
+    pub fn deferred_add_components<B: Bundle>(&mut self, entity: Entity, bundle: B) {
         self.commands
             .add_components(entity, bundle.into_components());
     }
@@ -170,9 +154,8 @@ impl Scene {
     }
 
     /// Queues deleting all entities that contain the given component set.
-    pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {
-        self.commands
-            .push(SceneCommand::DeleteEntitiesWith(components));
+    pub fn deferred_despawn_with(&mut self, components: Vec<TypeId>) {
+        self.commands.push(SceneCommand::DespawnWith(components));
     }
 
     /// Queues prefab registration.
@@ -233,10 +216,6 @@ impl Scene {
         );
     }
 
-    pub(crate) fn mark_component_changed_for_query(&mut self, entity: Entity, type_id: TypeId) {
-        self.mark_component_changed(entity, type_id);
-    }
-
     #[inline(always)]
     fn mark_component_removed(&mut self, entity: Entity, type_id: TypeId) {
         self.component_change_state.remove(&(entity.index, type_id));
@@ -257,7 +236,7 @@ impl Scene {
         entity: Entity,
         last_seen_tick: Tick,
     ) -> bool {
-        self.component_added_since_type(entity, C::type_id(), last_seen_tick)
+        self.component_added_since_type(entity, TypeId::of::<C>(), last_seen_tick)
     }
 
     pub(crate) fn component_added_since_type(
@@ -277,7 +256,7 @@ impl Scene {
         entity: Entity,
         last_seen_tick: Tick,
     ) -> bool {
-        self.component_changed_since_type(entity, C::type_id(), last_seen_tick)
+        self.component_changed_since_type(entity, TypeId::of::<C>(), last_seen_tick)
     }
 
     pub(crate) fn component_changed_since_type(
@@ -294,7 +273,7 @@ impl Scene {
     /// Returns entities where `C` was removed since the given tick.
     pub fn removed_since<C: Component + 'static>(&self, last_seen_tick: Tick) -> Vec<Entity> {
         self.removed_component_events
-            .get(&C::type_id())
+            .get(&TypeId::of::<C>())
             .map(|events| {
                 events
                     .iter()
@@ -386,11 +365,11 @@ impl Scene {
     }
 
     /// Deletes an entity by its ID.
-    pub fn delete_entity(&mut self, entity_id: Entity) {
-        self.delete_entity_immediate(entity_id);
+    pub fn despawn(&mut self, entity_id: Entity) {
+        self.despawn_immediate(entity_id);
     }
 
-    pub(crate) fn delete_entity_immediate(&mut self, entity_id: Entity) {
+    pub(crate) fn despawn_immediate(&mut self, entity_id: Entity) {
         if !self.is_alive(entity_id) {
             return;
         }
@@ -615,30 +594,41 @@ impl Scene {
             .any(|arch| arch.column_index(type_id).is_some() && !arch.is_empty())
     }
 
-    /// Registers a new component in the scene.
-    pub fn register_component<C: Component + 'static>(&mut self) {
-        self.register_component_immediate::<C>();
+    /// Ensures that a component type is registered in the scene.
+    pub fn ensure_component<C: Component>(&mut self) {
+        if !self.component_info.contains_key(&TypeId::of::<C>()) {
+            self.register_component_immediate::<C>();
+        }
     }
 
-    /// Registers a tuple of component types in the scene.
-    pub fn register_components<T: ComponentTuple>(&mut self) {
-        T::register_all(self);
+    /// Ensures that a tuple of component types is registered in the scene.
+    pub fn ensure_components<T: ComponentTuple>(&mut self) {
+        T::ensure_all(self);
     }
 
     pub(crate) fn register_component_immediate<C: Component + 'static>(&mut self) {
-        let type_id = C::type_id();
+        let type_id = TypeId::of::<C>();
         if self.component_info.contains_key(&type_id) {
-            warn!("Component {} is already registered!", C::type_name());
+            warn!(
+                "Component {} is already registered!",
+                std::any::type_name::<C>()
+            );
             return;
         }
 
         let drop_fn: unsafe fn(*mut u8) = |ptr| unsafe { ptr::drop_in_place(ptr as *mut C) };
         let info = ComponentInfo {
             type_id,
+            type_name: std::any::type_name::<C>(),
             layout: Layout::new::<C>(),
             drop_fn,
         };
         self.component_info.insert(type_id, info);
+
+        let mut requirements = RequiredComponents::new();
+        C::register_required_components(&mut requirements);
+        self.required_components
+            .insert(type_id, requirements.into_components());
 
         if !self.component_index.contains_key(&type_id) {
             let index = if let Some((i, _)) = self
@@ -658,7 +648,7 @@ impl Scene {
         self.bundle_spawn_cache.clear();
         self.bundle_add_cache.clear();
 
-        info!("Registered component: {}", C::type_name());
+        info!("Registered component: {}", std::any::type_name::<C>());
     }
 
     /// Deregisters a component from the scene.
@@ -667,16 +657,19 @@ impl Scene {
     }
 
     pub(crate) fn deregister_component_immediate<C: Component + 'static>(&mut self) {
-        let type_id = C::type_id();
+        let type_id = TypeId::of::<C>();
         if !self.component_info.contains_key(&type_id) {
-            warn!("Component {} was not registered!", C::type_name());
+            warn!(
+                "Component {} was not registered!",
+                std::any::type_name::<C>()
+            );
             return;
         }
 
         if self.has_live_component_instances(type_id) {
             error!(
                 "Cannot deregister component {} while live entities still contain it",
-                C::type_name()
+                std::any::type_name::<C>()
             );
             return;
         }
@@ -692,11 +685,104 @@ impl Scene {
             .retain(|(_, tracked_type_id), _| *tracked_type_id != type_id);
         self.removed_component_events.remove(&type_id);
 
+        self.required_components.remove(&type_id);
+
         if self.component_info.remove(&type_id).is_some() {
-            info!("Deregistered component: {}", C::type_name());
+            info!("Deregistered component: {}", std::any::type_name::<C>());
         } else {
-            warn!("Component {} was not registered!", C::type_name());
+            warn!(
+                "Component {} was not registered!",
+                std::any::type_name::<C>()
+            );
         }
+    }
+
+    #[doc(hidden)]
+    pub fn __bundle_has_required_components(&self, component_types: &[TypeId]) -> bool {
+        component_types.iter().any(|type_id| {
+            self.required_components
+                .get(type_id)
+                .is_some_and(|requirements| !requirements.is_empty())
+        })
+    }
+
+    fn expand_required_components(
+        &mut self,
+        components: &mut Vec<ErasedComponent>,
+        existing_types: impl IntoIterator<Item = TypeId>,
+    ) {
+        let explicit_types: Vec<TypeId> = components
+            .iter()
+            .map(|component| component.type_id)
+            .collect();
+        let mut present: HashSet<TypeId> = existing_types.into_iter().collect();
+        present.extend(explicit_types.iter().copied());
+        let mut states = HashMap::new();
+        let mut stack = Vec::new();
+
+        for type_id in explicit_types {
+            self.expand_requirements_from(
+                type_id,
+                components,
+                &mut present,
+                &mut states,
+                &mut stack,
+            );
+        }
+    }
+
+    fn expand_requirements_from(
+        &mut self,
+        type_id: TypeId,
+        components: &mut Vec<ErasedComponent>,
+        present: &mut HashSet<TypeId>,
+        states: &mut HashMap<TypeId, u8>,
+        stack: &mut Vec<TypeId>,
+    ) {
+        match states.get(&type_id).copied() {
+            Some(2) => return,
+            Some(1) => {
+                let cycle_start = stack
+                    .iter()
+                    .position(|entry| *entry == type_id)
+                    .unwrap_or(0);
+                let mut cycle = stack[cycle_start..]
+                    .iter()
+                    .map(|entry| {
+                        self.component_info
+                            .get(entry)
+                            .map_or("<unregistered>", |info| info.type_name)
+                    })
+                    .collect::<Vec<_>>();
+                cycle.push(
+                    self.component_info
+                        .get(&type_id)
+                        .map_or("<unregistered>", |info| info.type_name),
+                );
+                panic!("required component cycle: {}", cycle.join(" -> "));
+            }
+            _ => {}
+        }
+
+        states.insert(type_id, 1);
+        stack.push(type_id);
+        let requirements = self
+            .required_components
+            .get(&type_id)
+            .cloned()
+            .unwrap_or_default();
+
+        for required in requirements {
+            (required.register_fn)(self);
+            if present.insert(required.type_id) {
+                components.push((required.factory)());
+            }
+            self.expand_requirements_from(required.type_id, components, present, states, stack);
+        }
+
+        let popped = stack.pop();
+        debug_assert_eq!(popped, Some(type_id));
+        states.insert(type_id, 2);
     }
 
     fn validate_components_registered(&self, components: &[ErasedComponent]) -> bool {
@@ -733,6 +819,12 @@ impl Scene {
             Some(loc) => loc,
             None => return,
         };
+        bundle.ensure_registered(self);
+        let explicit_types = bundle.type_ids();
+        if self.__bundle_has_required_components(&explicit_types) {
+            self.add_with_components_immediate(entity_id, bundle.into_components());
+            return;
+        }
         let old_arch_id = loc.archetype;
         let cache_key = (old_arch_id, TypeId::of::<B>());
 
@@ -744,7 +836,8 @@ impl Scene {
             if !self.validate_type_ids_registered(&type_ids) {
                 return;
             }
-            let all_new = type_ids.iter()
+            let all_new = type_ids
+                .iter()
                 .all(|t| self.archetypes.get(old_arch_id).column_index(*t).is_none());
 
             if !all_new {
@@ -759,14 +852,18 @@ impl Scene {
                 component_set.insert(index);
             }
             let target_arch = self.ensure_archetype(component_set);
-            let col_indices: Arc<[usize]> = type_ids.iter()
+            let col_indices: Arc<[usize]> = type_ids
+                .iter()
                 .map(|t| self.archetypes.get(target_arch).column_index(*t).unwrap())
                 .collect();
-            self.bundle_add_cache.insert(cache_key, Some(BundleAddPlan {
-                target_arch,
-                col_indices,
-                type_ids: type_ids.into(),
-            }));
+            self.bundle_add_cache.insert(
+                cache_key,
+                Some(BundleAddPlan {
+                    target_arch,
+                    col_indices,
+                    type_ids: type_ids.into(),
+                }),
+            );
         }
 
         let (target_arch, col_indices, type_ids) =
@@ -775,7 +872,11 @@ impl Scene {
                     self.add_with_components_immediate(entity_id, bundle.into_components());
                     return;
                 }
-                Some(plan) => (plan.target_arch, plan.col_indices.clone(), plan.type_ids.clone()),
+                Some(plan) => (
+                    plan.target_arch,
+                    plan.col_indices.clone(),
+                    plan.type_ids.clone(),
+                ),
             };
 
         let old_len = self.archetypes.get(old_arch_id).len();
@@ -812,7 +913,6 @@ impl Scene {
             self.mark_component_added_and_changed(entity_id, type_id);
         }
     }
-
 
     pub fn remove_component<C: Component + 'static>(&mut self, entity_id: Entity) {
         self.remove_component_immediate::<C>(entity_id);
@@ -908,7 +1008,7 @@ impl Scene {
         if !self.is_alive(entity_id) {
             return;
         }
-        let type_id = C::type_id();
+        let type_id = TypeId::of::<C>();
         let loc = match self.get_location(entity_id) {
             Some(loc) => loc,
             None => return,
@@ -970,7 +1070,7 @@ impl Scene {
 
         info!(
             "Removed component {} from entity {}!",
-            C::type_name(),
+            std::any::type_name::<C>(),
             entity_id.index
         );
     }
@@ -982,7 +1082,7 @@ impl Scene {
         }
         let loc = self.get_location(entity_id)?;
         let arch = self.archetypes.get(loc.archetype);
-        let col_idx = arch.column_index(C::type_id())?;
+        let col_idx = arch.column_index(TypeId::of::<C>())?;
         arch.columns().get(col_idx)?.get::<C>(loc.row)
     }
 
@@ -993,10 +1093,10 @@ impl Scene {
         if !self.is_alive(entity_id) {
             return None;
         }
-        self.mark_component_changed(entity_id, C::type_id());
+        self.mark_component_changed(entity_id, TypeId::of::<C>());
         let loc = self.get_location(entity_id)?;
         let arch = self.archetypes.get_mut(loc.archetype);
-        let col_idx = arch.column_index(C::type_id())?;
+        let col_idx = arch.column_index(TypeId::of::<C>())?;
         arch.columns_mut().get_mut(col_idx)?.get_mut::<C>(loc.row)
     }
 
@@ -1033,23 +1133,23 @@ impl Scene {
     }
 
     /// Deletes all entities that have the given component indices.
-    fn delete_entities_with_indices(&mut self, components: &[usize]) {
+    fn despawn_with_indices(&mut self, components: &[usize]) {
         let entities = self.get_entities_with_indices(components);
         for entity in entities {
-            self.delete_entity_immediate(entity);
+            self.despawn_immediate(entity);
         }
     }
 
     /// Deletes all entities that have the given components.
-    pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
-        self.delete_entities_with_immediate(components);
+    pub fn despawn_with(&mut self, components: Vec<TypeId>) {
+        self.despawn_with_immediate(components);
     }
 
-    pub(crate) fn delete_entities_with_immediate(&mut self, components: Vec<TypeId>) {
+    pub(crate) fn despawn_with_immediate(&mut self, components: Vec<TypeId>) {
         let Some(indices) = self.component_indices_from_type_ids(&components) else {
             return;
         };
-        self.delete_entities_with_indices(&indices);
+        self.despawn_with_indices(&indices);
     }
 
     /// Registers a prefab with the given name and factory function.
@@ -1092,19 +1192,41 @@ impl Scene {
         &self.archetypes
     }
 
+    pub(crate) fn query_change_state(&self) -> &HashMap<(u32, TypeId), ComponentChangeState> {
+        &self.component_change_state
+    }
+
+    pub(crate) fn query_parts_mut(
+        &mut self,
+    ) -> (
+        &mut crate::archetypes::Archetypes,
+        &mut HashMap<(u32, TypeId), ComponentChangeState>,
+        Tick,
+    ) {
+        (
+            &mut self.archetypes,
+            &mut self.component_change_state,
+            self.component_event_tick,
+        )
+    }
+
     pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {
         bundle.spawn(self)
     }
 
-    pub fn spawn_batch<B: Bundle + 'static>(
-        &mut self,
-        bundles: Vec<B>,
-    ) -> Vec<Entity> {
+    pub fn spawn_batch<B: Bundle + 'static>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
         if bundles.is_empty() {
             return Vec::new();
         }
 
+        bundles[0].ensure_registered(self);
         let component_types = bundles[0].type_ids();
+        if self.__bundle_has_required_components(&component_types) {
+            return bundles
+                .into_iter()
+                .map(|bundle| self.spawn_with_components_immediate(bundle.into_components()))
+                .collect();
+        }
         self.__spawn_bundle_typed_batch(
             TypeId::of::<B>(),
             &component_types,
@@ -1113,15 +1235,6 @@ impl Scene {
                 components.write_components_reserved(columns, column_indices, row);
             },
         )
-    }
-
-    pub fn spawn_bundle<B: Bundle>(&mut self, bundle: B) -> Entity {
-        bundle.spawn(self)
-    }
-
-    /// Spawns a batch of bundles immediately.
-    pub fn spawn_bundle_batch<B: Bundle>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
-        B::spawn_batch(self, bundles)
     }
 
     pub(crate) fn add_with_components(
@@ -1140,6 +1253,16 @@ impl Scene {
         if !self.is_alive(entity_id) || components.is_empty() {
             return;
         }
+        for component in &components {
+            (component.register_fn)(self);
+        }
+        let loc = match self.get_location(entity_id) {
+            Some(loc) => loc,
+            None => return,
+        };
+        let old_arch_id = loc.archetype;
+        let existing_types = self.archetypes.get(old_arch_id).types().to_vec();
+        self.expand_required_components(&mut components, existing_types);
         if !self.validate_components_registered(&components) {
             return;
         }
@@ -1147,12 +1270,6 @@ impl Scene {
             .iter()
             .map(|component| component.type_id)
             .collect();
-
-        let loc = match self.get_location(entity_id) {
-            Some(loc) => loc,
-            None => return,
-        };
-        let old_arch_id = loc.archetype;
         let old_set = self.archetypes.get(old_arch_id).set().clone();
         let mut component_set = old_set.clone();
         for component in &components {
@@ -1249,11 +1366,15 @@ impl Scene {
 
     pub(crate) fn spawn_with_components_immediate(
         &mut self,
-        components: Vec<ErasedComponent>,
+        mut components: Vec<ErasedComponent>,
     ) -> Entity {
         if components.is_empty() {
             return self.new_entity_immediate();
         }
+        for component in &components {
+            (component.register_fn)(self);
+        }
+        self.expand_required_components(&mut components, std::iter::empty());
         if !self.validate_components_registered(&components) {
             return self.new_entity_immediate();
         }
@@ -1270,7 +1391,6 @@ impl Scene {
         let archetype = self.ensure_archetype(component_set);
         let entity_id = self.allocate_entity_slot();
         let row = self.place_entity_in_archetype(entity_id, archetype);
-        let mut components = components;
         let mut inserted_types = Vec::new();
         let arch = self.archetypes.get_mut(archetype);
         for type_id in arch.types().to_vec() {
@@ -1540,7 +1660,8 @@ impl Scene {
 #[cfg(test)]
 mod tests {
     use super::Scene;
-    use crate::{Component, ErasedComponent};
+    use crate::{Component, ErasedComponent, RequiredComponents};
+    use std::any::TypeId;
 
     #[derive(Component)]
     struct A;
@@ -1548,7 +1669,7 @@ mod tests {
     #[derive(Component)]
     struct B;
 
-    #[derive(Component, Eq)]
+    #[derive(Component, PartialEq, Eq)]
     struct Value(i32);
 
     #[derive(Component)]
@@ -1563,7 +1684,7 @@ mod tests {
     #[test]
     fn deregister_component_is_blocked_while_live_instances_exist() {
         let mut scene = Scene::new();
-        scene.register_component::<A>();
+        scene.ensure_component::<A>();
 
         let e1 = scene.new_entity();
         scene.add_components(e1, A);
@@ -1591,23 +1712,23 @@ mod tests {
     #[should_panic(expected = "query called with duplicate component types")]
     fn query_mut_pair_rejects_identical_component_types() {
         let mut scene = Scene::new();
-        scene.register_component::<A>();
+        scene.ensure_component::<A>();
 
         let entity = scene.new_entity();
         scene.add_components(entity, A);
 
-        let _ = scene.query_mut::<(&mut A, &mut A), ()>().iter();
+        let _ = scene.query_mut::<(&mut A, &mut A), ()>();
     }
 
     #[test]
     fn query_includes_entity_id_for_read_tuples() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let e = scene.new_entity();
         scene.add_components(e, Value(42));
 
-        let mut iter = scene.query::<(crate::Entity, &Value), ()>().iter();
+        let mut iter = scene.query::<(crate::Entity, &Value), ()>();
         let (entity, value) = iter.next().expect("expected one result");
         assert_eq!(entity, e);
         assert_eq!(value.0, 42);
@@ -1617,12 +1738,12 @@ mod tests {
     #[test]
     fn query_mut_includes_entity_id_for_write_tuples() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let e = scene.new_entity();
         scene.add_components(e, Value(7));
 
-        let mut iter = scene.query_mut::<(crate::Entity, &mut Value), ()>().iter();
+        let mut iter = scene.query_mut::<(crate::Entity, &mut Value), ()>();
         let (entity, value) = iter.next().expect("expected one result");
         assert_eq!(entity, e);
         value.0 = 11;
@@ -1634,8 +1755,8 @@ mod tests {
     #[test]
     fn add_component_moves_entity_between_archetypes_and_preserves_swapped_entity_location() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<B>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<B>();
 
         let e1 = scene.new_entity();
         let e2 = scene.new_entity();
@@ -1653,9 +1774,9 @@ mod tests {
     #[test]
     fn remove_components_moves_entity_between_archetypes_and_preserves_remaining_components() {
         let mut scene = Scene::new();
-        scene.register_component::<A>();
-        scene.register_component::<B>();
-        scene.register_component::<Value>();
+        scene.ensure_component::<A>();
+        scene.ensure_component::<B>();
+        scene.ensure_component::<Value>();
 
         let entity = scene.new_entity();
         scene.add_components(entity, (A, B, Value(10)));
@@ -1674,15 +1795,12 @@ mod tests {
     #[test]
     fn normalized_components_are_order_independent_and_deduplicated() {
         let components_abab = Scene::normalized_components(&[
-            A::type_id(),
-            B::type_id(),
-            A::type_id(),
-            B::type_id(),
+            TypeId::of::<A>(),
+            TypeId::of::<B>(),
+            TypeId::of::<A>(),
+            TypeId::of::<B>(),
         ]);
-        let components_ba = Scene::normalized_components(&[
-            B::type_id(),
-            A::type_id(),
-        ]);
+        let components_ba = Scene::normalized_components(&[TypeId::of::<B>(), TypeId::of::<A>()]);
 
         assert_eq!(components_abab, components_ba);
         assert_eq!(components_abab.len(), 2);
@@ -1691,9 +1809,9 @@ mod tests {
     #[test]
     fn query_with_and_without_filters_entities() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<IncludeTag>();
-        scene.register_component::<ExcludeTag>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<IncludeTag>();
+        scene.ensure_component::<ExcludeTag>();
 
         let keep = scene.new_entity();
         scene.add_components(keep, Value(10));
@@ -1706,7 +1824,6 @@ mod tests {
 
         let values: Vec<i32> = scene
             .query::<&Value, (crate::With<IncludeTag>, crate::Without<ExcludeTag>)>()
-            .iter()
             .map(|v| v.0)
             .collect();
 
@@ -1716,10 +1833,10 @@ mod tests {
     #[test]
     fn query_with_all_and_without_all_filters_entities() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<IncludeTag>();
-        scene.register_component::<ExcludeTag>();
-        scene.register_component::<B>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<IncludeTag>();
+        scene.ensure_component::<ExcludeTag>();
+        scene.ensure_component::<B>();
 
         let keep = scene.new_entity();
         scene.add_components(keep, Value(10));
@@ -1733,7 +1850,6 @@ mod tests {
 
         let values: Vec<i32> = scene
             .query::<&Value, (crate::With<IncludeTag>, crate::WithoutAny<(ExcludeTag, B)>)>()
-            .iter()
             .map(|v| v.0)
             .collect();
 
@@ -1743,9 +1859,9 @@ mod tests {
     #[test]
     fn query_with_any_filters_entities() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<IncludeTag>();
-        scene.register_component::<B>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<IncludeTag>();
+        scene.ensure_component::<B>();
 
         let include = scene.new_entity();
         scene.add_components(include, Value(10));
@@ -1760,7 +1876,6 @@ mod tests {
 
         let values: Vec<i32> = scene
             .query::<&Value, crate::WithAny<(IncludeTag, B)>>()
-            .iter()
             .map(|v| v.0)
             .collect();
 
@@ -1770,9 +1885,9 @@ mod tests {
     #[test]
     fn query_without_any_filters_entities() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<ExcludeTag>();
-        scene.register_component::<B>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<ExcludeTag>();
+        scene.ensure_component::<B>();
 
         let keep = scene.new_entity();
         scene.add_components(keep, Value(10));
@@ -1787,7 +1902,6 @@ mod tests {
 
         let values: Vec<i32> = scene
             .query::<&Value, crate::WithoutAny<(ExcludeTag, B)>>()
-            .iter()
             .map(|v| v.0)
             .collect();
 
@@ -1797,16 +1911,15 @@ mod tests {
     #[test]
     fn query_with_and_without_same_tag_is_empty() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<IncludeTag>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<IncludeTag>();
 
         let entity = scene.new_entity();
         scene.add_components(entity, Value(1));
         scene.add_components(entity, IncludeTag);
 
-        let mut iter = scene
-            .query::<&Value, (crate::With<IncludeTag>, crate::Without<IncludeTag>)>()
-            .iter();
+        let mut iter =
+            scene.query::<&Value, (crate::With<IncludeTag>, crate::Without<IncludeTag>)>();
 
         assert!(iter.next().is_none());
     }
@@ -1814,7 +1927,7 @@ mod tests {
     #[test]
     fn component_change_tracking_uses_component_event_tick() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         scene.set_component_event_tick(10);
         let entity = scene.new_entity();
@@ -1833,7 +1946,7 @@ mod tests {
     #[test]
     fn removed_since_tracks_component_removals() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(3);
@@ -1848,7 +1961,7 @@ mod tests {
     #[test]
     fn query_mut_marks_component_changed() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(10);
@@ -1856,7 +1969,7 @@ mod tests {
 
         scene.set_component_event_tick(20);
         {
-            let mut iter = scene.query_mut::<&mut Value, ()>().iter();
+            let mut iter = scene.query_mut::<&mut Value, ()>();
             let _ = iter.next();
         }
 
@@ -1866,8 +1979,8 @@ mod tests {
     #[test]
     fn query_mut_marks_only_mutable_fetches() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<A>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<A>();
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(10);
@@ -1876,7 +1989,7 @@ mod tests {
 
         scene.set_component_event_tick(30);
         {
-            let mut iter = scene.query_mut::<(&Value, &mut A), ()>().iter();
+            let mut iter = scene.query_mut::<(&Value, &mut A), ()>();
             let _ = iter.next();
         }
 
@@ -1887,14 +2000,14 @@ mod tests {
     #[test]
     fn temporal_query_filters_use_default_query_since_tick() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
+        scene.ensure_component::<Value>();
 
         let entity = scene.new_entity();
         scene.set_component_event_tick(5);
         scene.add_components(entity, Value(1));
 
         scene.set_default_query_since_tick(4);
-        let added_count = scene.query::<&Value, crate::Added<Value>>().iter().count();
+        let added_count = scene.query::<&Value, crate::Added<Value>>().count();
         assert_eq!(added_count, 1);
 
         scene.set_component_event_tick(9);
@@ -1902,18 +2015,15 @@ mod tests {
             value.0 = 2;
         }
 
-        let changed_count = scene
-            .query::<&Value, crate::Changed<Value>>()
-            .iter()
-            .count();
+        let changed_count = scene.query::<&Value, crate::Changed<Value>>().count();
         assert_eq!(changed_count, 1);
     }
 
     #[test]
     fn temporal_query_constraints_can_use_different_since_ticks_per_filter() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<A>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<A>();
 
         scene.set_component_event_tick(5);
         let entity = scene.new_entity();
@@ -1929,7 +2039,6 @@ mod tests {
             .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
             .added_since::<Value>(4)
             .changed_since::<A>(9)
-            .iter()
             .count();
         assert_eq!(matching, 1);
 
@@ -1937,7 +2046,6 @@ mod tests {
             .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
             .added_since::<Value>(6)
             .changed_since::<A>(10)
-            .iter()
             .count();
         assert_eq!(non_matching, 0);
     }
@@ -1945,8 +2053,8 @@ mod tests {
     #[test]
     fn query_optional_read_fetches_return_none_when_component_is_missing() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<A>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<A>();
 
         let with_a = scene.new_entity();
         scene.add_components(with_a, Value(1));
@@ -1957,7 +2065,6 @@ mod tests {
 
         let results: Vec<(i32, bool)> = scene
             .query::<(&Value, Option<&A>), ()>()
-            .iter()
             .map(|(value, maybe_a)| (value.0, maybe_a.is_some()))
             .collect();
 
@@ -1969,8 +2076,8 @@ mod tests {
     #[test]
     fn query_optional_write_fetches_do_not_mark_missing_components_as_changed() {
         let mut scene = Scene::new();
-        scene.register_component::<Value>();
-        scene.register_component::<A>();
+        scene.ensure_component::<Value>();
+        scene.ensure_component::<A>();
 
         let with_a = scene.new_entity();
         scene.set_component_event_tick(1);

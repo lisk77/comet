@@ -1,15 +1,28 @@
 use comet::prelude::*;
 
 fn setup(app: &mut App) {
-    // Load the audio clip (name for playback is the file stem: "hit")
-    app.load::<AudioClip>("res://sounds/hit.ogg");
-    app.play_audio("hit", true);
+    let clip = app.load::<AudioClip>("res://sounds/hit.ogg");
+    app.spawn((
+        AudioSource::new(clip),
+        PlaybackSettings::LOOP.with_volume(0.5),
+    ));
 }
 
-fn update(_app: &mut App, _dt: f32) {}
+fn update(app: &mut App, _dt: f32) {
+    if !app.key_pressed(Key::Space) {
+        return;
+    }
+
+    app.query::<&mut PlaybackState, ()>()
+        .for_each(|state| match state {
+            PlaybackState::Playing => state.pause(),
+            PlaybackState::Paused => state.play(),
+            PlaybackState::Stopped | PlaybackState::Finished => {}
+        });
+}
 
 fn main() {
-    App::with_preset(Headless)
-        .with_module(AudioModule::new())
+    App::with_preset(App2D)
+        .with_title("Simple Audio")
         .run(setup, update);
 }
