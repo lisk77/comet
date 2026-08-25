@@ -22,6 +22,19 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
         }
     }
 
+    pub(crate) fn from_state_mut(scene: &'a mut Scene, state: QueryFilterState) -> Self
+    where
+        Data: QueryData<'a>,
+    {
+        Self {
+            accesses: build_query_accesses_mut::<Data>(scene, &state),
+            idx: 0,
+            added_since_filters: state.added_since_filters,
+            changed_since_filters: state.changed_since_filters,
+            _marker: PhantomData,
+        }
+    }
+
     pub fn iter(self) -> Self {
         self
     }

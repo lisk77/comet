@@ -232,10 +232,6 @@ impl Scene {
         );
     }
 
-    pub(crate) fn mark_component_changed_for_query(&mut self, entity: Entity, type_id: TypeId) {
-        self.mark_component_changed(entity, type_id);
-    }
-
     #[inline(always)]
     fn mark_component_removed(&mut self, entity: Entity, type_id: TypeId) {
         self.component_change_state.remove(&(entity.index, type_id));
@@ -1206,6 +1202,24 @@ impl Scene {
 
     pub(crate) fn archetypes(&self) -> &crate::archetypes::Archetypes {
         &self.archetypes
+    }
+
+    pub(crate) fn query_change_state(&self) -> &HashMap<(u32, TypeId), ComponentChangeState> {
+        &self.component_change_state
+    }
+
+    pub(crate) fn query_parts_mut(
+        &mut self,
+    ) -> (
+        &mut crate::archetypes::Archetypes,
+        &mut HashMap<(u32, TypeId), ComponentChangeState>,
+        Tick,
+    ) {
+        (
+            &mut self.archetypes,
+            &mut self.component_change_state,
+            self.component_event_tick,
+        )
     }
 
     pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {

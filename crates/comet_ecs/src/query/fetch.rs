@@ -3,7 +3,8 @@ use super::*;
 pub(crate) struct QueryAccess {
     pub(crate) entities: *const Entity,
     pub(crate) columns: [*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
-    pub(crate) scene: *mut Scene,
+    pub(crate) change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+    pub(crate) component_event_tick: Tick,
     pub(crate) len: usize,
     pub(crate) row: usize,
 }

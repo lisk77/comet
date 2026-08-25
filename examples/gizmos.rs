@@ -34,11 +34,9 @@ fn setup(app: &mut App) {
 }
 
 fn update(app: &mut App, dt: f32) {
-    move_hitboxes(
-        app.query::<&mut Transform, With<Hitbox>>(),
-        movement_direction(app),
-        dt,
-    );
+    let direction = movement_direction(app);
+
+    move_hitboxes(app.query::<&mut Transform, With<Hitbox>>(), direction, dt);
 
     if let Some((entity, _)) = app.query::<(Entity, &Hitbox), ()>().next() {
         app.show_gizmo::<Hitbox>(entity);

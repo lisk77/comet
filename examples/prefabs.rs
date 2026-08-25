@@ -18,11 +18,9 @@ fn setup(app: &mut App) {
 }
 
 fn update(app: &mut App, dt: f32) {
-    move_players(
-        app.query::<&mut Transform, With<Player>>(),
-        movement_direction(app),
-        dt,
-    );
+    let direction = movement_direction(app);
+
+    move_players(app.query::<&mut Transform, With<Player>>(), direction, dt);
 }
 
 fn movement_direction(app: &App) -> v2 {

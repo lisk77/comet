@@ -12,7 +12,8 @@ pub(crate) trait QueryData<'a>: Sized {
     fn components() -> Vec<QueryComponent>;
 
     unsafe fn mark_changed(
-        scene: *mut Scene,
+        change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+        component_event_tick: Tick,
         entity: Entity,
         columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
     );
@@ -26,6 +27,27 @@ pub(crate) trait QueryData<'a>: Sized {
 
 pub(crate) trait ReadQueryData<'a>: QueryData<'a> {}
 
+unsafe fn mark_component_changed(
+    change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+    component_event_tick: Tick,
+    entity: Entity,
+    type_id: TypeId,
+) {
+    let change_state = unsafe { &mut *change_state };
+    let key = (entity.index, type_id);
+    if let Some(state) = change_state.get_mut(&key) {
+        state.changed_tick = component_event_tick;
+    } else {
+        change_state.insert(
+            key,
+            ComponentChangeState {
+                added_tick: component_event_tick,
+                changed_tick: component_event_tick,
+            },
+        );
+    }
+}
+
 macro_rules! impl_query_data_leaf {
     ($data:ty) => {
         impl<'a, C: Component> QueryData<'a> for $data {
@@ -37,13 +59,16 @@ macro_rules! impl_query_data_leaf {
             }
 
             unsafe fn mark_changed(
-                scene: *mut Scene,
+                change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+                component_event_tick: Tick,
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
             ) {
                 if <Self as WriteFetch<'a>>::writes() && !columns[0].is_null() {
                     unsafe {
-                        (&mut *scene).mark_component_changed_for_query(
+                        mark_component_changed(
+                            change_state,
+                            component_event_tick,
                             entity,
                             <Self as WriteFetch<'a>>::type_id(),
                         );
@@ -86,14 +111,17 @@ macro_rules! impl_tuple_query_data {
             }
 
             unsafe fn mark_changed(
-                scene: *mut Scene,
+                change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+                component_event_tick: Tick,
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
             ) {
                 $(
                     if <$ty as WriteFetch<'a>>::writes() && !columns[$index].is_null() {
                         unsafe {
-                            (&mut *scene).mark_component_changed_for_query(
+                            mark_component_changed(
+                                change_state,
+                                component_event_tick,
                                 entity,
                                 <$ty as WriteFetch<'a>>::type_id(),
                             );
@@ -136,14 +164,17 @@ macro_rules! impl_entity_tuple_query_data {
             }
 
             unsafe fn mark_changed(
-                scene: *mut Scene,
+                change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+                component_event_tick: Tick,
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
             ) {
                 $(
                     if <$ty as WriteFetch<'a>>::writes() && !columns[$index].is_null() {
                         unsafe {
-                            (&mut *scene).mark_component_changed_for_query(
+                            mark_component_changed(
+                                change_state,
+                                component_event_tick,
                                 entity,
                                 <$ty as WriteFetch<'a>>::type_id(),
                             );
@@ -208,7 +239,8 @@ where
     type Data = Data;
     type Filters = Filters;
 
-    fn build(scene: &'a Scene) -> Query<'a, Data, Filters> {
-        Query::from_state(scene, typed_filters::<Filters>(scene))
+    fn build(scene: &'a mut Scene) -> Query<'a, Data, Filters> {
+        let state = typed_filters::<Filters>(scene);
+        Query::from_state_mut(scene, state)
     }
 }

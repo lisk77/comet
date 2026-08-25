@@ -49,23 +49,34 @@ pub(super) unsafe fn fetch_entity(
 
 #[inline(always)]
 pub(super) unsafe fn matches_change_filters(
-    scene: *const Scene,
+    change_state: *const HashMap<(u32, TypeId), ComponentChangeState>,
     entity: Entity,
     added_since_filters: &[(TypeId, Tick)],
     changed_since_filters: &[(TypeId, Tick)],
 ) -> bool {
-    let scene = unsafe { &*scene };
+    let change_state = unsafe { &*change_state };
     for (type_id, tick) in added_since_filters {
-        if !scene.component_added_since_type(entity, *type_id, *tick) {
+        if !change_state
+            .get(&(entity.index, *type_id))
+            .is_some_and(|state| tick_is_newer_than(state.added_tick, *tick))
+        {
             return false;
         }
     }
     for (type_id, tick) in changed_since_filters {
-        if !scene.component_changed_since_type(entity, *type_id, *tick) {
+        if !change_state
+            .get(&(entity.index, *type_id))
+            .is_some_and(|state| tick_is_newer_than(state.changed_tick, *tick))
+        {
             return false;
         }
     }
     true
+}
+
+#[inline(always)]
+fn tick_is_newer_than(tick: Tick, last_seen_tick: Tick) -> bool {
+    tick != last_seen_tick && tick.wrapping_sub(last_seen_tick) <= (u32::MAX / 2)
 }
 
 impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
@@ -77,14 +88,19 @@ impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
             unsafe {
                 let entity = fetch_entity(access.entities, access.len, row)?;
                 if !matches_change_filters(
-                    access.scene,
+                    access.change_state,
                     entity,
                     &self.added_since_filters,
                     &self.changed_since_filters,
                 ) {
                     continue;
                 }
-                Data::mark_changed(access.scene, entity, &access.columns);
+                Data::mark_changed(
+                    access.change_state,
+                    access.component_event_tick,
+                    entity,
+                    &access.columns,
+                );
                 return Data::fetch(entity, &access.columns, row);
             }
         }

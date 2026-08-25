@@ -8,7 +8,7 @@ impl Scene {
         <QueryParam<Data, Filters> as QuerySpec<'a>>::build(self)
     }
 
-    pub fn query_mut<'a, Data, Filters>(&'a self) -> Query<'a, Data, Filters>
+    pub fn query_mut<'a, Data, Filters>(&'a mut self) -> Query<'a, Data, Filters>
     where
         QueryParam<Data, Filters>: QuerySpecMut<'a, Data = Data, Filters = Filters>,
     {
