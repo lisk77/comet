@@ -22,14 +22,8 @@ impl AudioModule {
             }
         }
 
-        for entity in self.audio.active_entities() {
-            if scene.get_component::<AudioSource>(entity).is_none() {
-                self.audio.stop(entity);
-            }
-        }
-
-        for (entity, source, settings, state) in scene
-            .query_mut::<(Entity, &AudioSource, &PlaybackSettings, &mut PlaybackState), ()>()
+        for (entity, source, settings, state) in
+            scene.query_mut::<(Entity, &AudioSource, &PlaybackSettings, &mut PlaybackState), ()>()
         {
             if settings.playback() == Playback::Repeat(0) {
                 self.audio.stop(entity);
@@ -46,6 +40,14 @@ impl AudioModule {
                 ),
                 PlaybackState::Paused => self.audio.pause(entity),
                 PlaybackState::Stopped | PlaybackState::Finished => self.audio.stop(entity),
+            }
+        }
+    }
+
+    fn stop_orphaned_sources(&mut self, scene: &Scene) {
+        for entity in self.audio.active_entities() {
+            if scene.get_component::<AudioSource>(entity).is_none() {
+                self.audio.stop(entity);
             }
         }
     }
@@ -72,6 +74,12 @@ impl Module for AudioModule {
             let mut ecs = app.take_module::<EcsModule>().unwrap();
             audio.update(&mut ecs.scene, dt);
             app.reinsert_module(ecs);
+            app.reinsert_module(audio);
+        });
+        app.add_post_tick_hook(|app| {
+            let mut audio = app.take_module::<AudioModule>().unwrap();
+            let ecs = app.get_module::<EcsModule>();
+            audio.stop_orphaned_sources(&ecs.scene);
             app.reinsert_module(audio);
         });
     }
