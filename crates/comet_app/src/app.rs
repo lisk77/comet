@@ -125,14 +125,14 @@ impl App {
     }
 
     /// Returns a reference to the context of type `T`, or `None` if not present.
-    pub fn try_get_context<T: Any + Send + 'static>(&self) -> Option<&T> {
+    pub fn get_context<T: Any + Send + 'static>(&self) -> Option<&T> {
         self.contexts
             .get(&TypeId::of::<T>())
             .and_then(|context| context.downcast_ref::<T>())
     }
 
     /// Returns a mutable reference to the context of type `T`, or `None` if not present.
-    pub fn try_get_context_mut<T: Any + Send + 'static>(&mut self) -> Option<&mut T> {
+    pub fn get_context_mut<T: Any + Send + 'static>(&mut self) -> Option<&mut T> {
         self.contexts
             .get_mut(&TypeId::of::<T>())
             .and_then(|context| context.downcast_mut::<T>())
@@ -274,5 +274,4 @@ impl App {
         update(self, dt);
         self.run_post_tick_hooks();
     }
-
 }

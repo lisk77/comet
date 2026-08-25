@@ -133,8 +133,8 @@ impl Scene {
     }
 
     /// Queues deleting an entity.
-    pub fn deferred_delete_entity(&mut self, entity: Entity) {
-        self.commands.delete_entity(entity);
+    pub fn deferred_despawn(&mut self, entity: Entity) {
+        self.commands.despawn(entity);
     }
 
     /// Queues adding or setting multiple components on an entity.
@@ -154,9 +154,8 @@ impl Scene {
     }
 
     /// Queues deleting all entities that contain the given component set.
-    pub fn deferred_delete_entities_with(&mut self, components: Vec<TypeId>) {
-        self.commands
-            .push(SceneCommand::DeleteEntitiesWith(components));
+    pub fn deferred_despawn_with(&mut self, components: Vec<TypeId>) {
+        self.commands.push(SceneCommand::DespawnWith(components));
     }
 
     /// Queues prefab registration.
@@ -366,11 +365,11 @@ impl Scene {
     }
 
     /// Deletes an entity by its ID.
-    pub fn delete_entity(&mut self, entity_id: Entity) {
-        self.delete_entity_immediate(entity_id);
+    pub fn despawn(&mut self, entity_id: Entity) {
+        self.despawn_immediate(entity_id);
     }
 
-    pub(crate) fn delete_entity_immediate(&mut self, entity_id: Entity) {
+    pub(crate) fn despawn_immediate(&mut self, entity_id: Entity) {
         if !self.is_alive(entity_id) {
             return;
         }
@@ -1134,23 +1133,23 @@ impl Scene {
     }
 
     /// Deletes all entities that have the given component indices.
-    fn delete_entities_with_indices(&mut self, components: &[usize]) {
+    fn despawn_with_indices(&mut self, components: &[usize]) {
         let entities = self.get_entities_with_indices(components);
         for entity in entities {
-            self.delete_entity_immediate(entity);
+            self.despawn_immediate(entity);
         }
     }
 
     /// Deletes all entities that have the given components.
-    pub fn delete_entities_with(&mut self, components: Vec<TypeId>) {
-        self.delete_entities_with_immediate(components);
+    pub fn despawn_with(&mut self, components: Vec<TypeId>) {
+        self.despawn_with_immediate(components);
     }
 
-    pub(crate) fn delete_entities_with_immediate(&mut self, components: Vec<TypeId>) {
+    pub(crate) fn despawn_with_immediate(&mut self, components: Vec<TypeId>) {
         let Some(indices) = self.component_indices_from_type_ids(&components) else {
             return;
         };
-        self.delete_entities_with_indices(&indices);
+        self.despawn_with_indices(&indices);
     }
 
     /// Registers a prefab with the given name and factory function.
