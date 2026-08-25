@@ -1,21 +1,17 @@
 use super::*;
 
 impl Scene {
-    pub fn query<'a, Data, Filters>(
-        &'a self,
-    ) -> <crate::query::QueryParam<Data, Filters> as QuerySpec<'a>>::Builder
+    pub fn query<'a, Data, Filters>(&'a self) -> Query<'a, Data, Filters>
     where
-        crate::query::QueryParam<Data, Filters>: QuerySpec<'a>,
+        QueryParam<Data, Filters>: QuerySpec<'a, Data = Data, Filters = Filters>,
     {
-        <crate::query::QueryParam<Data, Filters> as QuerySpec<'a>>::build(self)
+        <QueryParam<Data, Filters> as QuerySpec<'a>>::build(self)
     }
 
-    pub fn query_mut<'a, Data, Filters>(
-        &'a self,
-    ) -> <crate::query::QueryParam<Data, Filters> as QuerySpecMut<'a>>::Builder
+    pub fn query_mut<'a, Data, Filters>(&'a self) -> Query<'a, Data, Filters>
     where
-        crate::query::QueryParam<Data, Filters>: QuerySpecMut<'a>,
+        QueryParam<Data, Filters>: QuerySpecMut<'a, Data = Data, Filters = Filters>,
     {
-        <crate::query::QueryParam<Data, Filters> as QuerySpecMut<'a>>::build(self)
+        <QueryParam<Data, Filters> as QuerySpecMut<'a>>::build(self)
     }
 }

@@ -9,20 +9,20 @@ fn setup(app: &mut App) {
 
 fn update(app: &mut App, _dt: f32) {
     // Setup and the first update are handled as the same tick.
-    if app.query::<&Count, Added<Count>>().iter().count() != 0 {
+    if app.query::<&Count, Added<Count>>().count() != 0 {
         info!("Count was added this tick");
     }
 
     increment_count(app);
 
-    if app.query::<&Count, Changed<Count>>().iter().count() != 0 {
+    if app.query::<&Count, Changed<Count>>().count() != 0 {
         info!(
             "Count was changed to {}",
-            app.query::<&Count, ()>().iter().next().unwrap().0
+            app.query::<&Count, ()>().next().unwrap().0
         );
     }
 
-    if let Some((entity, count)) = app.query::<(Entity, &Count), ()>().iter().next() {
+    if let Some((entity, count)) = app.query::<(Entity, &Count), ()>().next() {
         if count.0 == 10 {
             info!("Count reached 10, removing component");
             app.remove_component::<Count>(entity);

@@ -1,7 +1,7 @@
 use std::any::TypeId;
 use comet_app::{App, Module};
 use crate::{
-    Bundle, Component, ComponentTuple, Entity, PrefabFactory, QueryParam, QuerySpecMut, Scene
+    Bundle, Component, ComponentTuple, Entity, PrefabFactory, Query, QueryParam, QuerySpecMut, Scene
 };
 
 pub struct EcsModule {
@@ -61,9 +61,9 @@ pub trait EcsModuleExt {
     fn apply_deferred_commands(&mut self);
     fn queued_deferred_command_count(&self) -> usize;
 
-    fn query<'a, Data, Filters>(&'a self) -> <QueryParam<Data, Filters> as QuerySpecMut<'a>>::Builder
+    fn query<'a, Data, Filters>(&'a self) -> Query<'a, Data, Filters>
     where
-        QueryParam<Data, Filters>: QuerySpecMut<'a>;
+        QueryParam<Data, Filters>: QuerySpecMut<'a, Data = Data, Filters = Filters>;
 
     fn new_entity(&mut self) -> Entity;
     fn delete_entity(&mut self, entity_id: Entity);
@@ -162,9 +162,9 @@ impl EcsModuleExt for App {
         self.get_module::<EcsModule>().scene.queued_command_count()
     }
 
-    fn query<'a, Data, Filters>(&'a self) -> <QueryParam<Data, Filters> as QuerySpecMut<'a>>::Builder
+    fn query<'a, Data, Filters>(&'a self) -> Query<'a, Data, Filters>
     where
-        QueryParam<Data, Filters>: QuerySpecMut<'a>,
+        QueryParam<Data, Filters>: QuerySpecMut<'a, Data = Data, Filters = Filters>,
     {
         self.get_module::<EcsModule>().scene.query_mut::<Data, Filters>()
     }

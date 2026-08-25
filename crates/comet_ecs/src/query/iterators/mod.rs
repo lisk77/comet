@@ -15,16 +15,6 @@ impl RowAccess for QueryAccess {
     }
 }
 
-impl RowAccess for QueryMutAccess {
-    fn len(&self) -> usize {
-        self.len
-    }
-
-    fn row_mut(&mut self) -> &mut usize {
-        &mut self.row
-    }
-}
-
 pub(super) fn next_access_row<'a, A: RowAccess>(
     accesses: &'a mut [A],
     idx: &mut usize,
@@ -58,14 +48,6 @@ pub(super) unsafe fn fetch_entity(
 }
 
 #[inline(always)]
-pub(super) fn has_change_filters(
-    added_since_filters: &[(TypeId, Tick)],
-    changed_since_filters: &[(TypeId, Tick)],
-) -> bool {
-    !added_since_filters.is_empty() || !changed_since_filters.is_empty()
-}
-
-#[inline(always)]
 pub(super) unsafe fn matches_change_filters(
     scene: *const Scene,
     entity: Entity,
@@ -86,5 +68,25 @@ pub(super) unsafe fn matches_change_filters(
     true
 }
 
-mod single;
-mod tuples;
+impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
+    type Item = Data;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let (access, row) = next_access_row(&mut self.accesses, &mut self.idx)?;
+            unsafe {
+                let entity = fetch_entity(access.entities, access.len, row)?;
+                if !matches_change_filters(
+                    access.scene,
+                    entity,
+                    &self.added_since_filters,
+                    &self.changed_since_filters,
+                ) {
+                    continue;
+                }
+                Data::mark_changed(access.scene, entity, &access.columns);
+                return Data::fetch(entity, &access.columns, row);
+            }
+        }
+    }
+}

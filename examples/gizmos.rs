@@ -40,7 +40,7 @@ fn update(app: &mut App, dt: f32) {
         dt,
     );
 
-    if let Some((entity, _)) = app.query::<(Entity, &Hitbox), ()>().iter().next() {
+    if let Some((entity, _)) = app.query::<(Entity, &Hitbox), ()>().next() {
         app.show_gizmo::<Hitbox>(entity);
     }
 }
