@@ -51,11 +51,11 @@ fn setup(app: &mut App) {
 fn update(app: &mut App, dt: f32) {}
 
 fn main() {
-    App::with_preset(App2D) // Creates a new `App` and pre-registers specific components and modules
+    App::with_preset(App2D) // Creates a new `App` with the standard 2D modules
         .with_title("Comet App") // Sets the window title
         .with_icon("res://textures/comet_icon.png") // Sets the window icon
-        .with_size(1920, 1080) // Sets the window size
-        .run(setup, update) // Starts app with the given
+        .with_size(dp(1920.0), dp(1080.0)) // Sets the logical window size
+        .run(setup, update) // Starts the app with the setup and update functions
 }
 ```
 
