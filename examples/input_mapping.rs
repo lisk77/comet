@@ -47,8 +47,8 @@ fn update(app: &mut App, _dt: f32) {
         info!("Jump!");
     }
 
-    let x = app.get_axis(GameAction::MoveLeft, GameAction::MoveRight);
-    let y = app.get_axis(GameAction::MoveDown, GameAction::MoveUp);
+    let x = app.axis(GameAction::MoveLeft, GameAction::MoveRight);
+    let y = app.axis(GameAction::MoveDown, GameAction::MoveUp);
 
     if x != 0.0 || y != 0.0 {
         info!("Move ({:.2}, {:.2})", x, y);
