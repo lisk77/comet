@@ -1694,7 +1694,7 @@ mod tests {
     #[derive(Component)]
     struct B;
 
-    #[derive(Component, Eq)]
+    #[derive(Component, PartialEq, Eq)]
     struct Value(i32);
 
     #[derive(Component)]

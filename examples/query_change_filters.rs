@@ -1,6 +1,6 @@
 use comet::prelude::*;
 
-#[derive(Component)]
+#[derive(Component, Default)]
 struct Count(u8);
 
 fn setup(app: &mut App) {

@@ -18,7 +18,7 @@ impl Default for Volume {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Default)]
 pub struct PlaybackSettings {
     playback: Playback,
     volume: Volume,
@@ -68,8 +68,9 @@ impl PlaybackSettings {
     }
 }
 
-#[derive(Component, Copy, Eq)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlaybackState {
+    #[default]
     Playing,
     Paused,
     Stopped,
@@ -94,7 +95,7 @@ impl PlaybackState {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, PartialEq)]
 #[require(PlaybackSettings, PlaybackState)]
 pub struct AudioSource {
     clip: Asset<AudioClip>,

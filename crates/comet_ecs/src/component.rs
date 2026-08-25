@@ -290,7 +290,7 @@ pub enum Anchor {
     BottomRight,
 }
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Default)]
 pub struct ScreenPosition {
     anchor: Anchor,
     offset: v2,
@@ -497,7 +497,7 @@ impl Transform {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub enum Collider {
     Rectangle { size: v2 },
     Cuboid { size: v3 },
@@ -532,7 +532,7 @@ impl Collider {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, PartialEq)]
 pub struct Sprite {
     is_visible: bool,
     texture: ImageRef,
@@ -716,7 +716,7 @@ fn default_3d_projection() -> Projection {
     Projection::Perspective(PerspectiveProjection::default())
 }
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[require(
     Transform,
     Camera,
@@ -725,7 +725,7 @@ fn default_3d_projection() -> Projection {
 )]
 pub struct Camera2d;
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[require(
     Transform,
     Camera,
@@ -742,7 +742,7 @@ pub enum TextJustification {
     Right,
 }
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Default)]
 pub struct TextLayout {
     anchor: Anchor,
     justification: TextJustification,
@@ -824,7 +824,7 @@ impl From<ScreenUnit> for TextSize {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, PartialEq)]
 pub struct Text {
     content: String,
     font: comet_assets::Asset<comet_assets::Font>,
@@ -925,7 +925,7 @@ impl Text {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Default)]
 pub struct Timer {
     time_stack: f32,
     interval: f32,
