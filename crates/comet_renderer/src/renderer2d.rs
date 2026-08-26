@@ -61,10 +61,6 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 type FrameMailbox2D = Arc<Mutex<Option<FramePacket2D>>>;
 
-#[cfg(debug_assertions)]
-static DEBUG_FONT_ATLAS_GENERATION: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
 pub struct Renderer2D {
     render_state: RenderState,
     asset_provider: comet_assets::AssetProvider,
@@ -81,10 +77,6 @@ pub struct Renderer2D {
     screen_text_indices: Vec<u16>,
     gizmo_vertices: Vec<Vertex>,
     gizmo_indices: Vec<u16>,
-    #[cfg(debug_assertions)]
-    debug_font_atlas: image::RgbaImage,
-    #[cfg(debug_assertions)]
-    debug_font_atlas_dirty: bool,
 }
 
 pub struct RenderHandle2D {
@@ -996,27 +988,10 @@ impl Renderer2D {
                         height,
                     );
                 }
-                #[cfg(debug_assertions)]
-                if let Some(glyph_image) = glyph.render.as_rgba8() {
-                    for (glyph_x, glyph_y, pixel) in glyph_image.enumerate_pixels() {
-                        let debug_pixel = match representation {
-                            GlyphRepresentation::Mtsdf => {
-                                image::Rgba([pixel[0], pixel[1], pixel[2], 255])
-                            }
-                            GlyphRepresentation::Bitmap | GlyphRepresentation::Pixel => {
-                                image::Rgba([pixel[3], pixel[3], pixel[3], 255])
-                            }
-                        };
-                        self.debug_font_atlas
-                            .put_pixel(x + glyph_x, y + glyph_y, debug_pixel);
-                    }
-                    self.debug_font_atlas_dirty = true;
-                }
             }
             self.glyph_cache.insert(key, region);
         }
         self.font_cache.insert(font_key, line_height);
-        self.save_debug_font_atlas();
         true
     }
 
@@ -1664,7 +1639,6 @@ impl Renderer2D {
         }
         self.screen_text_vertices = screen_font_vertex_buffer;
         self.screen_text_indices = screen_font_index_buffer;
-        self.save_debug_font_atlas();
 
         // Text processing lazily creates the Font pass, so apply camera uniforms afterward.
         self.apply_camera_view(camera, world_view);
@@ -1765,35 +1739,6 @@ impl Renderer2D {
         self.gizmo_vertices = gizmo_verts;
         self.gizmo_indices = gizmo_indices;
     }
-
-    #[cfg(debug_assertions)]
-    fn save_debug_font_atlas(&mut self) {
-        if !self.debug_font_atlas_dirty {
-            return;
-        }
-        self.debug_font_atlas_dirty = false;
-        let image = self.debug_font_atlas.clone();
-        let generation =
-            DEBUG_FONT_ATLAS_GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
-        std::thread::spawn(move || {
-            let temporary_path = format!("font_atlas.{generation}.tmp.png");
-            if let Err(error) = image.save(&temporary_path) {
-                error!("Failed to save debug font atlas: {}", error);
-                return;
-            }
-            if DEBUG_FONT_ATLAS_GENERATION.load(std::sync::atomic::Ordering::Acquire) == generation
-            {
-                if let Err(error) = std::fs::rename(&temporary_path, "font_atlas.png") {
-                    error!("Failed to publish debug font atlas: {}", error);
-                }
-            } else if let Err(error) = std::fs::remove_file(&temporary_path) {
-                error!("Failed to remove stale debug font atlas: {}", error);
-            }
-        });
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn save_debug_font_atlas(&mut self) {}
 
     fn resolve_camera_views(
         &self,
@@ -1909,14 +1854,6 @@ impl Renderer for Renderer2D {
             screen_text_indices: Vec::new(),
             gizmo_vertices: Vec::new(),
             gizmo_indices: Vec::new(),
-            #[cfg(debug_assertions)]
-            debug_font_atlas: image::RgbaImage::from_pixel(
-                FONT_ATLAS_SIZE,
-                FONT_ATLAS_SIZE,
-                image::Rgba([0, 0, 0, 255]),
-            ),
-            #[cfg(debug_assertions)]
-            debug_font_atlas_dirty: false,
         }
     }
 
