@@ -1,5 +1,23 @@
+use crate::AssetSettings;
 use comet_app::resolve_asset_path;
 use comet_log::error;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AudioSettings;
+
+impl AudioSettings {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl AssetSettings for AudioSettings {
+    type Asset = AudioClip;
+
+    fn load(&self, bytes: &[u8], _path: &str) -> anyhow::Result<AudioClip> {
+        Ok(AudioClip::from_bytes(bytes.to_vec()))
+    }
+}
 
 pub struct AudioClip {
     bytes: Vec<u8>,

@@ -1,3 +1,4 @@
+use crate::AssetSettings;
 use ab_glyph::{point, Font as AbFont, FontArc, Glyph, PxScale, ScaleFont};
 use comet_log::error;
 use comet_math::Px;
@@ -10,6 +11,23 @@ pub struct GlyphData {
     pub advance: f32,
     pub offset_x: f32,
     pub offset_y: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FontSettings;
+
+impl FontSettings {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl AssetSettings for FontSettings {
+    type Asset = Font;
+
+    fn load(&self, bytes: &[u8], path: &str) -> anyhow::Result<Font> {
+        Ok(Font::from_raw(bytes.to_vec(), path.to_string()))
+    }
 }
 
 #[derive(Clone)]
