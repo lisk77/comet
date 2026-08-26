@@ -30,11 +30,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 struct FontKey {
     index: u32,
     generation: u32,
     size_bits: u32,
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+struct GlyphKey {
+    font: FontKey,
+    character: char,
 }
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -48,7 +54,9 @@ pub struct Renderer2D {
     delta_time: f32,
     event_sender: flume::Sender<Renderer2DEvent>,
     font_cache: std::collections::HashMap<FontKey, f32>,
+    glyph_cache: std::collections::HashMap<GlyphKey, TextureRegion>,
     accumulated_font_glyphs: Vec<comet_assets::GlyphData>,
+    accumulated_font_keys: Vec<GlyphKey>,
     sprite_instances: Vec<SpriteInstance>,
     world_text_vertices: Vec<Vertex>,
     world_text_indices: Vec<u16>,
@@ -774,14 +782,38 @@ impl Renderer2D {
             }
         };
 
-        let prefix = format!("{}@{}::", handle.index(), size.pixels().to_bits());
-        for g in &mut glyphs {
-            g.name = format!("{}{}", prefix, g.name);
+        let prefix = format!(
+            "{}:{}@{}::",
+            handle.index(),
+            handle.generation(),
+            size.pixels().to_bits()
+        );
+        self.accumulated_font_keys
+            .extend(glyphs.iter().map(|glyph| GlyphKey {
+                font: key,
+                character: glyph.name.chars().next().unwrap_or(' '),
+            }));
+        for glyph in &mut glyphs {
+            glyph.name.insert_str(0, &prefix);
         }
         self.accumulated_font_glyphs.extend(glyphs);
         self.font_cache.insert(key, line_height);
 
         let mut atlas = comet_assets::TextureAtlas::from_glyphs(&self.accumulated_font_glyphs);
+        self.glyph_cache.clear();
+        self.glyph_cache.extend(
+            self.accumulated_font_keys
+                .iter()
+                .copied()
+                .zip(&self.accumulated_font_glyphs)
+                .filter_map(|(key, glyph)| {
+                    atlas
+                        .textures()
+                        .get(&glyph.name)
+                        .copied()
+                        .map(|region| (key, region))
+                }),
+        );
 
         let font_texture = match GpuTexture::from_dynamic_image(
             self.render_state.device(),
@@ -1094,37 +1126,17 @@ impl Renderer2D {
         texture.region()
     }
 
-    fn get_glyph_region(
-        &self,
-        glyph: char,
-        font: comet_assets::Asset<comet_assets::Font>,
-        size: f32,
-    ) -> TextureRegion {
-        let key = format!("{}@{}::{}", font.index(), size.to_bits(), glyph);
-        let fallback_key = format!("{}@{}:: ", font.index(), size.to_bits());
-
-        if let Some(handle) = self
-            .render_state
-            .resources()
-            .get_asset_atlas_handle("font_atlas")
-        {
-            self.asset_provider
-                .with(handle, |atlas| {
-                    atlas
-                        .textures()
-                        .get(&key)
-                        .copied()
-                        .or_else(|| atlas.textures().get(&fallback_key).copied())
-                        .unwrap_or_else(|| {
-                            fatal!("No glyph or fallback for '{}' in font atlas", glyph)
-                        })
+    fn get_glyph_region(&self, character: char, font: FontKey) -> TextureRegion {
+        self.glyph_cache
+            .get(&GlyphKey { font, character })
+            .or_else(|| {
+                self.glyph_cache.get(&GlyphKey {
+                    font,
+                    character: ' ',
                 })
-                .unwrap_or_else(|| {
-                    fatal!("Failed to access font atlas from asset provider");
-                })
-        } else {
-            fatal!("Font atlas not initialized yet");
-        }
+            })
+            .copied()
+            .unwrap_or_else(|| fatal!("No glyph or fallback for '{}' in font atlas", character))
     }
 
     pub fn precompute_text_bounds(
@@ -1187,19 +1199,21 @@ impl Renderer2D {
         let line_height = line_height_px * geometry_scale;
         let screen_position = position;
 
-        let lines: Vec<String> = text
+        let lines: Vec<Vec<TextureRegion>> = text
             .split('\n')
-            .map(|s| s.chars().map(|c| if c == '\t' { ' ' } else { c }).collect())
+            .map(|line| {
+                line.chars()
+                    .map(|character| {
+                        let character = if character == '\t' { ' ' } else { character };
+                        self.get_glyph_region(character, cache_key)
+                    })
+                    .collect()
+            })
             .collect();
 
         let line_widths: Vec<f32> = lines
             .iter()
-            .map(|line| {
-                line.chars()
-                    .map(|c| self.get_glyph_region(c, font, size).advance())
-                    .sum::<f32>()
-                    * geometry_scale
-            })
+            .map(|line| line.iter().map(TextureRegion::advance).sum::<f32>() * geometry_scale)
             .collect();
         let max_line_width = line_widths.iter().copied().fold(0.0, f32::max);
         let block_height = lines.len() as f32 * line_height;
@@ -1230,9 +1244,7 @@ impl Renderer2D {
                 comet_ecs::TextJustification::Center => (max_line_width - line_width) * 0.5,
                 comet_ecs::TextJustification::Right => max_line_width - line_width,
             };
-            for c in line.chars() {
-                let region = self.get_glyph_region(c, font, size);
-
+            for region in line {
                 let (dim_x, dim_y) = region.dimensions();
                 let w = dim_x as f32 * geometry_scale;
                 let h = dim_y as f32 * geometry_scale;
@@ -1702,7 +1714,9 @@ impl Renderer for Renderer2D {
             delta_time: 0.0,
             event_sender,
             font_cache: std::collections::HashMap::new(),
+            glyph_cache: std::collections::HashMap::new(),
             accumulated_font_glyphs: Vec::new(),
+            accumulated_font_keys: Vec::new(),
             sprite_instances: Vec::new(),
             world_text_vertices: Vec::new(),
             world_text_indices: Vec::new(),
