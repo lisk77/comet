@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use notify::{EventKind, RecursiveMode, Watcher};
-use crate::{AssetManager, Asset, AssetPath, AssetSource};
-use crate::asset_manager::Loadable;
+use crate::{AssetManager, Asset, AssetPath, AssetSettings, AssetSource};
+use crate::asset_manager::{Loadable, ReloadFn};
 use crate::image::Image;
 use crate::texture_atlas::TextureAtlas;
 use comet_app::file_extension;
@@ -18,6 +18,7 @@ struct ReloadEntry {
     type_id: TypeId,
     index: u32,
     generation: u32,
+    custom_reload: Option<ReloadFn>,
 }
 
 pub struct AssetProvider {
@@ -89,7 +90,11 @@ impl AssetProvider {
                                 atlas.evict_handle(image_handle);
                             });
                         }
-                        manager.begin_reload(&entry.ext, entry.type_id, entry.index)
+                        if let Some(reload) = &entry.custom_reload {
+            reload(&mut manager, entry.index)
+        } else {
+            manager.begin_reload(&entry.ext, entry.type_id, entry.index)
+        }
                     };
                     let Some(worker) = worker else { continue; };
 
@@ -201,6 +206,7 @@ impl AssetProvider {
                 type_id: TypeId::of::<T>(),
                 index,
                 generation,
+                custom_reload: None,
             });
         }
 
@@ -236,6 +242,66 @@ impl AssetProvider {
         handle
     }
 
+    pub fn load_with<S: AssetSettings>(&self, path: impl Into<AssetPath>, settings: S) -> Asset<S::Asset> {
+        let path = path.into();
+        let path = path.as_str();
+        let resolved = comet_app::resolve_asset_path(path);
+        let ext = match file_extension(&resolved, path) {
+            Ok(extension) => extension,
+            Err(error) => { comet_log::error!("{}", error); return Asset::default(); }
+        };
+
+        let reload = AssetManager::settings_reload(settings.clone());
+        let (index, generation, worker) = match self.inner.write() {
+            Ok(mut manager) => {
+                let result = manager.begin_load_with(settings);
+                manager.record_path::<S::Asset>(result.0, result.1, path);
+                result
+            }
+            Err(_) => { comet_log::error!("AssetManager lock poisoned"); return Asset::default(); }
+        };
+
+        if let Ok(mut map) = self.reload_map.write() {
+            map.insert(resolved.clone(), ReloadEntry {
+                original_path: path.to_string(),
+                ext: ext.to_string(),
+                type_id: TypeId::of::<S::Asset>(),
+                index,
+                generation,
+                custom_reload: Some(reload),
+            });
+        }
+
+        let handle = Asset::<S::Asset>::new(index, generation);
+        self.queued.fetch_add(1, Ordering::Relaxed);
+        let ready = Arc::clone(&self.ready);
+        let original_path = path.to_string();
+        let inner_for_dep = Arc::clone(&self.inner);
+        let queued_for_dep = Arc::clone(&self.queued);
+        let ready_for_dep = Arc::clone(&self.ready);
+        let reload_map_for_dep = Arc::clone(&self.reload_map);
+        std::thread::spawn(move || {
+            let dependency_paths = match std::fs::read(&resolved) {
+                Ok(bytes) => worker(bytes, original_path),
+                Err(error) => {
+                    comet_log::error!("Failed to read asset '{}': {}", resolved.display(), error);
+                    vec![]
+                }
+            };
+            ready.fetch_add(1, Ordering::Relaxed);
+            for dependency_path in dependency_paths {
+                Self::load_dep_path(
+                    Arc::clone(&inner_for_dep),
+                    Arc::clone(&queued_for_dep),
+                    Arc::clone(&ready_for_dep),
+                    Arc::clone(&reload_map_for_dep),
+                    &dependency_path,
+                );
+            }
+        });
+        handle
+    }
+
     /// Resolves a path or existing typed handle into the canonical asset handle.
     pub fn resolve<T: Loadable>(&self, source: impl Into<AssetSource<T>>) -> Asset<T> {
         match source.into() {
@@ -265,6 +331,7 @@ impl AssetProvider {
                 type_id: TypeId::of::<T>(),
                 index: handle.index(),
                 generation: handle.generation(),
+                custom_reload: None,
             });
         }
     }
@@ -317,6 +384,7 @@ impl AssetProvider {
                 type_id,
                 index,
                 generation: gen,
+                custom_reload: None,
             });
         }
 

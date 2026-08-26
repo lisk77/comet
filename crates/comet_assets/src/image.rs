@@ -1,3 +1,4 @@
+use crate::AssetSettings;
 use anyhow::*;
 use image::{DynamicImage, RgbaImage};
 
@@ -5,6 +6,29 @@ use image::{DynamicImage, RgbaImage};
 pub enum ImageFormat {
     Rgba8Unorm,
     Rgba8UnormSrgb,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ImageSettings {
+    normal_map: bool,
+}
+
+impl ImageSettings {
+    pub fn color() -> Self {
+        Self { normal_map: false }
+    }
+
+    pub fn normal_map() -> Self {
+        Self { normal_map: true }
+    }
+}
+
+impl AssetSettings for ImageSettings {
+    type Asset = Image;
+
+    fn load(&self, bytes: &[u8], _path: &str) -> anyhow::Result<Image> {
+        Image::from_bytes(bytes, self.normal_map)
+    }
 }
 
 #[derive(Debug)]

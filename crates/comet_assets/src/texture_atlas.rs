@@ -60,6 +60,9 @@ pub struct TextureAtlas {
     width: u32,
     height: u32,
     current_frame: u64,
+    named_cursor_x: u32,
+    named_cursor_y: u32,
+    named_row_height: u32,
 }
 
 impl TextureAtlas {
@@ -72,6 +75,9 @@ impl TextureAtlas {
             width: 1,
             height: 1,
             current_frame: 0,
+            named_cursor_x: 0,
+            named_cursor_y: 0,
+            named_row_height: 0,
         }
     }
 
@@ -87,6 +93,9 @@ impl TextureAtlas {
             width: size,
             height: size,
             current_frame: 0,
+            named_cursor_x: 0,
+            named_cursor_y: 0,
+            named_row_height: 0,
         }
     }
 
@@ -234,6 +243,9 @@ impl TextureAtlas {
             width: atlas_w,
             height: atlas_h,
             current_frame: 0,
+            named_cursor_x: 0,
+            named_cursor_y: 0,
+            named_row_height: 0,
         }
     }
 
@@ -256,6 +268,9 @@ impl TextureAtlas {
             width: atlas_w,
             height: atlas_h,
             current_frame: 0,
+            named_cursor_x: 0,
+            named_cursor_y: 0,
+            named_row_height: 0,
         }
     }
 
@@ -301,7 +316,55 @@ impl TextureAtlas {
             width: atlas_w,
             height: atlas_h,
             current_frame: 0,
+            named_cursor_x: 0,
+            named_cursor_y: 0,
+            named_row_height: 0,
         }
+    }
+
+    /// Incrementally place a named glyph using append-only shelf packing.
+    pub fn insert_named(
+        &mut self,
+        name: impl Into<String>,
+        w: u32,
+        h: u32,
+        padding: u32,
+        advance: f32,
+        offset_x: f32,
+        offset_y: f32,
+    ) -> Option<(Option<(u32, u32)>, TextureRegion)> {
+        let name = name.into();
+        if let Some(region) = self.textures.get(&name) {
+            return Some((None, *region));
+        }
+        if w == 0 || h == 0 {
+            let region = TextureRegion::new(
+                0.0, 0.0, 0.0, 0.0, (w, h), advance, offset_x, offset_y,
+            );
+            self.textures.insert(name, region);
+            return Some((None, region));
+        }
+        let padded_width = w.checked_add(padding.checked_mul(2)?)?;
+        let padded_height = h.checked_add(padding.checked_mul(2)?)?;
+        if self.named_cursor_x + padded_width > self.width {
+            self.named_cursor_x = 0;
+            self.named_cursor_y = self.named_cursor_y.checked_add(self.named_row_height)?;
+            self.named_row_height = 0;
+        }
+        if self.named_cursor_y + padded_height > self.height {
+            return None;
+        }
+        let blit_x = self.named_cursor_x + padding;
+        let blit_y = self.named_cursor_y + padding;
+        self.named_cursor_x += padded_width;
+        self.named_row_height = self.named_row_height.max(padded_height);
+        let base = Self::compute_region(blit_x, blit_y, w, h, self.width, self.height);
+        let region = TextureRegion::new(
+            base.u0(), base.v0(), base.u1(), base.v1(), (w, h),
+            advance, offset_x, offset_y,
+        );
+        self.textures.insert(name, region);
+        Some((Some((blit_x, blit_y)), region))
     }
 
     /// Allocate space for a runtime image handle in the atlas.

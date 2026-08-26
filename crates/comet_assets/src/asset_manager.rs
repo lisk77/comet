@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use anyhow::Result;
-use crate::{asset_store::*, asset_handle::*, image::Image, font::Font, texture_atlas::TextureAtlas, audio_clip::AudioClip};
+use crate::{asset_store::*, asset_handle::*, image::Image, font::Font, texture_atlas::TextureAtlas, audio_clip::AudioClip, AssetSettings};
 
 pub trait Loadable: Send + Sync + 'static {
     fn dependencies(&self) -> Vec<String> { vec![] }
@@ -163,6 +163,45 @@ impl AssetManager {
     ) {
         self.stores.register::<T>();
         self.loader_registry.register(ext, loader);
+    }
+
+    pub(crate) fn begin_load_with<S: AssetSettings>(&mut self, settings: S) -> (u32, u32, Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>) {
+        self.stores.register::<S::Asset>();
+        let (handle, tx) = self.stores.get_mut::<S::Asset>().insert_pending::<S::Asset>();
+        let worker = Box::new(move |bytes: Vec<u8>, path: String| {
+            match settings.load(&bytes, &path) {
+                Ok(asset) => {
+                    let dependencies = asset.dependencies();
+                    let _ = tx.send(Ok(asset));
+                    dependencies
+                }
+                Err(error) => {
+                    let _ = tx.send(Err(error));
+                    vec![]
+                }
+            }
+        });
+        (handle.index(), handle.generation(), worker)
+    }
+
+    pub(crate) fn settings_reload<S: AssetSettings>(settings: S) -> ReloadFn {
+        Arc::new(move |manager: &mut AssetManager, index: u32| {
+            let tx = manager.stores.get_mut::<S::Asset>().set_reload_pending::<S::Asset>(index)?;
+            let settings = settings.clone();
+            Some(Box::new(move |bytes: Vec<u8>, path: String| {
+                match settings.load(&bytes, &path) {
+                    Ok(asset) => {
+                        let dependencies = asset.dependencies();
+                        let _ = tx.send(Ok(asset));
+                        dependencies
+                    }
+                    Err(error) => {
+                        let _ = tx.send(Err(error));
+                        vec![]
+                    }
+                }
+            }))
+        })
     }
 
     pub(crate) fn get_alloc_loader_typed<T: Loadable>(&self, ext: &str) -> Option<AllocFn> {
