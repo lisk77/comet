@@ -38,13 +38,32 @@ struct FontKey {
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
+enum GlyphRepresentation {
+    Bitmap,
+    Mtsdf,
+    Pixel,
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 struct GlyphKey {
     font: FontKey,
     character: char,
+    representation: GlyphRepresentation,
+}
+
+#[derive(Clone, Copy)]
+struct ResolvedGlyph {
+    region: TextureRegion,
+    representation: GlyphRepresentation,
+    distance_range: f32,
 }
 use winit::{dpi::PhysicalSize, window::Window};
 
 type FrameMailbox2D = Arc<Mutex<Option<FramePacket2D>>>;
+
+#[cfg(debug_assertions)]
+static DEBUG_FONT_ATLAS_GENERATION: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 pub struct Renderer2D {
     render_state: RenderState,
@@ -55,8 +74,6 @@ pub struct Renderer2D {
     event_sender: flume::Sender<Renderer2DEvent>,
     font_cache: std::collections::HashMap<FontKey, f32>,
     glyph_cache: std::collections::HashMap<GlyphKey, TextureRegion>,
-    accumulated_font_glyphs: Vec<comet_assets::GlyphData>,
-    accumulated_font_keys: Vec<GlyphKey>,
     sprite_instances: Vec<SpriteInstance>,
     world_text_vertices: Vec<Vertex>,
     world_text_indices: Vec<u16>,
@@ -64,6 +81,10 @@ pub struct Renderer2D {
     screen_text_indices: Vec<u16>,
     gizmo_vertices: Vec<Vertex>,
     gizmo_indices: Vec<u16>,
+    #[cfg(debug_assertions)]
+    debug_font_atlas: image::RgbaImage,
+    #[cfg(debug_assertions)]
+    debug_font_atlas_dirty: bool,
 }
 
 pub struct RenderHandle2D {
@@ -538,7 +559,10 @@ impl comet_app::Module for RenderHandle2D {
     }
 }
 
-const TEXTURE_SHADER: &str = r#"
+const BITMAP_TEXT_THRESHOLD: f32 = 18.0;
+const FONT_ATLAS_SIZE: u32 = 1024;
+
+const FONT_SHADER: &str = r#"
 struct CameraUniform {
     view_proj: mat4x4<f32>,
 };
@@ -556,6 +580,7 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) field: f32,
 }
 
 @vertex
@@ -563,7 +588,8 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.tex_coords = model.tex_coords;
     out.color = model.color;
-    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
+    out.field = model.position.z;
+    out.clip_position = camera.view_proj * vec4<f32>(model.position.xy, 0.0, 1.0);
     return out;
 }
 
@@ -572,10 +598,28 @@ var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1)
 var s_diffuse: sampler;
 
+fn median(a: f32, b: f32, c: f32) -> f32 {
+    return max(min(a, b), min(max(a, b), c));
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let sample_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
-    return sample_color * in.color;
+    var sample_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    if in.field < -0.5 {
+        let dimensions = textureDimensions(t_diffuse);
+        let texel = vec2<i32>(in.tex_coords * vec2<f32>(dimensions));
+        sample_color = textureLoad(t_diffuse, texel, 0);
+    }
+    var coverage = sample_color.a;
+    if in.field > 0.0 {
+        let distance = median(sample_color.r, sample_color.g, sample_color.b);
+        let dimensions = vec2<f32>(textureDimensions(t_diffuse));
+        let unit_range = vec2<f32>(in.field) / dimensions;
+        let screen_texel_size = vec2<f32>(1.0) / max(fwidth(in.tex_coords), vec2<f32>(0.000001));
+        let screen_range = max(0.5 * dot(unit_range, screen_texel_size), 1.0);
+        coverage = clamp(screen_range * (distance - 0.5) + 0.5, 0.0, 1.0);
+    }
+    return vec4<f32>(in.color.rgb, coverage * in.color.a);
 }
 "#;
 
@@ -752,145 +796,228 @@ impl Renderer2D {
         );
     }
 
-    fn ensure_font_initialized(
-        &mut self,
-        handle: comet_assets::Asset<comet_assets::Font>,
-        size: comet_math::Px,
-    ) {
-        let key = FontKey {
-            index: handle.index(),
-            generation: handle.generation(),
-            size_bits: size.pixels().to_bits(),
-        };
-        if self.font_cache.contains_key(&key) {
-            return;
-        }
-
-        let font_data = match self.asset_provider.with(handle, |f| f.clone()) {
-            Some(f) => f,
-            None => {
-                error!("Font handle {:?} not read: skipping rasterization", handle);
-                return;
-            }
-        };
-
-        let (mut glyphs, line_height) = match font_data.rasterize(size) {
-            Some(r) => r,
-            None => {
-                error!("Failed to rasterize font '{}'", font_data.name());
-                return;
-            }
-        };
-
-        let prefix = format!(
-            "{}:{}@{}::",
-            handle.index(),
-            handle.generation(),
-            size.pixels().to_bits()
-        );
-        self.accumulated_font_keys
-            .extend(glyphs.iter().map(|glyph| GlyphKey {
-                font: key,
-                character: glyph.name.chars().next().unwrap_or(' '),
-            }));
-        for glyph in &mut glyphs {
-            glyph.name.insert_str(0, &prefix);
-        }
-        self.accumulated_font_glyphs.extend(glyphs);
-        self.font_cache.insert(key, line_height);
-
-        let mut atlas = comet_assets::TextureAtlas::from_glyphs(&self.accumulated_font_glyphs);
-        self.glyph_cache.clear();
-        self.glyph_cache.extend(
-            self.accumulated_font_keys
-                .iter()
-                .copied()
-                .zip(&self.accumulated_font_glyphs)
-                .filter_map(|(key, glyph)| {
-                    atlas
-                        .textures()
-                        .get(&glyph.name)
-                        .copied()
-                        .map(|region| (key, region))
-                }),
-        );
-
-        let font_texture = match GpuTexture::from_dynamic_image(
-            self.render_state.device(),
-            self.render_state.queue(),
-            atlas.atlas(),
-            Some("FontAtlas"),
-            false,
-        ) {
-            Ok(tex) => tex,
-            Err(e) => {
-                error!("Failed to create GPU texture for font atlas: {}", e);
-                return;
-            }
-        };
-        atlas.clear_atlas_image();
-        let font_texture_arc = Arc::new(font_texture);
-
-        if let Some(old_handle) = self
+    fn ensure_font_atlas(&mut self) -> bool {
+        if self
             .render_state
             .resources()
             .get_asset_atlas_handle("font_atlas")
+            .is_some()
         {
-            self.asset_provider.unload(old_handle);
+            return true;
         }
-        if let Some(atlas_handle) = self.asset_provider.add(atlas) {
-            self.render_state
-                .resources_mut()
-                .insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
-        }
+
+        let mut atlas = comet_assets::TextureAtlas::with_capacity(FONT_ATLAS_SIZE);
+        atlas.clear_atlas_image();
+        let Some(atlas_handle) = self.asset_provider.add(atlas) else {
+            error!("Failed to allocate font atlas asset");
+            return false;
+        };
+        let font_texture = Arc::new(GpuTexture::create_2d_texture(
+            self.render_state.device(),
+            FONT_ATLAS_SIZE,
+            FONT_ATLAS_SIZE,
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            wgpu::FilterMode::Linear,
+            Some("FontAtlas"),
+        ));
         self.render_state
             .resources_mut()
-            .insert_gpu_texture("font_atlas".to_string(), font_texture_arc.clone());
+            .insert_asset_atlas_handle("font_atlas".to_string(), atlas_handle);
+        self.render_state
+            .resources_mut()
+            .insert_gpu_texture("font_atlas".to_string(), font_texture.clone());
 
-        if self.graph.has_node("Font") {
-            let device = self.render_state.device();
-            self.graph
-                .pass_mut("Font")
-                .unwrap()
-                .set_texture(font_texture_arc.clone(), device);
-            if let Some(node) = self.graph.pass_mut("ScreenFont") {
-                node.set_texture(font_texture_arc, device);
+        let format = self.render_state.config().format;
+        let width = self.render_state.config().width;
+        let height = self.render_state.config().height;
+        self.graph.add_node(
+            PassNode::new(
+                "Font",
+                FONT_SHADER,
+                wgpu::PrimitiveTopology::TriangleList,
+                Some(font_texture.clone()),
+                vec!["Universal"],
+                LoadOp::Load,
+            ),
+            self.render_state.device(),
+            self.render_state.queue(),
+            format,
+            width,
+            height,
+        );
+        self.graph.add_node(
+            PassNode::new(
+                "ScreenFont",
+                FONT_SHADER,
+                wgpu::PrimitiveTopology::TriangleList,
+                Some(font_texture),
+                vec!["Gizmo"],
+                LoadOp::Load,
+            ),
+            self.render_state.device(),
+            self.render_state.queue(),
+            format,
+            width,
+            height,
+        );
+        true
+    }
+
+    fn font_variant(
+        &self,
+        font: comet_assets::Asset<comet_assets::Font>,
+        requested_size: comet_math::Px,
+    ) -> (FontKey, GlyphRepresentation, f32, f32) {
+        let requested = requested_size.pixels().max(1.0);
+        let settings = self
+            .asset_provider
+            .with(font, |font| font.settings())
+            .unwrap_or_default();
+        let (generation_size, representation) = match settings.rasterization() {
+            comet_assets::FontRasterization::Auto if requested > BITMAP_TEXT_THRESHOLD => (
+                settings.mtsdf_generation_size().pixels(),
+                GlyphRepresentation::Mtsdf,
+            ),
+            comet_assets::FontRasterization::Mtsdf => (
+                settings.mtsdf_generation_size().pixels(),
+                GlyphRepresentation::Mtsdf,
+            ),
+            comet_assets::FontRasterization::Pixel => {
+                (requested.round().max(1.0), GlyphRepresentation::Pixel)
             }
+            _ => (requested.round().max(1.0), GlyphRepresentation::Bitmap),
+        };
+        let distance_range = if representation == GlyphRepresentation::Mtsdf {
+            settings.mtsdf_range() as f32
         } else {
-            let format = self.render_state.config().format;
-            let width = self.render_state.config().width;
-            let height = self.render_state.config().height;
-            self.graph.add_node(
-                PassNode::new(
-                    "Font",
-                    TEXTURE_SHADER,
-                    wgpu::PrimitiveTopology::TriangleList,
-                    Some(font_texture_arc.clone()),
-                    vec!["Universal"],
-                    LoadOp::Load,
-                ),
-                self.render_state.device(),
-                self.render_state.queue(),
-                format,
-                width,
-                height,
-            );
-            self.graph.add_node(
-                PassNode::new(
-                    "ScreenFont",
-                    SPRITE_SHADER,
-                    wgpu::PrimitiveTopology::TriangleList,
-                    Some(font_texture_arc),
-                    vec!["Gizmo"],
-                    LoadOp::Load,
-                ),
-                self.render_state.device(),
-                self.render_state.queue(),
-                format,
-                width,
-                height,
-            );
+            0.0
+        };
+        (
+            FontKey {
+                index: font.index(),
+                generation: font.generation(),
+                size_bits: generation_size.to_bits(),
+            },
+            representation,
+            requested / generation_size,
+            distance_range,
+        )
+    }
+
+    fn ensure_font_variant(
+        &mut self,
+        font: comet_assets::Asset<comet_assets::Font>,
+        font_key: FontKey,
+        representation: GlyphRepresentation,
+    ) -> bool {
+        if self.font_cache.contains_key(&font_key) {
+            return true;
         }
+        if !self.ensure_font_atlas() {
+            return false;
+        }
+
+        let size = comet_math::px(f32::from_bits(font_key.size_bits));
+        let Some(font_data) = self.asset_provider.with(font, |font| font.clone()) else {
+            error!("Font handle {:?} is unavailable", font);
+            return false;
+        };
+        let rasterized = match representation {
+            GlyphRepresentation::Bitmap | GlyphRepresentation::Pixel => font_data.rasterize(size),
+            GlyphRepresentation::Mtsdf => {
+                font_data.rasterize_mtsdf(size, font_data.settings().mtsdf_range())
+            }
+        };
+        let Some((mut glyphs, line_height)) = rasterized else {
+            return false;
+        };
+        glyphs.sort_by_key(|glyph| {
+            std::cmp::Reverse((
+                glyph.render.width().max(glyph.render.height()),
+                glyph.render.width() * glyph.render.height(),
+            ))
+        });
+        let atlas_handle = self
+            .render_state
+            .resources()
+            .get_asset_atlas_handle("font_atlas")
+            .unwrap();
+
+        for glyph in glyphs {
+            let Some(character) = glyph.name.chars().next() else {
+                continue;
+            };
+            let key = GlyphKey {
+                font: font_key,
+                character,
+                representation,
+            };
+            let name = format!(
+                "{}:{}:{}:{}:{}",
+                font_key.index,
+                font_key.generation,
+                font_key.size_bits,
+                match representation {
+                    GlyphRepresentation::Bitmap => 0,
+                    GlyphRepresentation::Mtsdf => 1,
+                    GlyphRepresentation::Pixel => 2,
+                },
+                character as u32,
+            );
+            let width = glyph.render.width();
+            let height = glyph.render.height();
+            let insertion = self
+                .asset_provider
+                .with_mut(atlas_handle, |atlas| {
+                    atlas.insert_named(
+                        name,
+                        width,
+                        height,
+                        2,
+                        glyph.advance,
+                        glyph.offset_x,
+                        glyph.offset_y,
+                    )
+                })
+                .flatten();
+            let Some((blit_position, region)) = insertion else {
+                error!("Font atlas is full while inserting a font variant");
+                return false;
+            };
+            if let Some((x, y)) = blit_position {
+                if let Some(texture) = self.render_state.resources().get_gpu_texture("font_atlas") {
+                    texture.write_region(
+                        self.render_state.queue(),
+                        x,
+                        y,
+                        glyph.render.as_bytes(),
+                        width,
+                        height,
+                    );
+                }
+                #[cfg(debug_assertions)]
+                if let Some(glyph_image) = glyph.render.as_rgba8() {
+                    for (glyph_x, glyph_y, pixel) in glyph_image.enumerate_pixels() {
+                        let debug_pixel = match representation {
+                            GlyphRepresentation::Mtsdf => {
+                                image::Rgba([pixel[0], pixel[1], pixel[2], 255])
+                            }
+                            GlyphRepresentation::Bitmap | GlyphRepresentation::Pixel => {
+                                image::Rgba([pixel[3], pixel[3], pixel[3], 255])
+                            }
+                        };
+                        self.debug_font_atlas
+                            .put_pixel(x + glyph_x, y + glyph_y, debug_pixel);
+                    }
+                    self.debug_font_atlas_dirty = true;
+                }
+            }
+            self.glyph_cache.insert(key, region);
+        }
+        self.font_cache.insert(font_key, line_height);
+        self.save_debug_font_atlas();
+        true
     }
 
     fn ensure_image_in_atlas(
@@ -1126,17 +1253,34 @@ impl Renderer2D {
         texture.region()
     }
 
-    fn get_glyph_region(&self, character: char, font: FontKey) -> TextureRegion {
-        self.glyph_cache
-            .get(&GlyphKey { font, character })
+    fn get_glyph(
+        &self,
+        character: char,
+        font: FontKey,
+        representation: GlyphRepresentation,
+        distance_range: f32,
+    ) -> ResolvedGlyph {
+        let region = self
+            .glyph_cache
+            .get(&GlyphKey {
+                font,
+                character,
+                representation,
+            })
             .or_else(|| {
                 self.glyph_cache.get(&GlyphKey {
                     font,
                     character: ' ',
+                    representation,
                 })
             })
             .copied()
-            .unwrap_or_else(|| fatal!("No glyph or fallback for '{}' in font atlas", character))
+            .unwrap_or_else(|| fatal!("No glyph or fallback for '{}' in font atlas", character));
+        ResolvedGlyph {
+            region,
+            representation,
+            distance_range,
+        }
     }
 
     pub fn precompute_text_bounds(
@@ -1179,15 +1323,16 @@ impl Renderer2D {
         vertex_data: &mut Vec<Vertex>,
         index_data: &mut Vec<u16>,
     ) {
-        self.ensure_font_initialized(font, raster_size);
-        let size = raster_size.pixels();
-
-        let cache_key = FontKey {
-            index: font.index(),
-            generation: font.generation(),
-            size_bits: size.to_bits(),
-        };
-        let line_height_px = self.font_cache.get(&cache_key).copied().unwrap_or(size);
+        let (cache_key, representation, variant_scale, distance_range) =
+            self.font_variant(font, raster_size);
+        self.ensure_font_variant(font, cache_key, representation);
+        let generation_size = f32::from_bits(cache_key.size_bits);
+        let line_height_px = self
+            .font_cache
+            .get(&cache_key)
+            .copied()
+            .unwrap_or(generation_size);
+        let glyph_scale = geometry_scale * variant_scale;
 
         let vert_color = [
             color.r as f32,
@@ -1196,16 +1341,16 @@ impl Renderer2D {
             color.a as f32,
         ];
 
-        let line_height = line_height_px * geometry_scale;
+        let line_height = line_height_px * glyph_scale;
         let screen_position = position;
 
-        let lines: Vec<Vec<TextureRegion>> = text
+        let lines: Vec<Vec<ResolvedGlyph>> = text
             .split('\n')
             .map(|line| {
                 line.chars()
                     .map(|character| {
                         let character = if character == '\t' { ' ' } else { character };
-                        self.get_glyph_region(character, cache_key)
+                        self.get_glyph(character, cache_key, representation, distance_range)
                     })
                     .collect()
             })
@@ -1213,7 +1358,7 @@ impl Renderer2D {
 
         let line_widths: Vec<f32> = lines
             .iter()
-            .map(|line| line.iter().map(TextureRegion::advance).sum::<f32>() * geometry_scale)
+            .map(|line| line.iter().map(|glyph| glyph.region.advance()).sum::<f32>() * glyph_scale)
             .collect();
         let max_line_width = line_widths.iter().copied().fold(0.0, f32::max);
         let block_height = lines.len() as f32 * line_height;
@@ -1244,37 +1389,49 @@ impl Renderer2D {
                 comet_ecs::TextJustification::Center => (max_line_width - line_width) * 0.5,
                 comet_ecs::TextJustification::Right => max_line_width - line_width,
             };
-            for region in line {
+            for glyph in line {
+                let region = glyph.region;
                 let (dim_x, dim_y) = region.dimensions();
-                let w = dim_x as f32 * geometry_scale;
-                let h = dim_y as f32 * geometry_scale;
-                let offset_x = region.offset_x() * geometry_scale;
-                let offset_y = region.offset_y() * geometry_scale;
+                let w = dim_x as f32 * glyph_scale;
+                let h = dim_y as f32 * glyph_scale;
+                let offset_x = region.offset_x() * glyph_scale;
+                let offset_y = region.offset_y() * glyph_scale;
+                let field = match glyph.representation {
+                    GlyphRepresentation::Bitmap => 0.0,
+                    GlyphRepresentation::Mtsdf => glyph.distance_range,
+                    GlyphRepresentation::Pixel => -1.0,
+                };
 
                 let glyph_left = block_origin.x() + x_offset + offset_x;
                 let glyph_top = block_origin.y() - offset_y - y_offset;
+                let (glyph_left, glyph_top) = if glyph.representation == GlyphRepresentation::Pixel
+                {
+                    (glyph_left.round(), glyph_top.round())
+                } else {
+                    (glyph_left, glyph_top)
+                };
                 let glyph_right = glyph_left + w;
                 let glyph_bottom = glyph_top - h;
 
                 let buffer_size = vertex_data.len() as u16;
                 vertex_data.extend_from_slice(&[
                     Vertex::new(
-                        [glyph_left, glyph_top, 0.0],
+                        [glyph_left, glyph_top, field],
                         [region.u0(), region.v0()],
                         vert_color,
                     ),
                     Vertex::new(
-                        [glyph_left, glyph_bottom, 0.0],
+                        [glyph_left, glyph_bottom, field],
                         [region.u0(), region.v1()],
                         vert_color,
                     ),
                     Vertex::new(
-                        [glyph_right, glyph_bottom, 0.0],
+                        [glyph_right, glyph_bottom, field],
                         [region.u1(), region.v1()],
                         vert_color,
                     ),
                     Vertex::new(
-                        [glyph_right, glyph_top, 0.0],
+                        [glyph_right, glyph_top, field],
                         [region.u1(), region.v0()],
                         vert_color,
                     ),
@@ -1288,7 +1445,7 @@ impl Renderer2D {
                     buffer_size + 3,
                 ]);
 
-                x_offset += region.advance() * geometry_scale;
+                x_offset += region.advance() * glyph_scale;
             }
 
             y_offset += line_height;
@@ -1507,6 +1664,7 @@ impl Renderer2D {
         }
         self.screen_text_vertices = screen_font_vertex_buffer;
         self.screen_text_indices = screen_font_index_buffer;
+        self.save_debug_font_atlas();
 
         // Text processing lazily creates the Font pass, so apply camera uniforms afterward.
         self.apply_camera_view(camera, world_view);
@@ -1607,6 +1765,35 @@ impl Renderer2D {
         self.gizmo_vertices = gizmo_verts;
         self.gizmo_indices = gizmo_indices;
     }
+
+    #[cfg(debug_assertions)]
+    fn save_debug_font_atlas(&mut self) {
+        if !self.debug_font_atlas_dirty {
+            return;
+        }
+        self.debug_font_atlas_dirty = false;
+        let image = self.debug_font_atlas.clone();
+        let generation =
+            DEBUG_FONT_ATLAS_GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
+        std::thread::spawn(move || {
+            let temporary_path = format!("font_atlas.{generation}.tmp.png");
+            if let Err(error) = image.save(&temporary_path) {
+                error!("Failed to save debug font atlas: {}", error);
+                return;
+            }
+            if DEBUG_FONT_ATLAS_GENERATION.load(std::sync::atomic::Ordering::Acquire) == generation
+            {
+                if let Err(error) = std::fs::rename(&temporary_path, "font_atlas.png") {
+                    error!("Failed to publish debug font atlas: {}", error);
+                }
+            } else if let Err(error) = std::fs::remove_file(&temporary_path) {
+                error!("Failed to remove stale debug font atlas: {}", error);
+            }
+        });
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn save_debug_font_atlas(&mut self) {}
 
     fn resolve_camera_views(
         &self,
@@ -1715,8 +1902,6 @@ impl Renderer for Renderer2D {
             event_sender,
             font_cache: std::collections::HashMap::new(),
             glyph_cache: std::collections::HashMap::new(),
-            accumulated_font_glyphs: Vec::new(),
-            accumulated_font_keys: Vec::new(),
             sprite_instances: Vec::new(),
             world_text_vertices: Vec::new(),
             world_text_indices: Vec::new(),
@@ -1724,6 +1909,14 @@ impl Renderer for Renderer2D {
             screen_text_indices: Vec::new(),
             gizmo_vertices: Vec::new(),
             gizmo_indices: Vec::new(),
+            #[cfg(debug_assertions)]
+            debug_font_atlas: image::RgbaImage::from_pixel(
+                FONT_ATLAS_SIZE,
+                FONT_ATLAS_SIZE,
+                image::Rgba([0, 0, 0, 255]),
+            ),
+            #[cfg(debug_assertions)]
+            debug_font_atlas_dirty: false,
         }
     }
 

@@ -174,7 +174,7 @@ impl GpuTexture {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter,
-            min_filter: wgpu::FilterMode::Nearest,
+            min_filter: mag_filter,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });

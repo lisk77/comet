@@ -13,6 +13,7 @@ pub use audio_clip::*;
 pub use asset_module::{AssetModule, AssetModuleExt};
 
 pub mod font;
+mod msdf_coloring;
 pub mod atlas_ref;
 pub mod image;
 pub mod texture_atlas;

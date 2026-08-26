@@ -1,7 +1,7 @@
 use crate::asset_handle::Asset;
-use comet_app::resolve_asset_path;
 use crate::font::GlyphData;
 use crate::image::Image;
+use comet_app::resolve_asset_path;
 use comet_log::*;
 use guillotiere::{size2, AllocId, AtlasAllocator};
 use image::{DynamicImage, RgbaImage};
@@ -42,14 +42,30 @@ impl TextureRegion {
         }
     }
 
-    pub fn u0(&self) -> f32 { self.u0 }
-    pub fn u1(&self) -> f32 { self.u1 }
-    pub fn v0(&self) -> f32 { self.v0 }
-    pub fn v1(&self) -> f32 { self.v1 }
-    pub fn dimensions(&self) -> (u32, u32) { self.dimensions }
-    pub fn advance(&self) -> f32 { self.advance }
-    pub fn offset_x(&self) -> f32 { self.offset_x }
-    pub fn offset_y(&self) -> f32 { self.offset_y }
+    pub fn u0(&self) -> f32 {
+        self.u0
+    }
+    pub fn u1(&self) -> f32 {
+        self.u1
+    }
+    pub fn v0(&self) -> f32 {
+        self.v0
+    }
+    pub fn v1(&self) -> f32 {
+        self.v1
+    }
+    pub fn dimensions(&self) -> (u32, u32) {
+        self.dimensions
+    }
+    pub fn advance(&self) -> f32 {
+        self.advance
+    }
+    pub fn offset_x(&self) -> f32 {
+        self.offset_x
+    }
+    pub fn offset_y(&self) -> f32 {
+        self.offset_y
+    }
 }
 
 pub struct TextureAtlas {
@@ -99,8 +115,12 @@ impl TextureAtlas {
         }
     }
 
-    pub fn width(&self) -> u32 { self.width }
-    pub fn height(&self) -> u32 { self.height }
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+    pub fn height(&self) -> u32 {
+        self.height
+    }
 
     pub fn texture_paths(&self) -> Vec<String> {
         self.textures.keys().cloned().collect()
@@ -108,7 +128,9 @@ impl TextureAtlas {
 
     #[inline(always)]
     fn next_power_of_two(mut x: u32) -> u32 {
-        if x == 0 { return 1; }
+        if x == 0 {
+            return 1;
+        }
         x -= 1;
         x |= x >> 1;
         x |= x >> 2;
@@ -121,26 +143,37 @@ impl TextureAtlas {
     fn compute_region(x: u32, y: u32, w: u32, h: u32, atlas_w: u32, atlas_h: u32) -> TextureRegion {
         let aw = atlas_w as f32;
         let ah = atlas_h as f32;
-        let eps = 0.01_f32;
+        let eps = 0.5_f32;
         TextureRegion::new(
             (x as f32 + eps) / aw,
             (y as f32 + eps) / ah,
             (x as f32 + w as f32 - eps) / aw,
             (y as f32 + h as f32 - eps) / ah,
             (w, h),
-            0.0, 0.0, 0.0,
+            0.0,
+            0.0,
+            0.0,
         )
     }
 
     fn pack_textures_guillotiere(
         textures: &[(&String, &DynamicImage)],
         padding: u32,
-    ) -> (u32, u32, AtlasAllocator, HashMap<String, (AllocId, u32, u32)>) {
-        let total_area: u64 = textures.iter().map(|(_, t)| {
-            let w = (t.width().max(1) + padding * 2) as u64;
-            let h = (t.height().max(1) + padding * 2) as u64;
-            w * h
-        }).sum::<u64>().max(1);
+    ) -> (
+        u32,
+        u32,
+        AtlasAllocator,
+        HashMap<String, (AllocId, u32, u32)>,
+    ) {
+        let total_area: u64 = textures
+            .iter()
+            .map(|(_, t)| {
+                let w = (t.width().max(1) + padding * 2) as u64;
+                let h = (t.height().max(1) + padding * 2) as u64;
+                w * h
+            })
+            .sum::<u64>()
+            .max(1);
 
         let min_side = ((total_area as f64).sqrt() as u32).max(64);
         let mut atlas_size = Self::next_power_of_two(min_side);
@@ -160,7 +193,10 @@ impl TextureAtlas {
                         let blit_y = alloc.rectangle.min.y as u32 + padding;
                         placements.insert((*name).clone(), (alloc.id, blit_x, blit_y));
                     }
-                    None => { failed = true; break; }
+                    None => {
+                        failed = true;
+                        break;
+                    }
                 }
             }
 
@@ -169,7 +205,9 @@ impl TextureAtlas {
             }
 
             if atlas_size >= max_size {
-                error!("Failed to pack all textures even at max atlas size ({max_size}x{max_size}).");
+                error!(
+                    "Failed to pack all textures even at max atlas size ({max_size}x{max_size})."
+                );
                 return (atlas_size, atlas_size, allocator, placements);
             }
 
@@ -187,15 +225,26 @@ impl TextureAtlas {
         let mut regions = HashMap::new();
 
         for (name, tex) in textures {
-            if tex.width() == 0 || tex.height() == 0 { continue; }
+            if tex.width() == 0 || tex.height() == 0 {
+                continue;
+            }
             if let Some((_, blit_x, blit_y)) = placements.get(*name) {
                 let rgba_owned;
-                let rgba: &RgbaImage = if let Some(r) = tex.as_rgba8() { r } else {
+                let rgba: &RgbaImage = if let Some(r) = tex.as_rgba8() {
+                    r
+                } else {
                     rgba_owned = tex.to_rgba8();
                     &rgba_owned
                 };
                 Self::blit(&mut base, rgba, *blit_x, *blit_y);
-                let region = Self::compute_region(*blit_x, *blit_y, tex.width(), tex.height(), atlas_w, atlas_h);
+                let region = Self::compute_region(
+                    *blit_x,
+                    *blit_y,
+                    tex.width(),
+                    tex.height(),
+                    atlas_w,
+                    atlas_h,
+                );
                 regions.insert((*name).clone(), region);
             }
         }
@@ -223,17 +272,28 @@ impl TextureAtlas {
         for path in &paths {
             let img = match image::open(resolve_asset_path(path)) {
                 Ok(i) => DynamicImage::ImageRgba8(i.into_rgba8()),
-                Err(e) => { error!("Failed to load texture '{}': {}", path, e); continue; }
+                Err(e) => {
+                    error!("Failed to load texture '{}': {}", path, e);
+                    continue;
+                }
             };
             textures.push((path, img));
         }
 
         info!("Packing textures...");
-        let tex_refs: Vec<(&String, &DynamicImage)> = textures.iter().map(|(p, i)| (*p, i)).collect();
-        let (atlas_w, atlas_h, allocator, placements) = Self::pack_textures_guillotiere(&tex_refs, 2);
-        let (base, regions) = Self::build_atlas_from_placements(&tex_refs, &placements, atlas_w, atlas_h);
+        let tex_refs: Vec<(&String, &DynamicImage)> =
+            textures.iter().map(|(p, i)| (*p, i)).collect();
+        let (atlas_w, atlas_h, allocator, placements) =
+            Self::pack_textures_guillotiere(&tex_refs, 2);
+        let (base, regions) =
+            Self::build_atlas_from_placements(&tex_refs, &placements, atlas_w, atlas_h);
 
-        info!("Created texture atlas ({}x{}) with {} textures.", atlas_w, atlas_h, regions.len());
+        info!(
+            "Created texture atlas ({}x{}) with {} textures.",
+            atlas_w,
+            atlas_h,
+            regions.len()
+        );
 
         TextureAtlas {
             atlas: DynamicImage::ImageRgba8(base),
@@ -250,15 +310,28 @@ impl TextureAtlas {
     }
 
     pub fn from_textures(names: Vec<String>, textures: Vec<DynamicImage>) -> Self {
-        assert_eq!(names.len(), textures.len(), "Names and textures must have the same length.");
+        assert_eq!(
+            names.len(),
+            textures.len(),
+            "Names and textures must have the same length."
+        );
 
-        let textures: Vec<DynamicImage> = textures.into_iter()
-            .map(|t| if t.as_rgba8().is_some() { t } else { DynamicImage::ImageRgba8(t.into_rgba8()) })
+        let textures: Vec<DynamicImage> = textures
+            .into_iter()
+            .map(|t| {
+                if t.as_rgba8().is_some() {
+                    t
+                } else {
+                    DynamicImage::ImageRgba8(t.into_rgba8())
+                }
+            })
             .collect();
         let tex_refs: Vec<(&String, &DynamicImage)> = names.iter().zip(textures.iter()).collect();
 
-        let (atlas_w, atlas_h, allocator, placements) = Self::pack_textures_guillotiere(&tex_refs, 2);
-        let (base, regions) = Self::build_atlas_from_placements(&tex_refs, &placements, atlas_w, atlas_h);
+        let (atlas_w, atlas_h, allocator, placements) =
+            Self::pack_textures_guillotiere(&tex_refs, 2);
+        let (base, regions) =
+            Self::build_atlas_from_placements(&tex_refs, &placements, atlas_w, atlas_h);
 
         TextureAtlas {
             atlas: DynamicImage::ImageRgba8(base),
@@ -278,7 +351,8 @@ impl TextureAtlas {
         let tex_refs: Vec<(&String, &DynamicImage)> =
             glyphs.iter().map(|g| (&g.name, &g.render)).collect();
 
-        let (atlas_w, atlas_h, allocator, placements) = Self::pack_textures_guillotiere(&tex_refs, 2);
+        let (atlas_w, atlas_h, allocator, placements) =
+            Self::pack_textures_guillotiere(&tex_refs, 2);
 
         let mut base = RgbaImage::new(atlas_w, atlas_h);
         let mut regions = HashMap::new();
@@ -286,7 +360,9 @@ impl TextureAtlas {
         for g in glyphs.iter() {
             if let Some((_, blit_x, blit_y)) = placements.get(&g.name) {
                 let rgba_owned;
-                let rgba: &RgbaImage = if let Some(r) = g.render.as_rgba8() { r } else {
+                let rgba: &RgbaImage = if let Some(r) = g.render.as_rgba8() {
+                    r
+                } else {
                     rgba_owned = g.render.to_rgba8();
                     &rgba_owned
                 };
@@ -294,17 +370,25 @@ impl TextureAtlas {
 
                 let aw = atlas_w as f32;
                 let ah = atlas_h as f32;
-                let eps = 0.01_f32;
+                let eps = 0.5_f32;
                 let u0 = (*blit_x as f32 + eps) / aw;
                 let v0 = (*blit_y as f32 + eps) / ah;
                 let u1 = (*blit_x as f32 + g.render.width() as f32 - eps) / aw;
                 let v1 = (*blit_y as f32 + g.render.height() as f32 - eps) / ah;
 
-                regions.insert(g.name.clone(), TextureRegion::new(
-                    u0, v0, u1, v1,
-                    (g.render.width(), g.render.height()),
-                    g.advance, g.offset_x, g.offset_y,
-                ));
+                regions.insert(
+                    g.name.clone(),
+                    TextureRegion::new(
+                        u0,
+                        v0,
+                        u1,
+                        v1,
+                        (g.render.width(), g.render.height()),
+                        g.advance,
+                        g.offset_x,
+                        g.offset_y,
+                    ),
+                );
             }
         }
 
@@ -338,9 +422,8 @@ impl TextureAtlas {
             return Some((None, *region));
         }
         if w == 0 || h == 0 {
-            let region = TextureRegion::new(
-                0.0, 0.0, 0.0, 0.0, (w, h), advance, offset_x, offset_y,
-            );
+            let region =
+                TextureRegion::new(0.0, 0.0, 0.0, 0.0, (w, h), advance, offset_x, offset_y);
             self.textures.insert(name, region);
             return Some((None, region));
         }
@@ -360,8 +443,14 @@ impl TextureAtlas {
         self.named_row_height = self.named_row_height.max(padded_height);
         let base = Self::compute_region(blit_x, blit_y, w, h, self.width, self.height);
         let region = TextureRegion::new(
-            base.u0(), base.v0(), base.u1(), base.v1(), (w, h),
-            advance, offset_x, offset_y,
+            base.u0(),
+            base.v0(),
+            base.u1(),
+            base.v1(),
+            (w, h),
+            advance,
+            offset_x,
+            offset_y,
         );
         self.textures.insert(name, region);
         Some((Some((blit_x, blit_y)), region))
@@ -375,11 +464,14 @@ impl TextureAtlas {
         h: u32,
         pad: u32,
     ) -> Option<(u32, u32, TextureRegion)> {
-        let alloc = self.allocator.allocate(size2((w + pad * 2) as i32, (h + pad * 2) as i32))?;
+        let alloc = self
+            .allocator
+            .allocate(size2((w + pad * 2) as i32, (h + pad * 2) as i32))?;
         let blit_x = alloc.rectangle.min.x as u32 + pad;
         let blit_y = alloc.rectangle.min.y as u32 + pad;
         let region = Self::compute_region(blit_x, blit_y, w, h, self.width, self.height);
-        self.handle_textures.insert(handle, (alloc.id, region, self.current_frame));
+        self.handle_textures
+            .insert(handle, (alloc.id, region, self.current_frame));
         Some((blit_x, blit_y, region))
     }
 
@@ -422,7 +514,8 @@ impl TextureAtlas {
     pub fn evict_stale(&mut self, max_unseen_frames: u64) {
         self.current_frame += 1;
         let threshold = self.current_frame.saturating_sub(max_unseen_frames);
-        let to_evict: Vec<(Asset<Image>, AllocId)> = self.handle_textures
+        let to_evict: Vec<(Asset<Image>, AllocId)> = self
+            .handle_textures
             .iter()
             .filter(|(_, (_, _, last_seen))| *last_seen < threshold)
             .map(|(h, (id, _, _))| (*h, *id))

@@ -11,9 +11,12 @@ fn setup(app: &mut App) {
         TextLayout::new()
             .with_anchor(Anchor::TopLeft)
             .with_justification(TextJustification::Left),
-        Text::new("comet", app.load("res://fonts/PublicPixel.ttf"))
-            .with_font_size(dp(77.0))
-            .with_color(sRgba::<f32>::from_hex("#abb2bfff")),
+        Text::new(
+            "abcdefghijklmnopqrstuvwxyz0123456789",
+            app.load("res://fonts/PublicPixel.ttf"),
+        )
+        .with_font_size(dp(50.0))
+        .with_color(sRgba::<f32>::from_hex("#abb2bfff")),
     ));
 }
 

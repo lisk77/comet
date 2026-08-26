@@ -11,5 +11,9 @@ comet_math = { workspace = true }
 notify = "6"
 anyhow = { workspace = true }
 ab_glyph = "0.2.29"
+fdsm = "0.8"
+fdsm-ttf-parser = "0.2"
+fdsm_image = { package = "image", version = "0.25", default-features = false }
 guillotiere = "0.6"
 image = { workspace = true }
+nalgebra = "0.34"

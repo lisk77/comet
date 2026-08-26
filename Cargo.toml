@@ -64,3 +64,12 @@ flume = "0.12.0"
 image = { version = "0.24", default-features = false, features = ["png", "jpeg", "hdr"] }
 wgpu = "22.0"
 winit = { version = "0.29", features = ["rwh_05"] }
+
+[profile.dev.package.fdsm]
+opt-level = 3
+
+[profile.dev.package.fdsm-ttf-parser]
+opt-level = 3
+
+[profile.dev.package.nalgebra]
+opt-level = 3
