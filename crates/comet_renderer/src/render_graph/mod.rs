@@ -9,12 +9,25 @@ use crate::render_pass::LoadOp;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
+struct CompiledTexture {
+    name: String,
+    texture: Arc<GpuTexture>,
+}
+
+struct CompiledNode {
+    node_index: usize,
+    inputs: Vec<Arc<GpuTexture>>,
+    target: Option<Arc<GpuTexture>>,
+    load: LoadOp,
+    pass_label: String,
+}
+
 pub struct RenderGraph {
     nodes: Vec<Box<dyn RenderNode>>,
     order_edges: Vec<(String, String)>,
-    execution_order: Vec<usize>,
+    execution_plan: Vec<CompiledNode>,
+    compiled_textures: Vec<CompiledTexture>,
     dirty: bool,
-    intermediate_textures: HashMap<String, Arc<GpuTexture>>,
 }
 
 impl RenderGraph {
@@ -22,9 +35,9 @@ impl RenderGraph {
         Self {
             nodes: Vec::new(),
             order_edges: Vec::new(),
-            execution_order: Vec::new(),
+            execution_plan: Vec::new(),
+            compiled_textures: Vec::new(),
             dirty: true,
-            intermediate_textures: HashMap::new(),
         }
     }
 
@@ -37,23 +50,27 @@ impl RenderGraph {
         width: u32,
         height: u32,
     ) {
-        node.build(BuildContext { device, queue, format, width, height });
+        node.build(BuildContext {
+            device,
+            queue,
+            format,
+            width,
+            height,
+        });
         self.nodes.push(Box::new(node));
         self.dirty = true;
     }
 
     pub fn remove_node(&mut self, name: &str) {
-        if let Some(pos) = self.nodes.iter().position(|n| n.name() == name) {
-            let node = self.nodes.remove(pos);
-            if let Some(out) = node.output() {
-                self.intermediate_textures.remove(out);
-            }
+        if let Some(position) = self.nodes.iter().position(|node| node.name() == name) {
+            self.nodes.remove(position);
         }
         self.dirty = true;
     }
 
     pub fn add_order_edge(&mut self, before: &str, after: &str) {
-        self.order_edges.push((before.to_string(), after.to_string()));
+        self.order_edges
+            .push((before.to_string(), after.to_string()));
         self.dirty = true;
     }
 
@@ -62,11 +79,14 @@ impl RenderGraph {
     }
 
     pub fn has_node(&self, name: &str) -> bool {
-        self.nodes.iter().any(|n| n.name() == name)
+        self.nodes.iter().any(|node| node.name() == name)
     }
 
     pub fn pass_mut(&mut self, name: &str) -> Option<&mut PassNode> {
-        self.nodes.iter_mut().find(|node| node.name() == name)?.pass_mut()
+        self.nodes
+            .iter_mut()
+            .find(|node| node.name() == name)?
+            .pass_mut()
     }
 
     pub fn post_process_mut(&mut self, name: &str) -> Option<&mut PostProcessNode> {
@@ -83,80 +103,151 @@ impl RenderGraph {
         width: u32,
         height: u32,
     ) {
-        self.intermediate_textures.clear();
+        self.execution_plan.clear();
+        self.compiled_textures.clear();
+        self.dirty = true;
         for node in &mut self.nodes {
             node.on_resize(device, queue, width, height);
         }
     }
 
-    fn compile(&mut self) {
-        let n = self.nodes.len();
-
-        let output_map: HashMap<String, usize> = self
+    fn compile(
+        &mut self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+    ) {
+        let node_count = self.nodes.len();
+        let name_map: HashMap<&str, usize> = self
             .nodes
             .iter()
             .enumerate()
-            .filter_map(|(i, node)| node.output().map(|out| (out.to_string(), i)))
+            .map(|(index, node)| (node.name(), index))
             .collect();
-
-        let name_map: HashMap<String, usize> = self
+        let output_nodes: HashMap<&str, usize> = self
             .nodes
             .iter()
             .enumerate()
-            .map(|(i, node)| (node.name().to_string(), i))
+            .filter_map(|(index, node)| node.output().map(|output| (output, index)))
             .collect();
 
-        let mut edges: HashSet<(usize, usize)> = HashSet::new();
-
-        for (i, node) in self.nodes.iter().enumerate() {
+        let mut edges = HashSet::new();
+        for (index, node) in self.nodes.iter().enumerate() {
             for input in node.inputs() {
-                if let Some(&producer) = output_map.get(input) {
-                    edges.insert((producer, i));
+                if let Some(&producer) = output_nodes.get(input.as_str()) {
+                    edges.insert((producer, index));
                 }
             }
-            if let Some(rt) = node.render_target() {
-                if let Some(&producer) = output_map.get(rt) {
-                    edges.insert((producer, i));
+            if let Some(target) = node.render_target() {
+                if let Some(&producer) = output_nodes.get(target) {
+                    edges.insert((producer, index));
                 }
             }
-            for before in node.run_after() {
-                if let Some(&b) = name_map.get(before) {
-                    edges.insert((b, i));
+            for dependency in node.run_after() {
+                if let Some(&producer) = name_map.get(dependency.as_str()) {
+                    edges.insert((producer, index));
                 }
             }
         }
-
         for (before, after) in &self.order_edges {
-            if let (Some(&b), Some(&a)) = (name_map.get(before), name_map.get(after)) {
-                edges.insert((b, a));
+            if let (Some(&before), Some(&after)) =
+                (name_map.get(before.as_str()), name_map.get(after.as_str()))
+            {
+                edges.insert((before, after));
             }
         }
 
-        let mut in_degree = vec![0usize; n];
-        let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
-        for (from, to) in &edges {
-            adj[*from].push(*to);
-            in_degree[*to] += 1;
+        let mut in_degree = vec![0usize; node_count];
+        let mut adjacency = vec![Vec::new(); node_count];
+        for &(from, to) in &edges {
+            adjacency[from].push(to);
+            in_degree[to] += 1;
         }
 
-        let mut queue: VecDeque<usize> =
-            (0..n).filter(|&i| in_degree[i] == 0).collect();
-        let mut order = Vec::with_capacity(n);
-        while let Some(i) = queue.pop_front() {
-            order.push(i);
-            for &dep in &adj[i] {
-                in_degree[dep] -= 1;
-                if in_degree[dep] == 0 {
-                    queue.push_back(dep);
+        let mut queue: VecDeque<_> = (0..node_count)
+            .filter(|&index| in_degree[index] == 0)
+            .collect();
+        let mut execution_order = Vec::with_capacity(node_count);
+        while let Some(index) = queue.pop_front() {
+            execution_order.push(index);
+            for &dependent in &adjacency[index] {
+                in_degree[dependent] -= 1;
+                if in_degree[dependent] == 0 {
+                    queue.push_back(dependent);
                 }
             }
         }
-
-        if order.len() != n {
+        if execution_order.len() != node_count {
             comet_log::fatal!("Render graph contains a cycle");
         }
 
-        self.execution_order = order;
+        let mut previous_textures = std::mem::take(&mut self.compiled_textures);
+        let mut compiled_textures = Vec::new();
+        let mut texture_slots = HashMap::new();
+        for node in &self.nodes {
+            let Some(output) = node.output() else {
+                continue;
+            };
+            if texture_slots.contains_key(output) {
+                continue;
+            }
+            let output_format = node.output_format().unwrap_or(format);
+            let texture = previous_textures
+                .iter()
+                .position(|entry| {
+                    entry.name == output
+                        && entry.texture.size.width == width
+                        && entry.texture.size.height == height
+                        && entry.texture.texture.format() == output_format
+                })
+                .map(|position| previous_textures.swap_remove(position).texture)
+                .unwrap_or_else(|| {
+                    Arc::new(GpuTexture::create_2d_texture(
+                        device,
+                        width,
+                        height,
+                        output_format,
+                        wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        wgpu::FilterMode::Linear,
+                        Some(output),
+                    ))
+                });
+            let slot = compiled_textures.len();
+            texture_slots.insert(output.to_string(), slot);
+            compiled_textures.push(CompiledTexture {
+                name: output.to_string(),
+                texture,
+            });
+        }
+
+        let execution_plan = execution_order
+            .into_iter()
+            .map(|node_index| {
+                let node = &self.nodes[node_index];
+                let inputs = node
+                    .inputs()
+                    .iter()
+                    .filter_map(|input| texture_slots.get(input).copied())
+                    .map(|slot| compiled_textures[slot].texture.clone())
+                    .collect();
+                let target_name = node.render_target().or_else(|| node.output());
+                let target = target_name
+                    .and_then(|name| texture_slots.get(name).copied())
+                    .map(|slot| compiled_textures[slot].texture.clone());
+                CompiledNode {
+                    node_index,
+                    inputs,
+                    target,
+                    load: node.load_op(),
+                    pass_label: format!("{} Pass", node.name()),
+                }
+            })
+            .collect();
+
+        self.compiled_textures = compiled_textures;
+        self.execution_plan = execution_plan;
         self.dirty = false;
     }
 
@@ -171,98 +262,47 @@ impl RenderGraph {
         height: u32,
     ) {
         if self.dirty {
-            self.compile();
+            self.compile(device, format, width, height);
         }
 
-        for node in &self.nodes {
-            if let Some(output_name) = node.output() {
-                if !self.intermediate_textures.contains_key(output_name) {
-                    let fmt = node.output_format().unwrap_or(format);
-                    let tex = GpuTexture::create_2d_texture(
-                        device,
-                        width,
-                        height,
-                        fmt,
-                        wgpu::TextureUsages::RENDER_ATTACHMENT
-                            | wgpu::TextureUsages::TEXTURE_BINDING,
-                        wgpu::FilterMode::Linear,
-                        Some(output_name),
-                    );
-                    self.intermediate_textures
-                        .insert(output_name.to_string(), Arc::new(tex));
-                }
-            }
-        }
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Graph Encoder"),
+        });
 
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Graph Encoder"),
-            });
-
-        let order = self.execution_order.clone();
-        for node_idx in order {
-            let input_names: Vec<String> = self.nodes[node_idx]
-                .inputs()
-                .into_iter()
-                .map(|s| s.to_string())
-                .collect();
-            let rt_name: Option<String> =
-                self.nodes[node_idx].render_target().map(|s| s.to_string());
-            let output_name: Option<String> =
-                self.nodes[node_idx].output().map(|s| s.to_string());
-            let load = self.nodes[node_idx].load_op();
-
-            let input_textures: Vec<Arc<GpuTexture>> = input_names
-                .iter()
-                .filter_map(|name| self.intermediate_textures.get(name.as_str()).cloned())
-                .collect();
-
-            let target_tex: Option<Arc<GpuTexture>> = rt_name
-                .as_deref()
-                .or(output_name.as_deref())
-                .and_then(|name| self.intermediate_textures.get(name).cloned());
-
-            let load_op = match load {
+        for compiled in &self.execution_plan {
+            let load = match compiled.load {
                 LoadOp::Background => wgpu::LoadOp::Clear(clear_color),
-                LoadOp::Color(c) => wgpu::LoadOp::Clear(c),
+                LoadOp::Color(color) => wgpu::LoadOp::Clear(color),
                 LoadOp::Load => wgpu::LoadOp::Load,
             };
-
-            {
-                let view = target_tex
-                    .as_ref()
-                    .map(|t| &t.view)
-                    .unwrap_or(surface_view);
-
-                let mut rpass =
-                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some(&format!(
-                            "{} Pass",
-                            self.nodes[node_idx].name()
-                        )),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: load_op,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        occlusion_query_set: None,
-                        timestamp_writes: None,
-                    });
-
-                let state = NodeState {
-                    device,
-                    queue,
-                    inputs: &input_textures,
-                    width,
-                    height,
-                };
-
-                self.nodes[node_idx].run(&mut rpass, &state);
-            }
+            let view = compiled
+                .target
+                .as_ref()
+                .map(|texture| &texture.view)
+                .unwrap_or(surface_view);
+            let color_attachment = Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load,
+                    store: wgpu::StoreOp::Store,
+                },
+            });
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some(&compiled.pass_label),
+                color_attachments: &[color_attachment],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            let state = NodeState {
+                device,
+                queue,
+                inputs: &compiled.inputs,
+                width,
+                height,
+            };
+            self.nodes[compiled.node_index].run(&mut render_pass, &state);
         }
 
         queue.submit(std::iter::once(encoder.finish()));

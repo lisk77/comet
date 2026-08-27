@@ -155,8 +155,8 @@ impl RenderNode for PassNode {
         &self.name
     }
 
-    fn run_after(&self) -> Vec<&str> {
-        self.run_after.iter().map(|s| s.as_str()).collect()
+    fn run_after(&self) -> &[String] {
+        &self.run_after
     }
 
     fn load_op(&self) -> LoadOp {

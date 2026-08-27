@@ -21,11 +21,11 @@ pub struct NodeState<'a> {
 
 pub trait RenderNode: Send + Sync + 'static {
     fn name(&self) -> &str;
-    fn inputs(&self) -> Vec<&str> { vec![] }
+    fn inputs(&self) -> &[String] { &[] }
     fn output(&self) -> Option<&str> { None }
     fn render_target(&self) -> Option<&str> { None }
     fn output_format(&self) -> Option<wgpu::TextureFormat> { None }
-    fn run_after(&self) -> Vec<&str> { vec![] }
+    fn run_after(&self) -> &[String] { &[] }
     fn load_op(&self) -> LoadOp;
 
     fn build(&mut self, ctx: BuildContext<'_>);

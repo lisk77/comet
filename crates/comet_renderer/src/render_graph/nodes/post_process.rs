@@ -107,8 +107,8 @@ impl PostProcessNode {
 impl RenderNode for PostProcessNode {
     fn name(&self) -> &str { &self.label }
 
-    fn inputs(&self) -> Vec<&str> {
-        self.declared_inputs.iter().map(|s| s.as_str()).collect()
+    fn inputs(&self) -> &[String] {
+        &self.declared_inputs
     }
 
     fn output(&self) -> Option<&str> {
