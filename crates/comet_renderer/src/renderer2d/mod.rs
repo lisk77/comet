@@ -45,6 +45,12 @@ enum GlyphRepresentation {
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
+struct FontVariantKey {
+    font: FontKey,
+    representation: GlyphRepresentation,
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 struct GlyphKey {
     font: FontKey,
     character: char,
@@ -61,8 +67,12 @@ pub struct Renderer2D {
     last_frame_time: std::time::Instant,
     delta_time: f32,
     event_sender: flume::Sender<Renderer2DEvent>,
-    font_cache: std::collections::HashMap<FontKey, f32>,
+    font_cache: std::collections::HashMap<FontVariantKey, f32>,
     glyph_cache: std::collections::HashMap<GlyphKey, TextureRegion>,
+    font_job_sender: flume::Sender<text::FontVariantJob>,
+    font_result_receiver: flume::Receiver<text::FontVariantResult>,
+    pending_font_variants: std::collections::HashSet<FontVariantKey>,
+    failed_font_variants: std::collections::HashSet<FontVariantKey>,
     sprite_instances: Vec<SpriteInstance>,
     world_text_vertices: Vec<Vertex>,
     world_text_indices: Vec<u16>,

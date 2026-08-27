@@ -9,6 +9,7 @@ impl Renderer for Renderer2D {
         event_sender: flume::Sender<Renderer2DEvent>,
     ) -> Self {
         let asset_provider = comet_assets::AssetProvider::new(comet_assets::AssetManager::new());
+        let (font_job_sender, font_result_receiver) = super::text::start_font_variant_worker();
         Self {
             render_state: RenderState::new(window, clear_color),
             asset_provider,
@@ -18,6 +19,10 @@ impl Renderer for Renderer2D {
             event_sender,
             font_cache: std::collections::HashMap::new(),
             glyph_cache: std::collections::HashMap::new(),
+            font_job_sender,
+            font_result_receiver,
+            pending_font_variants: std::collections::HashSet::new(),
+            failed_font_variants: std::collections::HashSet::new(),
             sprite_instances: Vec::new(),
             world_text_vertices: Vec::new(),
             world_text_indices: Vec::new(),

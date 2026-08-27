@@ -9,6 +9,46 @@ struct ResolvedGlyph {
 }
 const BITMAP_TEXT_THRESHOLD: f32 = 18.0;
 const FONT_ATLAS_SIZE: u32 = 1024;
+const FONT_JOB_QUEUE_CAPACITY: usize = 8;
+
+pub(super) struct FontVariantJob {
+    key: FontVariantKey,
+    font: comet_assets::Font,
+}
+
+pub(super) struct FontVariantResult {
+    key: FontVariantKey,
+    rasterized: Option<(Vec<comet_assets::GlyphData>, f32)>,
+}
+
+pub(super) fn start_font_variant_worker() -> (
+    flume::Sender<FontVariantJob>,
+    flume::Receiver<FontVariantResult>,
+) {
+    let (job_sender, job_receiver) = flume::bounded::<FontVariantJob>(FONT_JOB_QUEUE_CAPACITY);
+    let (result_sender, result_receiver) = flume::unbounded::<FontVariantResult>();
+    std::thread::Builder::new()
+        .name("comet-font-generator".to_string())
+        .spawn(move || {
+            while let Ok(job) = job_receiver.recv() {
+                let size = comet_math::px(f32::from_bits(job.key.font.size_bits));
+                let rasterized = job
+                    .font
+                    .rasterize_mtsdf(size, job.font.settings().mtsdf_range());
+                if result_sender
+                    .send(FontVariantResult {
+                        key: job.key,
+                        rasterized,
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .expect("failed to start font generation worker");
+    (job_sender, result_receiver)
+}
 
 impl Renderer2D {
     fn ensure_font_atlas(&mut self) -> bool {
@@ -120,16 +160,34 @@ impl Renderer2D {
         )
     }
 
+    fn process_font_variant_results(&mut self) {
+        let results: Vec<_> = self.font_result_receiver.try_iter().collect();
+        for result in results {
+            self.pending_font_variants.remove(&result.key);
+            let Some((glyphs, line_height)) = result.rasterized else {
+                self.failed_font_variants.insert(result.key);
+                error!("Failed to generate an MTSDF font variant");
+                continue;
+            };
+            self.install_font_variant(result.key, glyphs, line_height);
+        }
+    }
+
     fn ensure_font_variant(
         &mut self,
         font: comet_assets::Asset<comet_assets::Font>,
         font_key: FontKey,
         representation: GlyphRepresentation,
     ) -> bool {
-        if self.font_cache.contains_key(&font_key) {
+        self.process_font_variant_results();
+        let variant_key = FontVariantKey {
+            font: font_key,
+            representation,
+        };
+        if self.font_cache.contains_key(&variant_key) {
             return true;
         }
-        if !self.ensure_font_atlas() {
+        if self.failed_font_variants.contains(&variant_key) || !self.ensure_font_atlas() {
             return false;
         }
 
@@ -138,26 +196,53 @@ impl Renderer2D {
             error!("Font handle {:?} is unavailable", font);
             return false;
         };
-        let rasterized = match representation {
-            GlyphRepresentation::Bitmap | GlyphRepresentation::Pixel => font_data.rasterize(size),
-            GlyphRepresentation::Mtsdf => {
-                font_data.rasterize_mtsdf(size, font_data.settings().mtsdf_range())
+        if representation == GlyphRepresentation::Mtsdf {
+            if self.pending_font_variants.contains(&variant_key) {
+                return false;
             }
-        };
-        let Some((mut glyphs, line_height)) = rasterized else {
+            match self.font_job_sender.try_send(FontVariantJob {
+                key: variant_key,
+                font: font_data,
+            }) {
+                Ok(()) => {
+                    self.pending_font_variants.insert(variant_key);
+                }
+                Err(flume::TrySendError::Full(_)) => {}
+                Err(flume::TrySendError::Disconnected(_)) => {
+                    self.failed_font_variants.insert(variant_key);
+                    error!("Font generation worker disconnected");
+                }
+            }
+            return false;
+        }
+
+        let Some((glyphs, line_height)) = font_data.rasterize(size) else {
             return false;
         };
+        self.install_font_variant(variant_key, glyphs, line_height)
+    }
+
+    fn install_font_variant(
+        &mut self,
+        variant_key: FontVariantKey,
+        mut glyphs: Vec<comet_assets::GlyphData>,
+        line_height: f32,
+    ) -> bool {
         glyphs.sort_by_key(|glyph| {
             std::cmp::Reverse((
                 glyph.render.width().max(glyph.render.height()),
                 glyph.render.width() * glyph.render.height(),
             ))
         });
-        let atlas_handle = self
+        let Some(atlas_handle) = self
             .render_state
             .resources()
             .get_asset_atlas_handle("font_atlas")
-            .unwrap();
+        else {
+            return false;
+        };
+        let font_key = variant_key.font;
+        let representation = variant_key.representation;
 
         for glyph in glyphs {
             let Some(character) = glyph.name.chars().next() else {
@@ -214,7 +299,7 @@ impl Renderer2D {
             }
             self.glyph_cache.insert(key, region);
         }
-        self.font_cache.insert(font_key, line_height);
+        self.font_cache.insert(variant_key, line_height);
         true
     }
     fn get_glyph(
@@ -287,13 +372,34 @@ impl Renderer2D {
         vertex_data: &mut Vec<Vertex>,
         index_data: &mut Vec<u16>,
     ) {
-        let (cache_key, representation, variant_scale, distance_range) =
+        let (mut cache_key, mut representation, mut variant_scale, mut distance_range) =
             self.font_variant(font, raster_size);
-        self.ensure_font_variant(font, cache_key, representation);
+        if !self.ensure_font_variant(font, cache_key, representation) {
+            if representation != GlyphRepresentation::Mtsdf {
+                return;
+            }
+            let requested = raster_size.pixels().max(1.0);
+            let fallback_size = requested.round().max(1.0);
+            cache_key = FontKey {
+                index: font.index(),
+                generation: font.generation(),
+                size_bits: fallback_size.to_bits(),
+            };
+            representation = GlyphRepresentation::Bitmap;
+            variant_scale = requested / fallback_size;
+            distance_range = 0.0;
+            if !self.ensure_font_variant(font, cache_key, representation) {
+                return;
+            }
+        }
         let generation_size = f32::from_bits(cache_key.size_bits);
+        let variant_key = FontVariantKey {
+            font: cache_key,
+            representation,
+        };
         let line_height_px = self
             .font_cache
-            .get(&cache_key)
+            .get(&variant_key)
             .copied()
             .unwrap_or(generation_size);
         let glyph_scale = geometry_scale * variant_scale;
