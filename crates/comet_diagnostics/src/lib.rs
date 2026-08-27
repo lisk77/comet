@@ -98,7 +98,8 @@ impl Diagnostics {
 fn start_jsonl_writer(path: &PathBuf) -> Option<mpsc::SyncSender<Record>> {
     let file = OpenOptions::new()
         .create(true)
-        .append(true)
+        .write(true)
+        .truncate(true)
         .open(path)
         .ok()?;
     let (sender, receiver) = mpsc::sync_channel::<Record>(CHANNEL_CAPACITY);
