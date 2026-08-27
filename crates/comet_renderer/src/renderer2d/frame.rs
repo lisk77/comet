@@ -42,7 +42,7 @@ impl Renderer2D {
         let (world_view, screen_view) = self.resolve_camera_views(camera);
         draws.sort_by_key(|draw| draw.draw_index);
 
-        let mut sprite_instances = std::mem::take(&mut self.sprite_instances);
+        let mut sprite_instances = std::mem::take(&mut self.sprite_instance_staging);
         sprite_instances.clear();
         sprite_instances.reserve(draws.len());
         for draw in draws {
@@ -64,34 +64,42 @@ impl Renderer2D {
             ));
         }
 
+        let sprite_instances_changed = sprite_instances != self.sprite_instances;
         let device = self.render_state.device();
         let queue = self.render_state.queue();
 
-        if let Some(node) = self.graph.pass_mut("Universal") {
-            let instance_count = sprite_instances.len() as u32;
-            let update_result = node
-                .write_vertex_stream(1, &sprite_instances, device, queue)
-                .and_then(|()| {
-                    node.set_draw_command(DrawCommand::Indexed {
-                        indices: 0..6,
-                        base_vertex: 0,
-                        instances: 0..instance_count,
-                    })
-                });
-            if let Err(error) = update_result {
-                error!("Failed to update sprite draw batch: {}", error);
-            } else {
-                #[cfg(feature = "diagnostics")]
-                {
-                    self.frame_diagnostics.uploaded_bytes +=
-                        std::mem::size_of_val(sprite_instances.as_slice()) as u64;
+        if sprite_instances_changed {
+            if let Some(node) = self.graph.pass_mut("Universal") {
+                let instance_count = sprite_instances.len() as u32;
+                let update_result = node
+                    .write_vertex_stream(1, &sprite_instances, device, queue)
+                    .and_then(|()| {
+                        node.set_draw_command(DrawCommand::Indexed {
+                            indices: 0..6,
+                            base_vertex: 0,
+                            instances: 0..instance_count,
+                        })
+                    });
+                if let Err(error) = update_result {
+                    error!("Failed to update sprite draw batch: {}", error);
+                } else {
+                    #[cfg(feature = "diagnostics")]
+                    {
+                        self.frame_diagnostics.uploaded_bytes +=
+                            std::mem::size_of_val(sprite_instances.as_slice()) as u64;
+                    }
                 }
             }
         }
-        self.sprite_instances = sprite_instances;
+        if sprite_instances_changed {
+            self.sprite_instance_staging =
+                std::mem::replace(&mut self.sprite_instances, sprite_instances);
+        } else {
+            self.sprite_instance_staging = sprite_instances;
+        }
 
-        let mut font_vertex_buffer = std::mem::take(&mut self.world_text_vertices);
-        let mut font_index_buffer = std::mem::take(&mut self.world_text_indices);
+        let mut font_vertex_buffer = std::mem::take(&mut self.world_text_staging_vertices);
+        let mut font_index_buffer = std::mem::take(&mut self.world_text_staging_indices);
         font_vertex_buffer.clear();
         font_index_buffer.clear();
 
@@ -146,11 +154,18 @@ impl Renderer2D {
                 }
             }
         }
-        self.world_text_vertices = font_vertex_buffer;
-        self.world_text_indices = font_index_buffer;
+        if world_text_changed {
+            self.world_text_staging_vertices =
+                std::mem::replace(&mut self.world_text_vertices, font_vertex_buffer);
+            self.world_text_staging_indices =
+                std::mem::replace(&mut self.world_text_indices, font_index_buffer);
+        } else {
+            self.world_text_staging_vertices = font_vertex_buffer;
+            self.world_text_staging_indices = font_index_buffer;
+        }
 
-        let mut screen_font_vertex_buffer = std::mem::take(&mut self.screen_text_vertices);
-        let mut screen_font_index_buffer = std::mem::take(&mut self.screen_text_indices);
+        let mut screen_font_vertex_buffer = std::mem::take(&mut self.screen_text_staging_vertices);
+        let mut screen_font_index_buffer = std::mem::take(&mut self.screen_text_staging_indices);
         screen_font_vertex_buffer.clear();
         screen_font_index_buffer.clear();
         let screen_size = screen_view.visible_world_size;
@@ -196,39 +211,50 @@ impl Renderer2D {
             );
         }
 
+        let screen_text_changed = screen_font_vertex_buffer != self.screen_text_vertices
+            || screen_font_index_buffer != self.screen_text_indices;
         let screen_camera = RenderCamera::new(screen_size, v3::ZERO);
         let mut screen_uniform = CameraUniform::new();
         screen_uniform.update_view_proj(&screen_camera);
         let device = self.render_state.device();
         let queue = self.render_state.queue();
         if let Some(node) = self.graph.pass_mut("ScreenFont") {
-            if let Err(error) = node.set_geometry(
-                &screen_font_vertex_buffer,
-                &screen_font_index_buffer,
-                device,
-                queue,
-            ) {
-                error!("Failed to update screen font draw batch: {}", error);
-            } else {
-                #[cfg(feature = "diagnostics")]
-                {
-                    self.frame_diagnostics.uploaded_bytes +=
-                        (std::mem::size_of_val(screen_font_vertex_buffer.as_slice())
-                            + std::mem::size_of_val(screen_font_index_buffer.as_slice()))
-                            as u64;
+            if screen_text_changed {
+                if let Err(error) = node.set_geometry(
+                    &screen_font_vertex_buffer,
+                    &screen_font_index_buffer,
+                    device,
+                    queue,
+                ) {
+                    error!("Failed to update screen font draw batch: {}", error);
+                } else {
+                    #[cfg(feature = "diagnostics")]
+                    {
+                        self.frame_diagnostics.uploaded_bytes +=
+                            (std::mem::size_of_val(screen_font_vertex_buffer.as_slice())
+                                + std::mem::size_of_val(screen_font_index_buffer.as_slice()))
+                                as u64;
+                    }
                 }
             }
             node.set_camera(&screen_uniform, queue);
             node.set_viewport(Some(screen_view.viewport));
         }
-        self.screen_text_vertices = screen_font_vertex_buffer;
-        self.screen_text_indices = screen_font_index_buffer;
+        if screen_text_changed {
+            self.screen_text_staging_vertices =
+                std::mem::replace(&mut self.screen_text_vertices, screen_font_vertex_buffer);
+            self.screen_text_staging_indices =
+                std::mem::replace(&mut self.screen_text_indices, screen_font_index_buffer);
+        } else {
+            self.screen_text_staging_vertices = screen_font_vertex_buffer;
+            self.screen_text_staging_indices = screen_font_index_buffer;
+        }
 
         // Text processing lazily creates the Font pass, so apply camera uniforms afterward.
         self.apply_camera_view(camera, world_view);
 
-        let mut gizmo_verts = std::mem::take(&mut self.gizmo_vertices);
-        let mut gizmo_indices = std::mem::take(&mut self.gizmo_indices);
+        let mut gizmo_verts = std::mem::take(&mut self.gizmo_staging_vertices);
+        let mut gizmo_indices = std::mem::take(&mut self.gizmo_staging_indices);
         gizmo_verts.clear();
         gizmo_indices.clear();
 
@@ -312,24 +338,33 @@ impl Renderer2D {
             }
         }
 
+        let gizmos_changed =
+            gizmo_verts != self.gizmo_vertices || gizmo_indices != self.gizmo_indices;
         let device = self.render_state.device();
         let queue = self.render_state.queue();
 
-        if let Some(node) = self.graph.pass_mut("Gizmo") {
-            if let Err(error) = node.set_geometry(&gizmo_verts, &gizmo_indices, device, queue) {
-                error!("Failed to update gizmo draw batch: {}", error);
-            } else {
-                #[cfg(feature = "diagnostics")]
-                {
-                    self.frame_diagnostics.uploaded_bytes +=
-                        (std::mem::size_of_val(gizmo_verts.as_slice())
-                            + std::mem::size_of_val(gizmo_indices.as_slice()))
-                            as u64;
+        if gizmos_changed {
+            if let Some(node) = self.graph.pass_mut("Gizmo") {
+                if let Err(error) = node.set_geometry(&gizmo_verts, &gizmo_indices, device, queue) {
+                    error!("Failed to update gizmo draw batch: {}", error);
+                } else {
+                    #[cfg(feature = "diagnostics")]
+                    {
+                        self.frame_diagnostics.uploaded_bytes +=
+                            (std::mem::size_of_val(gizmo_verts.as_slice())
+                                + std::mem::size_of_val(gizmo_indices.as_slice()))
+                                as u64;
+                    }
                 }
             }
         }
-        self.gizmo_vertices = gizmo_verts;
-        self.gizmo_indices = gizmo_indices;
+        if gizmos_changed {
+            self.gizmo_staging_vertices = std::mem::replace(&mut self.gizmo_vertices, gizmo_verts);
+            self.gizmo_staging_indices = std::mem::replace(&mut self.gizmo_indices, gizmo_indices);
+        } else {
+            self.gizmo_staging_vertices = gizmo_verts;
+            self.gizmo_staging_indices = gizmo_indices;
+        }
 
         #[cfg(feature = "diagnostics")]
         {

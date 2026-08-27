@@ -7,6 +7,8 @@ const SNAPSHOT_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug, Default, Serialize)]
 pub struct Renderer2DDiagnostics {
     pub cpu_frame_time_ms: f64,
+    pub surface_wait_time_ms: f64,
+    pub cpu_render_work_time_ms: f64,
     pub passes: u32,
     pub draw_calls: u32,
     pub sprite_instances: u32,

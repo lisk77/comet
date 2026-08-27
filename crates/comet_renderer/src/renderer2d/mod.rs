@@ -78,12 +78,19 @@ pub struct Renderer2D {
     pending_font_variants: std::collections::HashSet<FontVariantKey>,
     failed_font_variants: std::collections::HashSet<FontVariantKey>,
     sprite_instances: Vec<SpriteInstance>,
+    sprite_instance_staging: Vec<SpriteInstance>,
     world_text_vertices: Vec<Vertex>,
     world_text_indices: Vec<u16>,
+    world_text_staging_vertices: Vec<Vertex>,
+    world_text_staging_indices: Vec<u16>,
     screen_text_vertices: Vec<Vertex>,
     screen_text_indices: Vec<u16>,
+    screen_text_staging_vertices: Vec<Vertex>,
+    screen_text_staging_indices: Vec<u16>,
     gizmo_vertices: Vec<Vertex>,
     gizmo_indices: Vec<u16>,
+    gizmo_staging_vertices: Vec<Vertex>,
+    gizmo_staging_indices: Vec<u16>,
 }
 
 #[cfg(feature = "diagnostics")]

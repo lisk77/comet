@@ -28,12 +28,19 @@ impl Renderer for Renderer2D {
             pending_font_variants: std::collections::HashSet::new(),
             failed_font_variants: std::collections::HashSet::new(),
             sprite_instances: Vec::new(),
+            sprite_instance_staging: Vec::new(),
             world_text_vertices: Vec::new(),
             world_text_indices: Vec::new(),
+            world_text_staging_vertices: Vec::new(),
+            world_text_staging_indices: Vec::new(),
             screen_text_vertices: Vec::new(),
             screen_text_indices: Vec::new(),
+            screen_text_staging_vertices: Vec::new(),
+            screen_text_staging_indices: Vec::new(),
             gizmo_vertices: Vec::new(),
             gizmo_indices: Vec::new(),
+            gizmo_staging_vertices: Vec::new(),
+            gizmo_staging_indices: Vec::new(),
         }
     }
 
@@ -188,6 +195,8 @@ impl Renderer for Renderer2D {
         #[cfg(feature = "diagnostics")]
         let frame_started = std::time::Instant::now();
         let output = self.render_state.surface().get_current_texture()?;
+        #[cfg(feature = "diagnostics")]
+        let surface_wait_time = frame_started.elapsed();
         let output_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -211,9 +220,19 @@ impl Renderer for Renderer2D {
 
         #[cfg(feature = "diagnostics")]
         if let Some(diagnostics) = &mut self.diagnostics {
-            let cpu_frame_time_ms = frame_started.elapsed().as_secs_f64() * 1000.0;
+            let cpu_frame_time = frame_started.elapsed();
+            let cpu_frame_time_ms = cpu_frame_time.as_secs_f64() * 1000.0;
+            let surface_wait_time_ms = surface_wait_time.as_secs_f64() * 1000.0;
+            let cpu_render_work_time_ms = cpu_frame_time
+                .saturating_sub(surface_wait_time)
+                .as_secs_f64()
+                * 1000.0;
             self.frame_diagnostics.cpu_frame_time_ms =
                 (cpu_frame_time_ms * 1000.0).round() / 1000.0;
+            self.frame_diagnostics.surface_wait_time_ms =
+                (surface_wait_time_ms * 1000.0).round() / 1000.0;
+            self.frame_diagnostics.cpu_render_work_time_ms =
+                (cpu_render_work_time_ms * 1000.0).round() / 1000.0;
             self.frame_diagnostics.passes = self.graph.node_count() as u32;
             self.frame_diagnostics.draw_calls = self.frame_diagnostics.passes;
             self.frame_diagnostics.pending_font_jobs = self.pending_font_variants.len() as u32;
