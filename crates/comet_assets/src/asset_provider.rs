@@ -324,6 +324,9 @@ impl AssetProvider {
             Ok(e) => e,
             Err(e) => { comet_log::error!("{}", e); return; }
         };
+        if let Ok(mut manager) = self.inner.write() {
+            manager.record_path::<T>(handle.index(), handle.generation(), path);
+        }
         if let Ok(mut map) = self.reload_map.write() {
             map.insert(resolved.clone(), ReloadEntry {
                 original_path: path.to_string(),

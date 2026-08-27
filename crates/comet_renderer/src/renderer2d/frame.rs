@@ -10,6 +10,11 @@ impl Renderer2D {
         referenced_handles: Vec<comet_assets::Asset<comet_assets::Image>>,
         gizmo_shapes: Vec<GizmoShape>,
     ) {
+        #[cfg(feature = "diagnostics")]
+        {
+            self.frame_diagnostics.uploaded_bytes = 0;
+        }
+
         if let Some(atlas_handle) = self
             .render_state
             .resources()
@@ -75,6 +80,12 @@ impl Renderer2D {
                 });
             if let Err(error) = update_result {
                 error!("Failed to update sprite draw batch: {}", error);
+            } else {
+                #[cfg(feature = "diagnostics")]
+                {
+                    self.frame_diagnostics.uploaded_bytes +=
+                        std::mem::size_of_val(sprite_instances.as_slice()) as u64;
+                }
             }
         }
         self.sprite_instances = sprite_instances;
@@ -114,7 +125,9 @@ impl Renderer2D {
             );
         }
 
-        {
+        let world_text_changed = font_vertex_buffer != self.world_text_vertices
+            || font_index_buffer != self.world_text_indices;
+        if world_text_changed {
             let device = self.render_state.device();
             let queue = self.render_state.queue();
             if let Some(node) = self.graph.pass_mut("Font") {
@@ -122,6 +135,14 @@ impl Renderer2D {
                     node.set_geometry(&font_vertex_buffer, &font_index_buffer, device, queue)
                 {
                     error!("Failed to update font draw batch: {}", error);
+                } else {
+                    #[cfg(feature = "diagnostics")]
+                    {
+                        self.frame_diagnostics.uploaded_bytes +=
+                            (std::mem::size_of_val(font_vertex_buffer.as_slice())
+                                + std::mem::size_of_val(font_index_buffer.as_slice()))
+                                as u64;
+                    }
                 }
             }
         }
@@ -188,6 +209,14 @@ impl Renderer2D {
                 queue,
             ) {
                 error!("Failed to update screen font draw batch: {}", error);
+            } else {
+                #[cfg(feature = "diagnostics")]
+                {
+                    self.frame_diagnostics.uploaded_bytes +=
+                        (std::mem::size_of_val(screen_font_vertex_buffer.as_slice())
+                            + std::mem::size_of_val(screen_font_index_buffer.as_slice()))
+                            as u64;
+                }
             }
             node.set_camera(&screen_uniform, queue);
             node.set_viewport(Some(screen_view.viewport));
@@ -289,6 +318,14 @@ impl Renderer2D {
         if let Some(node) = self.graph.pass_mut("Gizmo") {
             if let Err(error) = node.set_geometry(&gizmo_verts, &gizmo_indices, device, queue) {
                 error!("Failed to update gizmo draw batch: {}", error);
+            } else {
+                #[cfg(feature = "diagnostics")]
+                {
+                    self.frame_diagnostics.uploaded_bytes +=
+                        (std::mem::size_of_val(gizmo_verts.as_slice())
+                            + std::mem::size_of_val(gizmo_indices.as_slice()))
+                            as u64;
+                }
             }
         }
         self.gizmo_vertices = gizmo_verts;

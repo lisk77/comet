@@ -12,6 +12,7 @@ pub struct Renderer2DDiagnostics {
     pub sprite_instances: u32,
     pub glyphs: u32,
     pub pending_font_jobs: u32,
+    pub uploaded_bytes: u64,
 }
 
 pub(crate) struct Renderer2DDiagnosticsPublisher {

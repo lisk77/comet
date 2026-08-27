@@ -6,6 +6,10 @@ pub struct RenderHandle2D {
     frame_mailbox: FrameMailbox2D,
     last_size: Option<PhysicalSize<u32>>,
     pending_atlas_rebuild: bool,
+    resolved_paths: std::collections::HashMap<
+        AssetPath,
+        (AtlasRef, Option<comet_assets::Asset<comet_assets::Image>>),
+    >,
     pending_frame_times: Vec<f32>,
     gizmo_buffer: GizmoBuffer,
     gizmo_registry: GizmoRegistry,
@@ -17,15 +21,21 @@ impl RenderHandle2D {
         &mut self,
         path: AssetPath,
     ) -> Option<(AtlasRef, Option<comet_assets::Asset<comet_assets::Image>>)> {
+        if let Some(resolved) = self.resolved_paths.get(&path) {
+            return Some(*resolved);
+        }
+
         let _ = self
             .command_sender
-            .send(Renderer2DCommand::ResolveAtlasRef(path));
+            .send(Renderer2DCommand::ResolveAtlasRef(path.clone()));
         self.recv_matching_event(Duration::from_millis(5000), |event| {
             matches!(event, Renderer2DEvent::AtlasRef(..))
         })
         .and_then(|event| match event {
             Renderer2DEvent::AtlasRef(Some(atlas_ref), image_handle) => {
-                Some((atlas_ref, image_handle))
+                let resolved = (atlas_ref, image_handle);
+                self.resolved_paths.insert(path, resolved);
+                Some(resolved)
             }
             _ => None,
         })
@@ -234,6 +244,7 @@ impl RenderHandle2D {
         self.poll_events();
         if self.pending_atlas_rebuild {
             self.pending_atlas_rebuild = false;
+            self.resolved_paths.clear();
             for (_, render) in
                 scene.query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
             {
@@ -428,6 +439,7 @@ impl RenderHandle2D {
             frame_mailbox,
             last_size: None,
             pending_atlas_rebuild: false,
+            resolved_paths: std::collections::HashMap::new(),
             pending_frame_times: Vec::new(),
             gizmo_buffer: GizmoBuffer::new(),
             gizmo_registry: GizmoRegistry::new(),

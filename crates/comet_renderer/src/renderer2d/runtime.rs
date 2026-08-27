@@ -67,6 +67,14 @@ impl Renderer for Renderer2D {
                 let mut dynamic_image_handle: Option<comet_assets::Asset<comet_assets::Image>> =
                     None;
                 let atlas_ref = atlas_ref.or_else(|| {
+                    if let Some(image_handle) = self
+                        .asset_provider
+                        .find_by_path::<comet_assets::Image>(path.clone())
+                    {
+                        dynamic_image_handle = Some(image_handle);
+                        return self.ensure_image_in_atlas(image_handle);
+                    }
+
                     let fs_path = comet_assets::resolve_asset_path(path.as_str());
                     let bytes = std::fs::read(&fs_path).ok()?;
                     let image = comet_assets::Image::from_bytes(&bytes, false).ok()?;
