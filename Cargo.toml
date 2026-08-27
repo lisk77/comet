@@ -6,6 +6,16 @@ authors = ["lisk77 <contact@lisk77.dev>"]
 description = "A games framework"
 repository = "https://github.com/lisk77/comet"
 
+[features]
+default = []
+diagnostics = [
+    "comet_renderer/diagnostics",
+    "comet_ecs/diagnostics",
+    "comet_assets/diagnostics",
+    "comet_audio/diagnostics",
+    "comet_input/diagnostics",
+]
+
 [dependencies]
 comet_app = { workspace = true }
 comet_window = { workspace = true }
@@ -28,6 +38,7 @@ glob = "0.3"
 members = [
     "./crates/comet_app",
     "./crates/comet_colors",
+    "./crates/comet_diagnostics",
     "./crates/comet_math",
     "./crates/comet_renderer",
     "./crates/comet_assets",
@@ -45,6 +56,7 @@ members = [
 [workspace.dependencies]
 comet_app = { path = "./crates/comet_app" }
 comet_colors = { path = "./crates/comet_colors" }
+comet_diagnostics = { path = "./crates/comet_diagnostics" }
 comet_math = { path = "./crates/comet_math" }
 comet_renderer = { path = "./crates/comet_renderer" }
 comet_assets = { path = "./crates/comet_assets" }

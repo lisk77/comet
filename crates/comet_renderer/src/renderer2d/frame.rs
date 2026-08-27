@@ -293,6 +293,13 @@ impl Renderer2D {
         }
         self.gizmo_vertices = gizmo_verts;
         self.gizmo_indices = gizmo_indices;
+
+        #[cfg(feature = "diagnostics")]
+        {
+            self.frame_diagnostics.sprite_instances = self.sprite_instances.len() as u32;
+            self.frame_diagnostics.glyphs =
+                ((self.world_text_indices.len() + self.screen_text_indices.len()) / 6) as u32;
+        }
     }
 
     fn resolve_camera_views(

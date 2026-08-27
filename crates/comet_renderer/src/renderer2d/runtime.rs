@@ -12,6 +12,10 @@ impl Renderer for Renderer2D {
         let (font_job_sender, font_result_receiver) = super::text::start_font_variant_worker();
         Self {
             render_state: RenderState::new(window, clear_color),
+            #[cfg(feature = "diagnostics")]
+            diagnostics: diagnostics::Renderer2DDiagnosticsPublisher::from_env(),
+            #[cfg(feature = "diagnostics")]
+            frame_diagnostics: diagnostics::Renderer2DDiagnostics::default(),
             asset_provider,
             graph: RenderGraph::new(),
             last_frame_time: std::time::Instant::now(),
@@ -173,6 +177,8 @@ impl Renderer for Renderer2D {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        #[cfg(feature = "diagnostics")]
+        let frame_started = std::time::Instant::now();
         let output = self.render_state.surface().get_current_texture()?;
         let output_view = output
             .texture
@@ -194,6 +200,17 @@ impl Renderer for Renderer2D {
         );
 
         output.present();
+
+        #[cfg(feature = "diagnostics")]
+        if let Some(diagnostics) = &mut self.diagnostics {
+            let cpu_frame_time_ms = frame_started.elapsed().as_secs_f64() * 1000.0;
+            self.frame_diagnostics.cpu_frame_time_ms =
+                (cpu_frame_time_ms * 1000.0).round() / 1000.0;
+            self.frame_diagnostics.passes = self.graph.node_count() as u32;
+            self.frame_diagnostics.draw_calls = self.frame_diagnostics.passes;
+            self.frame_diagnostics.pending_font_jobs = self.pending_font_variants.len() as u32;
+            diagnostics.publish(&self.frame_diagnostics);
+        }
 
         Ok(())
     }

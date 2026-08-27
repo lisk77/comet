@@ -62,6 +62,10 @@ type FrameMailbox2D = Arc<Mutex<Option<FramePacket2D>>>;
 
 pub struct Renderer2D {
     render_state: RenderState,
+    #[cfg(feature = "diagnostics")]
+    diagnostics: Option<diagnostics::Renderer2DDiagnosticsPublisher>,
+    #[cfg(feature = "diagnostics")]
+    frame_diagnostics: diagnostics::Renderer2DDiagnostics,
     asset_provider: comet_assets::AssetProvider,
     graph: RenderGraph,
     last_frame_time: std::time::Instant,
@@ -82,6 +86,8 @@ pub struct Renderer2D {
     gizmo_indices: Vec<u16>,
 }
 
+#[cfg(feature = "diagnostics")]
+mod diagnostics;
 mod frame;
 mod handle;
 mod pipeline;

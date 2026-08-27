@@ -3,6 +3,10 @@ name = "comet_assets"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+diagnostics = []
+
 [dependencies]
 comet_app = { workspace = true }
 comet_macros = { workspace = true }
