@@ -66,6 +66,12 @@ pub struct Renderer2D {
     diagnostics: Option<diagnostics::Renderer2DDiagnosticsPublisher>,
     #[cfg(feature = "diagnostics")]
     frame_diagnostics: diagnostics::Renderer2DDiagnostics,
+    #[cfg(feature = "diagnostics")]
+    latest_snapshot_produced_at: Option<Instant>,
+    #[cfg(feature = "diagnostics")]
+    latest_snapshot_sequence: Option<u64>,
+    #[cfg(feature = "diagnostics")]
+    last_rendered_snapshot_sequence: Option<u64>,
     asset_provider: comet_assets::AssetProvider,
     graph: RenderGraph,
     last_frame_time: std::time::Instant,

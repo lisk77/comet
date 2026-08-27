@@ -51,6 +51,12 @@ pub struct ScreenText2D {
 }
 
 pub(crate) struct FramePacket2D {
+    #[cfg(feature = "diagnostics")]
+    pub(crate) sequence: u64,
+    #[cfg(feature = "diagnostics")]
+    pub(crate) produced_at: std::time::Instant,
+    #[cfg(feature = "diagnostics")]
+    pub(crate) replaced_frames: u64,
     pub(crate) camera: CameraPacket2D,
     pub(crate) draws: Vec<Draw2D>,
     pub(crate) texts: Vec<Text2D>,

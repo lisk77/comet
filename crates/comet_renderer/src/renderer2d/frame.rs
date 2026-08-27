@@ -3,6 +3,9 @@ use super::*;
 impl Renderer2D {
     pub fn submit_frame(
         &mut self,
+        #[cfg(feature = "diagnostics")] snapshot_sequence: u64,
+        #[cfg(feature = "diagnostics")] snapshot_produced_at: Instant,
+        #[cfg(feature = "diagnostics")] replaced_snapshots: u64,
         camera: CameraPacket2D,
         mut draws: Vec<Draw2D>,
         texts: Vec<Text2D>,
@@ -12,6 +15,9 @@ impl Renderer2D {
     ) {
         #[cfg(feature = "diagnostics")]
         {
+            self.latest_snapshot_sequence = Some(snapshot_sequence);
+            self.latest_snapshot_produced_at = Some(snapshot_produced_at);
+            self.frame_diagnostics.replaced_snapshots = replaced_snapshots;
             self.frame_diagnostics.uploaded_bytes = 0;
         }
 

@@ -4,6 +4,10 @@ pub struct RenderHandle2D {
     command_sender: flume::Sender<Renderer2DCommand>,
     event_receiver: flume::Receiver<Renderer2DEvent>,
     frame_mailbox: FrameMailbox2D,
+    #[cfg(feature = "diagnostics")]
+    next_snapshot_sequence: u64,
+    #[cfg(feature = "diagnostics")]
+    replaced_snapshots: u64,
     last_size: Option<PhysicalSize<u32>>,
     pending_atlas_rebuild: bool,
     resolved_paths: std::collections::HashMap<
@@ -415,15 +419,38 @@ impl RenderHandle2D {
         self.gizmo_registry.flush(scene, &mut self.gizmo_buffer);
         let gizmo_shapes = std::mem::take(&mut self.gizmo_buffer.shapes);
 
-        let replaced_frame = self.frame_mailbox.lock().unwrap().replace(FramePacket2D {
-            camera: camera_packet,
-            draws,
-            texts,
-            screen_texts,
-            referenced_handles,
-            gizmo_shapes,
-        });
-        drop(replaced_frame);
+        #[cfg(feature = "diagnostics")]
+        {
+            self.next_snapshot_sequence += 1;
+            let mut mailbox = self.frame_mailbox.lock().unwrap();
+            if mailbox.is_some() {
+                self.replaced_snapshots += 1;
+            }
+            *mailbox = Some(FramePacket2D {
+                sequence: self.next_snapshot_sequence,
+                produced_at: Instant::now(),
+                replaced_frames: self.replaced_snapshots,
+                camera: camera_packet,
+                draws,
+                texts,
+                screen_texts,
+                referenced_handles,
+                gizmo_shapes,
+            });
+        }
+
+        #[cfg(not(feature = "diagnostics"))]
+        {
+            let replaced_frame = self.frame_mailbox.lock().unwrap().replace(FramePacket2D {
+                camera: camera_packet,
+                draws,
+                texts,
+                screen_texts,
+                referenced_handles,
+                gizmo_shapes,
+            });
+            drop(replaced_frame);
+        }
     }
 }
 
@@ -437,6 +464,10 @@ impl RenderHandle2D {
             command_sender,
             event_receiver,
             frame_mailbox,
+            #[cfg(feature = "diagnostics")]
+            next_snapshot_sequence: 0,
+            #[cfg(feature = "diagnostics")]
+            replaced_snapshots: 0,
             last_size: None,
             pending_atlas_rebuild: false,
             resolved_paths: std::collections::HashMap::new(),

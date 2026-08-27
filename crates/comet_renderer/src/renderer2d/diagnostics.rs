@@ -15,6 +15,11 @@ pub struct Renderer2DDiagnostics {
     pub glyphs: u32,
     pub pending_font_jobs: u32,
     pub uploaded_bytes: u64,
+    pub presentation_interval_ms: f64,
+    pub snapshot_sequence: u64,
+    pub snapshot_age_ms: f64,
+    pub reused_snapshots: u64,
+    pub replaced_snapshots: u64,
 }
 
 pub(crate) struct Renderer2DDiagnosticsPublisher {

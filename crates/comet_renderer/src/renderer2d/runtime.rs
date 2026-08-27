@@ -16,6 +16,12 @@ impl Renderer for Renderer2D {
             diagnostics: diagnostics::Renderer2DDiagnosticsPublisher::from_env(),
             #[cfg(feature = "diagnostics")]
             frame_diagnostics: diagnostics::Renderer2DDiagnostics::default(),
+            #[cfg(feature = "diagnostics")]
+            latest_snapshot_produced_at: None,
+            #[cfg(feature = "diagnostics")]
+            latest_snapshot_sequence: None,
+            #[cfg(feature = "diagnostics")]
+            last_rendered_snapshot_sequence: None,
             asset_provider,
             graph: RenderGraph::new(),
             last_frame_time: std::time::Instant::now(),
@@ -220,6 +226,20 @@ impl Renderer for Renderer2D {
 
         #[cfg(feature = "diagnostics")]
         if let Some(diagnostics) = &mut self.diagnostics {
+            if let Some(sequence) = self.latest_snapshot_sequence {
+                if self.last_rendered_snapshot_sequence == Some(sequence) {
+                    self.frame_diagnostics.reused_snapshots += 1;
+                }
+                self.last_rendered_snapshot_sequence = Some(sequence);
+                self.frame_diagnostics.snapshot_sequence = sequence;
+            }
+            if let Some(produced_at) = self.latest_snapshot_produced_at {
+                self.frame_diagnostics.snapshot_age_ms =
+                    (produced_at.elapsed().as_secs_f64() * 1_000_000.0).round() / 1000.0;
+            }
+            self.frame_diagnostics.presentation_interval_ms =
+                (self.delta_time as f64 * 1_000_000.0).round() / 1000.0;
+
             let cpu_frame_time = frame_started.elapsed();
             let cpu_frame_time_ms = cpu_frame_time.as_secs_f64() * 1000.0;
             let surface_wait_time_ms = surface_wait_time.as_secs_f64() * 1000.0;
@@ -261,6 +281,12 @@ impl comet_window::ErasedRenderer for ErasedRenderer2D {
         let frame = self.frame_mailbox.lock().unwrap().take();
         if let Some(frame) = frame {
             self.renderer.submit_frame(
+                #[cfg(feature = "diagnostics")]
+                frame.sequence,
+                #[cfg(feature = "diagnostics")]
+                frame.produced_at,
+                #[cfg(feature = "diagnostics")]
+                frame.replaced_frames,
                 frame.camera,
                 frame.draws,
                 frame.texts,
