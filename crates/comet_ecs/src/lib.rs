@@ -1,8 +1,10 @@
 pub use bundles::Bundle;
 pub use comet_math as math;
 pub use component::*;
+pub use component_changes::RemovedComponent;
 pub use component_derive::*;
 pub use component_tuple::ComponentTuple;
+pub use ecs_module::{EcsModule, EcsModuleExt};
 pub use entity::*;
 pub use id::*;
 pub use prefabs::{ErasedComponent, PrefabFactory};
@@ -11,7 +13,6 @@ pub use query::{
 };
 pub use scene::*;
 pub use scene_commands::{SceneCommand, SceneCommands};
-pub use ecs_module::{EcsModule, EcsModuleExt};
 pub use sparse_set::SparseSet;
 
 pub type Tick = u32;
@@ -19,7 +20,9 @@ pub type Tick = u32;
 mod archetypes;
 mod bundles;
 mod component;
+mod component_changes;
 mod component_tuple;
+mod ecs_module;
 mod entity;
 mod id;
 pub mod prefabs;
@@ -28,5 +31,4 @@ mod query_plan_cache;
 mod scene;
 mod scene_commands;
 mod scene_internals;
-mod ecs_module;
 mod sparse_set;

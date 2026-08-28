@@ -113,6 +113,39 @@ fn resolve_archetype_targets(
     resolved
 }
 
+fn resolve_change_filters(
+    scene: &Scene,
+    arch: &crate::archetypes::Archetype,
+    targets: &[Option<QueryTarget>; MAX_QUERY_COMPONENTS],
+    filters: &[(TypeId, Tick)],
+) -> Vec<ResolvedChangeFilter> {
+    filters
+        .iter()
+        .map(|(target_type, since_tick)| {
+            let selected_types = targets
+                .iter()
+                .flatten()
+                .filter(|target| target.target_type == *target_type)
+                .map(|target| target.component_type)
+                .collect::<Vec<_>>();
+            let component_types = if selected_types.is_empty() {
+                scene
+                    .query_targets(*target_type)
+                    .iter()
+                    .filter(|target| arch.column_index(target.component_type).is_some())
+                    .map(|target| target.component_type)
+                    .collect()
+            } else {
+                selected_types
+            };
+            ResolvedChangeFilter {
+                component_types,
+                since_tick: *since_tick,
+            }
+        })
+        .collect()
+}
+
 fn resolved_accesses(
     scene: &Scene,
     components: &[QueryComponent],
@@ -218,6 +251,10 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
 
     for (arch_id, targets) in resolved {
         let arch = scene.archetypes().get(arch_id);
+        let added_since_filters =
+            resolve_change_filters(scene, arch, &targets, &state.added_since_filters);
+        let changed_since_filters =
+            resolve_change_filters(scene, arch, &targets, &state.changed_since_filters);
         let mut columns = [ptr::null_mut(); MAX_QUERY_COMPONENTS];
         let mut component_types = [None; MAX_QUERY_COMPONENTS];
         let mut casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS] =
@@ -242,6 +279,8 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
             casters,
             change_state,
             component_event_tick,
+            added_since_filters,
+            changed_since_filters,
             len: arch.len(),
             row: 0,
         });
@@ -256,12 +295,22 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
 ) -> Vec<QueryAccess> {
     let components = Data::components();
     validate_components(&components);
-    let resolved = resolved_accesses(scene, &components, state);
+    let resolved = resolved_accesses(scene, &components, state)
+        .into_iter()
+        .map(|(arch_id, targets)| {
+            let arch = scene.archetypes().get(arch_id);
+            let added_since_filters =
+                resolve_change_filters(scene, arch, &targets, &state.added_since_filters);
+            let changed_since_filters =
+                resolve_change_filters(scene, arch, &targets, &state.changed_since_filters);
+            (arch_id, targets, added_since_filters, changed_since_filters)
+        })
+        .collect::<Vec<_>>();
     let (archetypes, change_state, component_event_tick) = scene.query_parts_mut();
     let change_state = change_state as *mut _;
     let mut accesses = Vec::with_capacity(resolved.len());
 
-    for (arch_id, targets) in resolved {
+    for (arch_id, targets, added_since_filters, changed_since_filters) in resolved {
         let arch = archetypes.get_mut(arch_id);
         let entities = arch.entities().as_ptr();
         let len = arch.len();
@@ -290,6 +339,8 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
             casters,
             change_state,
             component_event_tick,
+            added_since_filters,
+            changed_since_filters,
             len,
             row: 0,
         });

@@ -16,8 +16,8 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
         Self {
             accesses: build_query_accesses::<Data>(scene, &state),
             idx: 0,
-            added_since_filters: state.added_since_filters,
-            changed_since_filters: state.changed_since_filters,
+            added_since_filters: Vec::new(),
+            changed_since_filters: Vec::new(),
             _marker: PhantomData,
         }
     }
@@ -29,8 +29,8 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
         Self {
             accesses: build_query_accesses_mut::<Data>(scene, &state),
             idx: 0,
-            added_since_filters: state.added_since_filters,
-            changed_since_filters: state.changed_since_filters,
+            added_since_filters: Vec::new(),
+            changed_since_filters: Vec::new(),
             _marker: PhantomData,
         }
     }

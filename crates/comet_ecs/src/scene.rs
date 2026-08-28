@@ -1,9 +1,10 @@
 use crate::archetypes::{Archetypes, ComponentInfo};
 use crate::bundles::Bundle;
+use crate::component_changes::{ComponentChangeState, RemovedComponent};
 use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
-use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan, ComponentChangeState};
+use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan};
 use crate::{
     Component, ComponentTuple, Entity, EntityLocation, IdQueue, QueryTarget, QueryTargets,
     RequiredComponent, RequiredComponents, Tick,
@@ -272,19 +273,37 @@ impl Scene {
             .is_some_and(|state| Self::tick_is_newer_than(state.changed_tick, last_seen_tick))
     }
 
-    /// Returns entities where `C` was removed since the given tick.
-    pub fn removed_since<C: Component + 'static>(&self, last_seen_tick: Tick) -> Vec<Entity> {
-        self.removed_component_events
-            .get(&TypeId::of::<C>())
-            .map(|events| {
-                events
-                    .iter()
-                    .filter_map(|(entity, tick)| {
-                        Self::tick_is_newer_than(*tick, last_seen_tick).then_some(*entity)
+    /// Returns entities where `C` or one of its query targets was removed since the given tick.
+    pub fn removed_since<C: ?Sized + Component>(&self, last_seen_tick: Tick) -> Vec<Entity> {
+        let mut seen = HashSet::new();
+        self.removed_components_since::<C>(last_seen_tick)
+            .into_iter()
+            .map(|removed| removed.entity)
+            .filter(|entity| seen.insert((entity.index, entity.gen)))
+            .collect()
+    }
+
+    pub fn removed_components_since<C: ?Sized + Component>(
+        &self,
+        last_seen_tick: Tick,
+    ) -> Vec<RemovedComponent> {
+        self.query_targets(TypeId::of::<C>())
+            .iter()
+            .flat_map(|target| {
+                self.removed_component_events
+                    .get(&target.component_type)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(move |(entity, tick)| {
+                        Self::tick_is_newer_than(*tick, last_seen_tick).then_some(
+                            RemovedComponent {
+                                entity: *entity,
+                                component_type: target.component_type,
+                            },
+                        )
                     })
-                    .collect()
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     #[inline(always)]

@@ -145,6 +145,10 @@ impl QueryTargets {
 }
 
 pub trait Component: Send + Sync + 'static {
+    fn component_type_id(&self) -> TypeId {
+        TypeId::of::<Self>()
+    }
+
     fn new() -> Self
     where
         Self: Sized + Default,

@@ -1,4 +1,4 @@
-use crate::scene_internals::ComponentChangeState;
+use crate::component_changes::ComponentChangeState;
 use crate::{Component, ComponentTuple, Entity, Scene, Tick};
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ mod scene_query;
 pub(crate) use arities::has_duplicate_type_ids;
 pub(crate) use builders::{build_query_accesses, build_query_accesses_mut};
 pub(crate) use fetch::{EntityFetch, QueryAccess, ReadFetch, WriteFetch};
-pub(crate) use filters::{typed_filters, QueryFilterSet, QueryFilterState};
+pub(crate) use filters::{typed_filters, QueryFilterSet, QueryFilterState, ResolvedChangeFilter};
 pub use filters::{Added, Changed, QueryParam, With, WithAny, Without, WithoutAny};
 pub(crate) use query_data::{QueryComponent, QueryData, MAX_QUERY_COMPONENTS};
 pub use query_types::Query;
