@@ -2,7 +2,7 @@ use crate::{Entity, Tick};
 use std::any::TypeId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RemovedComponent {
+pub struct ComponentChange {
     pub entity: Entity,
     pub component_type: TypeId,
 }

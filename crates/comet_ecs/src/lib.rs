@@ -1,7 +1,7 @@
 pub use bundles::Bundle;
 pub use comet_math as math;
 pub use component::*;
-pub use component_changes::RemovedComponent;
+pub use component_changes::ComponentChange;
 pub use component_derive::*;
 pub use component_tuple::ComponentTuple;
 pub use ecs_module::{EcsModule, EcsModuleExt};
