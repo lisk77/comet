@@ -95,11 +95,13 @@ macro_rules! impl_component_tuple {
             }
         }
 
-        impl<$($name: Component),+> Bundle for ($($name,)+) {
+        impl<$($name: Bundle),+> Bundle for ($($name,)+) {
             #[allow(non_snake_case)]
             fn into_components(self) -> Vec<ErasedComponent> {
                 let ($($name,)+) = self;
-                vec![$(ErasedComponent::new($name)),+]
+                let mut components = Vec::new();
+                $(components.extend($name.into_components());)+
+                components
             }
 
             fn try_spawn(
@@ -107,7 +109,7 @@ macro_rules! impl_component_tuple {
                 scene: &mut Scene,
             ) -> Result<crate::Entity, EcsError> {
                 self.ensure_registered(scene);
-                let component_types = [$(std::any::TypeId::of::<$name>()),+];
+                let component_types = self.type_ids();
                 if scene.__bundle_has_required_components(&component_types) {
                     return scene.try_spawn_with_components(self.into_components());
                 }
@@ -121,41 +123,41 @@ macro_rules! impl_component_tuple {
             }
 
 
+            #[allow(non_snake_case)]
             fn type_ids(&self) -> Vec<TypeId> {
-                vec![$(std::any::TypeId::of::<$name>()),+]
+                let ($($name,)+) = self;
+                let mut type_ids = Vec::new();
+                $(type_ids.extend($name.type_ids());)+
+                type_ids
             }
 
+            #[allow(non_snake_case)]
             fn ensure_registered(&self, scene: &mut Scene) {
-                $(scene.ensure_component::<$name>();)+
+                let ($($name,)+) = self;
+                $($name.ensure_registered(scene);)+
             }
 
             #[allow(non_snake_case, unused_assignments)]
-            fn write_components(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
+            fn write_components(self, columns: &mut [Column], column_indices: &[usize], row: usize) {
                 let ($($name,)+) = self;
-                let mut col_i = 0usize;
+                let mut offset = 0usize;
                 $(
-                    {
-                        let col_idx = column_indices[col_i];
-                        col_i += 1;
-                        unsafe {
-                            columns[col_idx].push_unchecked::<$name>($name);
-                        }
-                    }
+                    let width = $name.type_ids().len();
+                    let end = offset + width;
+                    $name.write_components(columns, &column_indices[offset..end], row);
+                    offset = end;
                 )+
             }
 
             #[allow(non_snake_case, unused_assignments)]
-            fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], _row: usize) {
+            fn write_components_reserved(self, columns: &mut [Column], column_indices: &[usize], row: usize) {
                 let ($($name,)+) = self;
-                let mut col_i = 0usize;
+                let mut offset = 0usize;
                 $(
-                    {
-                        let col_idx = column_indices[col_i];
-                        col_i += 1;
-                        unsafe {
-                            columns[col_idx].push_unchecked_reserved::<$name>($name);
-                        }
-                    }
+                    let width = $name.type_ids().len();
+                    let end = offset + width;
+                    $name.write_components_reserved(columns, &column_indices[offset..end], row);
+                    offset = end;
                 )+
             }
         }

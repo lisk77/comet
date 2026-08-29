@@ -898,6 +898,20 @@ impl Scene {
         states.insert(type_id, 2);
     }
 
+    fn validate_unique_components(&self, component_types: &[TypeId]) -> Result<(), EcsError> {
+        let mut seen = HashSet::with_capacity(component_types.len());
+        for component_type in component_types {
+            if !seen.insert(*component_type) {
+                let component = self
+                    .component_info
+                    .get(component_type)
+                    .map_or("<unregistered>", |info| info.type_name);
+                return Err(EcsError::DuplicateComponent { component });
+            }
+        }
+        Ok(())
+    }
+
     fn validate_needed_components(&self, component_set: &ComponentSet) -> Result<(), EcsError> {
         for (dependent, needs) in &self.needed_components {
             let Some(dependent_index) = self.component_index.get(dependent) else {
@@ -930,6 +944,20 @@ impl Scene {
         if let Err(error) = self.validate_needed_components(component_set) {
             fatal!("{}", error);
         }
+    }
+
+    fn assert_valid_bundle_components(&self, component_types: &[TypeId]) {
+        if let Err(error) = self.validate_unique_components(component_types) {
+            fatal!("{}", error);
+        }
+    }
+
+    fn report_invalid_bundle_components(&self, component_types: &[TypeId]) -> bool {
+        if let Err(error) = self.validate_unique_components(component_types) {
+            error!("{}", error);
+            return true;
+        }
+        false
     }
 
     fn report_invalid_needed_components(&self, component_set: &ComponentSet) -> bool {
@@ -981,6 +1009,11 @@ impl Scene {
             .ok_or(EcsError::EntityNotFound(entity_id))?;
         let existing_types = self.archetypes.get(loc.archetype).types().to_vec();
         self.expand_required_components(&mut components, existing_types);
+        let component_types = components
+            .iter()
+            .map(|component| component.type_id)
+            .collect::<Vec<_>>();
+        self.validate_unique_components(&component_types)?;
         let mut component_set = self.archetypes.get(loc.archetype).set().clone();
         for component in &components {
             component_set.insert(self.component_index[&component.type_id]);
@@ -1000,6 +1033,9 @@ impl Scene {
         };
         bundle.ensure_registered(self);
         let explicit_types = bundle.type_ids();
+        if self.report_invalid_bundle_components(&explicit_types) {
+            return;
+        }
         if self.__bundle_has_required_components(&explicit_types) {
             self.add_with_components_immediate(entity_id, bundle.into_components());
             return;
@@ -1461,6 +1497,11 @@ impl Scene {
             bundle.ensure_registered(self);
             let mut components = bundle.into_components();
             self.expand_required_components(&mut components, std::iter::empty());
+            let component_types = components
+                .iter()
+                .map(|component| component.type_id)
+                .collect::<Vec<_>>();
+            self.validate_unique_components(&component_types)?;
             let mut component_set = ComponentSet::new();
             for component in &components {
                 component_set.insert(self.component_index[&component.type_id]);
@@ -1481,6 +1522,7 @@ impl Scene {
 
         bundles[0].ensure_registered(self);
         let component_types = bundles[0].type_ids();
+        self.assert_valid_bundle_components(&component_types);
         if self.__bundle_has_required_components(&component_types) {
             return bundles
                 .into_iter()
@@ -1530,6 +1572,9 @@ impl Scene {
             .iter()
             .map(|component| component.type_id)
             .collect();
+        if self.report_invalid_bundle_components(&submitted_types) {
+            return;
+        }
         let old_set = self.archetypes.get(old_arch_id).set().clone();
         let mut component_set = old_set.clone();
         for component in &components {
@@ -1629,6 +1674,11 @@ impl Scene {
             (component.register_fn)(self);
         }
         self.expand_required_components(&mut components, std::iter::empty());
+        let component_types = components
+            .iter()
+            .map(|component| component.type_id)
+            .collect::<Vec<_>>();
+        self.validate_unique_components(&component_types)?;
         let mut component_set = ComponentSet::new();
         for component in &components {
             component_set.insert(self.component_index[&component.type_id]);
@@ -1653,6 +1703,11 @@ impl Scene {
             (component.register_fn)(self);
         }
         self.expand_required_components(&mut components, std::iter::empty());
+        let component_types = components
+            .iter()
+            .map(|component| component.type_id)
+            .collect::<Vec<_>>();
+        self.assert_valid_bundle_components(&component_types);
         if !self.validate_components_registered(&components) {
             return self.new_entity_immediate();
         }
@@ -1707,6 +1762,7 @@ impl Scene {
         if component_types.is_empty() {
             return Ok(self.new_entity_immediate());
         }
+        self.validate_unique_components(component_types)?;
 
         if !self.bundle_spawn_cache.contains_key(&bundle_type) {
             if !self.validate_type_ids_registered(component_types) {
@@ -1794,6 +1850,7 @@ impl Scene {
                 .map(|_| self.new_entity_immediate())
                 .collect();
         }
+        self.assert_valid_bundle_components(component_types);
 
         if !self.bundle_spawn_cache.contains_key(&bundle_type) {
             if !self.validate_type_ids_registered(component_types) {

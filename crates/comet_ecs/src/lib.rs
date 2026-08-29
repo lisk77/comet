@@ -18,6 +18,11 @@ pub use sparse_set::SparseSet;
 
 pub type Tick = u32;
 
+#[doc(hidden)]
+pub mod __private {
+    pub use comet_structs::Column;
+}
+
 mod archetypes;
 mod bundles;
 mod component;

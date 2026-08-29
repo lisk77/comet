@@ -3,7 +3,7 @@ use std::any::TypeId;
 use comet_structs::Column;
 
 use crate::{EcsError, ErasedComponent, Scene};
-pub trait Bundle {
+pub trait Bundle: 'static {
     fn into_components(self) -> Vec<ErasedComponent>;
 
     fn ensure_registered(&self, scene: &mut Scene);
@@ -59,19 +59,19 @@ macro_rules! bundle {
 
         impl $crate::Bundle for $name {
             fn into_components(self) -> Vec<$crate::ErasedComponent> {
-                vec![
-                    $(
-                        $crate::ErasedComponent::new(self.$field),
-                    )*
-                ]
+                let mut components = Vec::new();
+                $(components.extend($crate::Bundle::into_components(self.$field));)*
+                components
             }
 
             fn type_ids(&self) -> Vec<std::any::TypeId> {
-                vec![$(std::any::TypeId::of::<$ty>()),*]
+                let mut type_ids = Vec::new();
+                $(type_ids.extend($crate::Bundle::type_ids(&self.$field));)*
+                type_ids
             }
 
             fn ensure_registered(&self, scene: &mut $crate::Scene) {
-                $(scene.ensure_component::<$ty>();)*
+                $($crate::Bundle::ensure_registered(&self.$field, scene);)*
             }
 
             fn try_spawn(
@@ -79,32 +79,58 @@ macro_rules! bundle {
                 scene: &mut $crate::Scene,
             ) -> Result<$crate::Entity, $crate::EcsError> {
                 self.ensure_registered(scene);
-                let component_types = [
-                    $(
-                        std::any::TypeId::of::<$ty>(),
-                    )*
-                ];
+                let component_types = self.type_ids();
                 if scene.__bundle_has_required_components(&component_types) {
                     return scene.try_spawn_with_components(self.into_components());
                 }
                 scene.__try_spawn_bundle_typed(
                     std::any::TypeId::of::<$name>(),
                     &component_types,
-                    move |columns, column_indices, _row| {
-                        let mut __bundle_col_i = 0usize;
-                        $(
-                            {
-                                let col_idx = column_indices[__bundle_col_i];
-                                __bundle_col_i += 1;
-                                unsafe {
-                                    columns[col_idx].push_unchecked::<$ty>(self.$field);
-                                }
-                            }
-                        )*
+                    move |columns, column_indices, row| {
+                        $crate::Bundle::write_components(self, columns, column_indices, row);
                     },
                 )
             }
 
+            fn write_components(
+                self,
+                columns: &mut [$crate::__private::Column],
+                column_indices: &[usize],
+                row: usize,
+            ) {
+                let mut offset = 0usize;
+                $(
+                    let width = $crate::Bundle::type_ids(&self.$field).len();
+                    let end = offset + width;
+                    $crate::Bundle::write_components(
+                        self.$field,
+                        columns,
+                        &column_indices[offset..end],
+                        row,
+                    );
+                    offset = end;
+                )*
+            }
+
+            fn write_components_reserved(
+                self,
+                columns: &mut [$crate::__private::Column],
+                column_indices: &[usize],
+                row: usize,
+            ) {
+                let mut offset = 0usize;
+                $(
+                    let width = $crate::Bundle::type_ids(&self.$field).len();
+                    let end = offset + width;
+                    $crate::Bundle::write_components_reserved(
+                        self.$field,
+                        columns,
+                        &column_indices[offset..end],
+                        row,
+                    );
+                    offset = end;
+                )*
+            }
         }
     };
 }
