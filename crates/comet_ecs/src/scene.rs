@@ -1,9 +1,10 @@
 use crate::archetypes::{Archetypes, ComponentInfo};
 use crate::bundles::Bundle;
+use crate::component_changes::{ComponentChange, ComponentChangeState};
 use crate::prefabs::{ErasedComponent, PrefabManager};
 use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
-use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan, ComponentChangeState};
+use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan};
 use crate::{
     Component, ComponentTuple, Entity, EntityLocation, IdQueue, QueryTarget, QueryTargets,
     RequiredComponent, RequiredComponents, Tick,
@@ -272,19 +273,65 @@ impl Scene {
             .is_some_and(|state| Self::tick_is_newer_than(state.changed_tick, last_seen_tick))
     }
 
-    /// Returns entities where `C` was removed since the given tick.
-    pub fn removed_since<C: Component + 'static>(&self, last_seen_tick: Tick) -> Vec<Entity> {
-        self.removed_component_events
-            .get(&TypeId::of::<C>())
-            .map(|events| {
-                events
-                    .iter()
-                    .filter_map(|(entity, tick)| {
-                        Self::tick_is_newer_than(*tick, last_seen_tick).then_some(*entity)
+    fn component_changes_since<C: ?Sized + Component>(
+        &self,
+        last_seen_tick: Tick,
+        tick: impl Fn(&ComponentChangeState) -> Tick,
+    ) -> Vec<ComponentChange> {
+        let component_types = self
+            .query_targets(TypeId::of::<C>())
+            .iter()
+            .map(|target| target.component_type)
+            .collect::<HashSet<_>>();
+        self.component_change_state
+            .iter()
+            .filter_map(|((entity_index, component_type), state)| {
+                if !component_types.contains(component_type)
+                    || !Self::tick_is_newer_than(tick(state), last_seen_tick)
+                {
+                    return None;
+                }
+                self.entities
+                    .get(*entity_index as usize)
+                    .and_then(|entity| *entity)
+                    .map(|entity| ComponentChange {
+                        entity,
+                        component_type: *component_type,
                     })
-                    .collect()
             })
-            .unwrap_or_default()
+            .collect()
+    }
+
+    pub fn added_since<C: ?Sized + Component>(&self, last_seen_tick: Tick) -> Vec<ComponentChange> {
+        self.component_changes_since::<C>(last_seen_tick, |state| state.added_tick)
+    }
+
+    pub fn changed_since<C: ?Sized + Component>(
+        &self,
+        last_seen_tick: Tick,
+    ) -> Vec<ComponentChange> {
+        self.component_changes_since::<C>(last_seen_tick, |state| state.changed_tick)
+    }
+
+    pub fn removed_since<C: ?Sized + Component>(
+        &self,
+        last_seen_tick: Tick,
+    ) -> Vec<ComponentChange> {
+        self.query_targets(TypeId::of::<C>())
+            .iter()
+            .flat_map(|target| {
+                self.removed_component_events
+                    .get(&target.component_type)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(move |(entity, tick)| {
+                        Self::tick_is_newer_than(*tick, last_seen_tick).then_some(ComponentChange {
+                            entity: *entity,
+                            component_type: target.component_type,
+                        })
+                    })
+            })
+            .collect()
     }
 
     #[inline(always)]
@@ -1975,7 +2022,9 @@ mod tests {
         scene.remove_component::<Value>(entity);
 
         let removed = scene.removed_since::<Value>(5);
-        assert_eq!(removed, vec![entity]);
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].entity, entity);
+        assert_eq!(removed[0].component_type, TypeId::of::<Value>());
     }
 
     #[test]

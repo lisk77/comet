@@ -51,27 +51,48 @@ pub(super) unsafe fn fetch_entity(
 pub(super) unsafe fn matches_change_filters(
     change_state: *const HashMap<(u32, TypeId), ComponentChangeState>,
     entity: Entity,
-    added_since_filters: &[(TypeId, Tick)],
-    changed_since_filters: &[(TypeId, Tick)],
+    added_since_filters: &[ResolvedChangeFilter],
+    changed_since_filters: &[ResolvedChangeFilter],
 ) -> bool {
     let change_state = unsafe { &*change_state };
-    for (type_id, tick) in added_since_filters {
-        if !change_state
-            .get(&(entity.index, *type_id))
-            .is_some_and(|state| tick_is_newer_than(state.added_tick, *tick))
-        {
+    for filter in added_since_filters {
+        if !filter.component_types.iter().any(|type_id| {
+            change_state
+                .get(&(entity.index, *type_id))
+                .is_some_and(|state| tick_is_newer_than(state.added_tick, filter.since_tick))
+        }) {
             return false;
         }
     }
-    for (type_id, tick) in changed_since_filters {
-        if !change_state
-            .get(&(entity.index, *type_id))
-            .is_some_and(|state| tick_is_newer_than(state.changed_tick, *tick))
-        {
+    for filter in changed_since_filters {
+        if !filter.component_types.iter().any(|type_id| {
+            change_state
+                .get(&(entity.index, *type_id))
+                .is_some_and(|state| tick_is_newer_than(state.changed_tick, filter.since_tick))
+        }) {
             return false;
         }
     }
     true
+}
+
+#[inline(always)]
+unsafe fn matches_concrete_change_filters(
+    change_state: *const HashMap<(u32, TypeId), ComponentChangeState>,
+    entity: Entity,
+    added_since_filters: &[(TypeId, Tick)],
+    changed_since_filters: &[(TypeId, Tick)],
+) -> bool {
+    let change_state = unsafe { &*change_state };
+    added_since_filters.iter().all(|(type_id, tick)| {
+        change_state
+            .get(&(entity.index, *type_id))
+            .is_some_and(|state| tick_is_newer_than(state.added_tick, *tick))
+    }) && changed_since_filters.iter().all(|(type_id, tick)| {
+        change_state
+            .get(&(entity.index, *type_id))
+            .is_some_and(|state| tick_is_newer_than(state.changed_tick, *tick))
+    })
 }
 
 #[inline(always)]
@@ -88,6 +109,11 @@ impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
             unsafe {
                 let entity = fetch_entity(access.entities, access.len, row)?;
                 if !matches_change_filters(
+                    access.change_state,
+                    entity,
+                    &access.added_since_filters,
+                    &access.changed_since_filters,
+                ) || !matches_concrete_change_filters(
                     access.change_state,
                     entity,
                     &self.added_since_filters,

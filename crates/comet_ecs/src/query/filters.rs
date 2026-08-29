@@ -6,8 +6,14 @@ pub struct With<C: ?Sized + Component>(PhantomData<C>);
 pub struct Without<C: ?Sized + Component>(PhantomData<C>);
 pub struct WithAny<Cs: ComponentTuple>(PhantomData<Cs>);
 pub struct WithoutAny<Cs: ComponentTuple>(PhantomData<Cs>);
-pub struct Added<C: Component>(PhantomData<C>);
-pub struct Changed<C: Component>(PhantomData<C>);
+pub struct Added<C: ?Sized + Component>(PhantomData<C>);
+pub struct Changed<C: ?Sized + Component>(PhantomData<C>);
+
+#[derive(Clone)]
+pub(crate) struct ResolvedChangeFilter {
+    pub(crate) component_types: Vec<TypeId>,
+    pub(crate) since_tick: Tick,
+}
 
 #[derive(Default)]
 pub(crate) struct QueryFilterState {
@@ -81,13 +87,13 @@ impl<Cs: ComponentTuple> QueryFilterSet for WithoutAny<Cs> {
     }
 }
 
-impl<C: Component> QueryFilterSet for Added<C> {
+impl<C: ?Sized + Component> QueryFilterSet for Added<C> {
     fn apply(scene: &Scene, state: &mut QueryFilterState) {
         state.set_added_since_filter(TypeId::of::<C>(), scene.default_query_since_tick());
     }
 }
 
-impl<C: Component> QueryFilterSet for Changed<C> {
+impl<C: ?Sized + Component> QueryFilterSet for Changed<C> {
     fn apply(scene: &Scene, state: &mut QueryFilterState) {
         state.set_changed_since_filter(TypeId::of::<C>(), scene.default_query_since_tick());
     }
