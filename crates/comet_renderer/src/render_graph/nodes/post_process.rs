@@ -1,9 +1,6 @@
-use std::sync::Arc;
-use crate::{
-    gpu_texture::GpuTexture,
-    render_pass::LoadOp,
-};
 use super::super::node::{BuildContext, NodeState, RenderNode};
+use crate::{gpu_texture::GpuTexture, render_pass::LoadOp};
+use std::sync::Arc;
 
 pub struct PostProcessNode {
     label: String,
@@ -58,11 +55,7 @@ impl PostProcessNode {
         self.declared_render_target = render_target;
     }
 
-    fn rebuild_bind_groups(
-        &mut self,
-        inputs: &[Arc<GpuTexture>],
-        device: &wgpu::Device,
-    ) {
+    fn rebuild_bind_groups(&mut self, inputs: &[Arc<GpuTexture>], device: &wgpu::Device) {
         let Some(sampler) = &self.sampler else { return };
         let groups: Vec<Arc<wgpu::BindGroup>> = inputs
             .iter()
@@ -73,9 +66,7 @@ impl PostProcessNode {
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::TextureView(
-                                &tex.view,
-                            ),
+                            resource: wgpu::BindingResource::TextureView(&tex.view),
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
@@ -105,7 +96,9 @@ impl PostProcessNode {
 }
 
 impl RenderNode for PostProcessNode {
-    fn name(&self) -> &str { &self.label }
+    fn name(&self) -> &str {
+        &self.label
+    }
 
     fn inputs(&self) -> &[String] {
         &self.declared_inputs
@@ -133,12 +126,9 @@ impl RenderNode for PostProcessNode {
 
         let input_layouts: Vec<Arc<wgpu::BindGroupLayout>> = (0..input_count)
             .map(|i| {
-                Arc::new(device.create_bind_group_layout(
-                    &wgpu::BindGroupLayoutDescriptor {
-                        label: Some(&format!(
-                            "{} Input {} Layout",
-                            self.label, i
-                        )),
+                Arc::new(
+                    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some(&format!("{} Input {} Layout", self.label, i)),
                         entries: &[
                             wgpu::BindGroupLayoutEntry {
                                 binding: 0,
@@ -155,14 +145,12 @@ impl RenderNode for PostProcessNode {
                             wgpu::BindGroupLayoutEntry {
                                 binding: 1,
                                 visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Sampler(
-                                    wgpu::SamplerBindingType::Filtering,
-                                ),
+                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                                 count: None,
                             },
                         ],
-                    },
-                ))
+                    }),
+                )
             })
             .collect();
 
@@ -179,23 +167,21 @@ impl RenderNode for PostProcessNode {
         let layout_refs: Vec<&wgpu::BindGroupLayout> =
             input_layouts.iter().map(|l| l.as_ref()).collect();
 
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some(&format!("{} Pipeline Layout", self.label)),
-                bind_group_layouts: &layout_refs,
-                push_constant_ranges: &[],
-            });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(&format!("{} Pipeline Layout", self.label)),
+            bind_group_layouts: &layout_refs,
+            push_constant_ranges: &[],
+        });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(&format!("{} Shader", self.label)),
             source: wgpu::ShaderSource::Wgsl(self.shader_src.clone().into()),
         });
 
-        let output_format =
-            self.declared_output_format.unwrap_or(ctx.format);
+        let output_format = self.declared_output_format.unwrap_or(ctx.format);
 
-        let pipeline = Arc::new(device.create_render_pipeline(
-            &wgpu::RenderPipelineDescriptor {
+        let pipeline = Arc::new(
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(&format!("{} Pipeline", self.label)),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
@@ -222,25 +208,25 @@ impl RenderNode for PostProcessNode {
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
                 cache: None,
-            },
-        ));
+            }),
+        );
 
         self.input_layouts = input_layouts;
         self.sampler = Some(sampler);
         self.pipeline = Some(pipeline);
     }
 
-    fn run<'rpass>(
-        &mut self,
-        rpass: &mut wgpu::RenderPass<'rpass>,
-        state: &NodeState<'_>,
-    ) {
+    fn run<'rpass>(&mut self, rpass: &mut wgpu::RenderPass<'rpass>, state: &NodeState<'_>) {
         if self.inputs_changed(state.inputs) || self.cached_bind_groups.is_none() {
             self.rebuild_bind_groups(state.inputs, state.device);
         }
 
-        let Some(pipeline) = &self.pipeline else { return };
-        let Some(groups) = &self.cached_bind_groups else { return };
+        let Some(pipeline) = &self.pipeline else {
+            return;
+        };
+        let Some(groups) = &self.cached_bind_groups else {
+            return;
+        };
 
         rpass.set_pipeline(pipeline);
         for (i, group) in groups.iter().enumerate() {
@@ -260,5 +246,7 @@ impl RenderNode for PostProcessNode {
         self.cached_input_ptrs.clear();
     }
 
-    fn post_process_mut(&mut self) -> Option<&mut PostProcessNode> { Some(self) }
+    fn post_process_mut(&mut self) -> Option<&mut PostProcessNode> {
+        Some(self)
+    }
 }

@@ -1,7 +1,7 @@
-use std::any::TypeId;
-use std::collections::{HashMap, HashSet};
 use comet_ecs::{Component, Entity, Scene, Transform};
 use comet_gizmos::{Gizmo, GizmoBuffer};
+use std::any::TypeId;
+use std::collections::{HashMap, HashSet};
 
 type DrawFn = Box<dyn Fn(Entity, &Scene, &mut GizmoBuffer) + Send + Sync>;
 type AllDrawFn = Box<dyn Fn(&Scene, &mut GizmoBuffer) + Send + Sync>;
@@ -14,7 +14,10 @@ pub struct GizmoRegistry {
 
 impl GizmoRegistry {
     pub fn new() -> Self {
-        Self { enabled: HashMap::new(), show_all: HashMap::new() }
+        Self {
+            enabled: HashMap::new(),
+            show_all: HashMap::new(),
+        }
     }
 
     pub fn show<C: Component + Gizmo + 'static>(&mut self, entity: Entity) {
@@ -26,7 +29,12 @@ impl GizmoRegistry {
                         scene.get_component::<C>(entity),
                         scene.get_component::<Transform>(entity),
                     ) {
-                        comp.draw_gizmo(transform.position(), transform.rotation(), transform.scale(), buffer);
+                        comp.draw_gizmo(
+                            transform.position(),
+                            transform.rotation(),
+                            transform.scale(),
+                            buffer,
+                        );
                     }
                 });
                 (HashSet::new(), draw)
@@ -56,7 +64,12 @@ impl GizmoRegistry {
                         scene.get_component::<C>(entity),
                         scene.get_component::<Transform>(entity),
                     ) {
-                        comp.draw_gizmo(transform.position(), transform.rotation(), transform.scale(), buffer);
+                        comp.draw_gizmo(
+                            transform.position(),
+                            transform.rotation(),
+                            transform.scale(),
+                            buffer,
+                        );
                     }
                 }
             })

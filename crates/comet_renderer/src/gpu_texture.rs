@@ -188,7 +188,15 @@ impl GpuTexture {
     }
 
     /// Write a sub-region of pixel data into an existing GPU texture at offset (x, y).
-    pub fn write_region(&self, queue: &wgpu::Queue, x: u32, y: u32, data: &[u8], width: u32, height: u32) {
+    pub fn write_region(
+        &self,
+        queue: &wgpu::Queue,
+        x: u32,
+        y: u32,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) {
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 aspect: wgpu::TextureAspect::All,
@@ -202,7 +210,11 @@ impl GpuTexture {
                 bytes_per_row: Some(4 * width),
                 rows_per_image: Some(height),
             },
-            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
         );
     }
 

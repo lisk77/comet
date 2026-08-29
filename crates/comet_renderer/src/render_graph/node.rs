@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use crate::gpu_texture::GpuTexture;
 use crate::render_graph::{PassNode, PostProcessNode};
 use crate::render_pass::LoadOp;
+use std::sync::Arc;
 
 pub struct BuildContext<'a> {
     pub device: &'a wgpu::Device,
@@ -21,11 +21,21 @@ pub struct NodeState<'a> {
 
 pub trait RenderNode: Send + Sync + 'static {
     fn name(&self) -> &str;
-    fn inputs(&self) -> &[String] { &[] }
-    fn output(&self) -> Option<&str> { None }
-    fn render_target(&self) -> Option<&str> { None }
-    fn output_format(&self) -> Option<wgpu::TextureFormat> { None }
-    fn run_after(&self) -> &[String] { &[] }
+    fn inputs(&self) -> &[String] {
+        &[]
+    }
+    fn output(&self) -> Option<&str> {
+        None
+    }
+    fn render_target(&self) -> Option<&str> {
+        None
+    }
+    fn output_format(&self) -> Option<wgpu::TextureFormat> {
+        None
+    }
+    fn run_after(&self) -> &[String] {
+        &[]
+    }
     fn load_op(&self) -> LoadOp;
 
     fn build(&mut self, ctx: BuildContext<'_>);
@@ -40,6 +50,10 @@ pub trait RenderNode: Send + Sync + 'static {
     ) {
     }
 
-    fn pass_mut(&mut self) -> Option<&mut PassNode> { None }
-    fn post_process_mut(&mut self) -> Option<&mut PostProcessNode> { None }
+    fn pass_mut(&mut self) -> Option<&mut PassNode> {
+        None
+    }
+    fn post_process_mut(&mut self) -> Option<&mut PostProcessNode> {
+        None
+    }
 }

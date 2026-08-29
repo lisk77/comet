@@ -183,7 +183,13 @@ impl RenderState {
         &mut self.resources
     }
 
-    pub fn create_intermediate_texture(&mut self, name: String, width: u32, height: u32, format: wgpu::TextureFormat) {
+    pub fn create_intermediate_texture(
+        &mut self,
+        name: String,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) {
         let gpu_tex = GpuTexture::create_2d_texture(
             &self.device,
             width,

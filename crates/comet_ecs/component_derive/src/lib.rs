@@ -6,7 +6,7 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
-    DeriveInput, Expr, Token, Type,
+    DeriveInput, Expr, LitStr, Token, Type,
 };
 
 struct RequiredComponent {
@@ -123,6 +123,69 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
 
             #register_needed_components
             #register_query_targets
+        }
+    }
+    .into()
+}
+
+#[proc_macro_derive(Material, attributes(material, uniform, texture, sampler, storage))]
+pub fn material_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+    let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
+    let mut shader_path = None;
+
+    for attribute in input
+        .attrs
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("material"))
+    {
+        if let Err(error) = attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("shader") {
+                shader_path = Some(meta.value()?.parse::<LitStr>()?);
+                return Ok(());
+            }
+            Err(meta.error("unsupported material option"))
+        }) {
+            return error.into_compile_error().into();
+        }
+    }
+
+    let Some(shader_path) = shader_path else {
+        return syn::Error::new_spanned(
+            name,
+            "Material requires #[material(shader = \"path/to/shader.wgsl\")]",
+        )
+        .into_compile_error()
+        .into();
+    };
+
+    quote! {
+        impl #impl_generics Component for #name #type_generics #where_clause {
+            fn register_needed_components(needs: &mut NeededComponents) {
+                needs.need::<Mesh>();
+            }
+
+            fn register_query_targets(targets: &mut QueryTargets) {
+                targets.register::<dyn Material>(
+                    |value, output| unsafe {
+                        let value =
+                            (&*(value as *const Self)) as &dyn Material as *const dyn Material;
+                        output.cast::<*const dyn Material>().write(value);
+                    },
+                    |value, output| unsafe {
+                        let value =
+                            (&mut *(value as *mut Self)) as &mut dyn Material as *mut dyn Material;
+                        output.cast::<*mut dyn Material>().write(value);
+                    },
+                );
+            }
+        }
+
+        impl #impl_generics Material for #name #type_generics #where_clause {
+            fn shader_path(&self) -> &'static str {
+                #shader_path
+            }
         }
     }
     .into()

@@ -1,7 +1,7 @@
-use comet_log::error;
-use std::{collections::HashMap, sync::Arc};
 use crate::gpu_texture::GpuTexture;
 use comet_assets;
+use comet_log::error;
+use std::{collections::HashMap, sync::Arc};
 
 pub struct RenderResources {
     bind_groups: HashMap<String, Vec<Arc<wgpu::BindGroup>>>,
@@ -30,7 +30,10 @@ impl RenderResources {
     }
 
     /// Get all bind group layouts associated with a render pass.
-    pub fn get_bind_group_layout(&self, render_pass_label: &str) -> Option<&Vec<Arc<wgpu::BindGroupLayout>>> {
+    pub fn get_bind_group_layout(
+        &self,
+        render_pass_label: &str,
+    ) -> Option<&Vec<Arc<wgpu::BindGroupLayout>>> {
         self.bind_group_layouts.get(render_pass_label)
     }
 
@@ -70,7 +73,11 @@ impl RenderResources {
     }
 
     /// Insert a bind group for a render pass.
-    pub fn insert_bind_group(&mut self, render_pass_label: String, bind_group: Arc<wgpu::BindGroup>) {
+    pub fn insert_bind_group(
+        &mut self,
+        render_pass_label: String,
+        bind_group: Arc<wgpu::BindGroup>,
+    ) {
         match self.bind_groups.get_mut(&render_pass_label) {
             None => {
                 self.bind_groups.insert(render_pass_label, vec![bind_group]);
@@ -105,10 +112,15 @@ impl RenderResources {
     }
 
     /// Insert a bind group layout for a render pass.         
-    pub fn insert_bind_group_layout(&mut self, render_pass_label: String, layout: Arc<wgpu::BindGroupLayout>) {
+    pub fn insert_bind_group_layout(
+        &mut self,
+        render_pass_label: String,
+        layout: Arc<wgpu::BindGroupLayout>,
+    ) {
         match self.bind_group_layouts.get_mut(&render_pass_label) {
             None => {
-                self.bind_group_layouts.insert(render_pass_label, vec![layout]);
+                self.bind_group_layouts
+                    .insert(render_pass_label, vec![layout]);
             }
             Some(v) => v.push(layout),
         }
@@ -125,7 +137,12 @@ impl RenderResources {
     }
 
     /// Replace a buffer at a specific position for a render pass.
-    pub fn replace_buffer(&mut self, render_pass_label: String, pos: usize, buffer: Arc<wgpu::Buffer>) {
+    pub fn replace_buffer(
+        &mut self,
+        render_pass_label: String,
+        pos: usize,
+        buffer: Arc<wgpu::Buffer>,
+    ) {
         match self.buffers.get_mut(&render_pass_label) {
             None => {
                 error!("Render pass {} does not exist", render_pass_label);
@@ -170,18 +187,27 @@ impl RenderResources {
     }
 
     /// Get a cached asset atlas handle for metadata lookups.
-    pub fn get_asset_atlas_handle(&self, key: &str) -> Option<comet_assets::Asset<comet_assets::TextureAtlas>> {
+    pub fn get_asset_atlas_handle(
+        &self,
+        key: &str,
+    ) -> Option<comet_assets::Asset<comet_assets::TextureAtlas>> {
         self.asset_atlas_handles.get(key).copied()
     }
 
     /// Cache an asset atlas handle for lookups.
-    pub fn insert_asset_atlas_handle(&mut self, key: String, handle: comet_assets::Asset<comet_assets::TextureAtlas>) {
+    pub fn insert_asset_atlas_handle(
+        &mut self,
+        key: String,
+        handle: comet_assets::Asset<comet_assets::TextureAtlas>,
+    ) {
         self.asset_atlas_handles.insert(key, handle);
     }
 
     /// Remove a cached asset atlas handle.
-    pub fn remove_asset_atlas_handle(&mut self, key: &str) -> Option<comet_assets::Asset<comet_assets::TextureAtlas>> {
+    pub fn remove_asset_atlas_handle(
+        &mut self,
+        key: &str,
+    ) -> Option<comet_assets::Asset<comet_assets::TextureAtlas>> {
         self.asset_atlas_handles.remove(key)
     }
-
 }

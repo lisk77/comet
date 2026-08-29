@@ -117,11 +117,11 @@ pub mod prelude {
     };
     pub use comet_ecs::{
         bundle, register_prefab, spawn_prefab, Added, Anchor, Bundle, Camera, Camera2d, Camera3d,
-        CameraViewport, Changed, Collider, Component, EcsModule, EcsModuleExt, Entity,
-        EcsError, NeededComponents, OrthographicProjection, PerspectiveProjection, Projection,
-        Query, QueryTargets, RequiredComponents, ResolutionScaling, Scene, Screen, ScreenPosition,
-        Sprite, Text, TextJustification, TextLayout, TextSize, Timer, Transform, With, WithAny,
-        Without, WithoutAny,
+        CameraViewport, Changed, Collider, Component, EcsError, EcsModule, EcsModuleExt, Entity,
+        Material, Mesh, MeshData, MeshVertex, NeededComponents, OrthographicProjection,
+        PerspectiveProjection, Projection, Query, QueryTargets, RequiredComponents,
+        ResolutionScaling, Scene, Screen, ScreenPosition, Sprite, Text, TextJustification,
+        TextLayout, TextSize, Timer, Transform, With, WithAny, Without, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{
