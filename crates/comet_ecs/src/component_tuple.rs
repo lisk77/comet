@@ -1,4 +1,4 @@
-use crate::{Bundle, Component, ErasedComponent, Scene};
+use crate::{Bundle, Component, EcsError, ErasedComponent, Scene};
 use comet_structs::Column;
 use std::any::TypeId;
 
@@ -30,8 +30,8 @@ impl Bundle for () {
         Vec::new()
     }
 
-    fn spawn(self, scene: &mut Scene) -> crate::Entity {
-        scene.new_entity_immediate()
+    fn try_spawn(self, scene: &mut Scene) -> Result<crate::Entity, EcsError> {
+        Ok(scene.new_entity_immediate())
     }
 
     fn type_ids(&self) -> Vec<TypeId> {
@@ -102,13 +102,16 @@ macro_rules! impl_component_tuple {
                 vec![$(ErasedComponent::new($name)),+]
             }
 
-            fn spawn(self, scene: &mut Scene) -> crate::Entity {
+            fn try_spawn(
+                self,
+                scene: &mut Scene,
+            ) -> Result<crate::Entity, EcsError> {
                 self.ensure_registered(scene);
                 let component_types = [$(std::any::TypeId::of::<$name>()),+];
                 if scene.__bundle_has_required_components(&component_types) {
-                    return scene.spawn_with_components(self.into_components());
+                    return scene.try_spawn_with_components(self.into_components());
                 }
-                scene.__spawn_bundle_typed(
+                scene.__try_spawn_bundle_typed(
                     std::any::TypeId::of::<($($name,)+)>(),
                     &component_types,
                     move |columns, column_indices, row| {

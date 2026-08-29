@@ -2,18 +2,26 @@ use std::any::TypeId;
 
 use comet_structs::Column;
 
-use crate::{ErasedComponent, Scene};
+use crate::{EcsError, ErasedComponent, Scene};
 pub trait Bundle {
     fn into_components(self) -> Vec<ErasedComponent>;
 
     fn ensure_registered(&self, scene: &mut Scene);
 
-    fn spawn(self, scene: &mut Scene) -> crate::Entity
+    fn try_spawn(self, scene: &mut Scene) -> Result<crate::Entity, EcsError>
     where
         Self: Sized,
     {
         self.ensure_registered(scene);
-        scene.spawn_with_components(self.into_components())
+        scene.try_spawn_with_components(self.into_components())
+    }
+
+    fn spawn(self, scene: &mut Scene) -> crate::Entity
+    where
+        Self: Sized,
+    {
+        self.try_spawn(scene)
+            .unwrap_or_else(|error| comet_log::fatal!("{}", error))
     }
 
     fn insert(self, scene: &mut Scene, entity: crate::Entity)
@@ -66,7 +74,10 @@ macro_rules! bundle {
                 $(scene.ensure_component::<$ty>();)*
             }
 
-            fn spawn(self, scene: &mut $crate::Scene) -> $crate::Entity {
+            fn try_spawn(
+                self,
+                scene: &mut $crate::Scene,
+            ) -> Result<$crate::Entity, $crate::EcsError> {
                 self.ensure_registered(scene);
                 let component_types = [
                     $(
@@ -74,9 +85,9 @@ macro_rules! bundle {
                     )*
                 ];
                 if scene.__bundle_has_required_components(&component_types) {
-                    return scene.spawn_with_components(self.into_components());
+                    return scene.try_spawn_with_components(self.into_components());
                 }
-                scene.__spawn_bundle_typed(
+                scene.__try_spawn_bundle_typed(
                     std::any::TypeId::of::<$name>(),
                     &component_types,
                     move |columns, column_indices, _row| {

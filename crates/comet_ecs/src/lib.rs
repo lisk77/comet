@@ -6,6 +6,7 @@ pub use component_derive::*;
 pub use component_tuple::ComponentTuple;
 pub use ecs_module::{EcsModule, EcsModuleExt};
 pub use entity::*;
+pub use error::EcsError;
 pub use id::*;
 pub use prefabs::{ErasedComponent, PrefabFactory};
 pub use query::{
@@ -24,6 +25,7 @@ mod component_changes;
 mod component_tuple;
 mod ecs_module;
 mod entity;
+mod error;
 mod id;
 pub mod prefabs;
 mod query;

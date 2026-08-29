@@ -6,8 +6,8 @@ use crate::query_plan_cache::QueryPlanCache;
 use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan};
 use crate::{
-    Component, ComponentTuple, Entity, EntityLocation, IdQueue, QueryTarget, QueryTargets,
-    RequiredComponent, RequiredComponents, Tick,
+    Component, ComponentTuple, EcsError, Entity, EntityLocation, IdQueue, NeededComponent,
+    NeededComponents, QueryTarget, QueryTargets, RequiredComponent, RequiredComponents, Tick,
 };
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
@@ -33,6 +33,8 @@ pub struct Scene {
     component_index: HashMap<TypeId, usize>,
     component_info: HashMap<TypeId, ComponentInfo>,
     required_components: HashMap<TypeId, Vec<RequiredComponent>>,
+    needed_components: HashMap<TypeId, Vec<NeededComponent>>,
+    needed_by: HashMap<TypeId, HashSet<TypeId>>,
     query_targets: HashMap<TypeId, Vec<QueryTarget>>,
     entity_locations: Vec<Option<EntityLocation>>,
     archetypes: Archetypes,
@@ -61,6 +63,8 @@ impl Scene {
             component_index: HashMap::new(),
             component_info: HashMap::new(),
             required_components: HashMap::new(),
+            needed_components: HashMap::new(),
+            needed_by: HashMap::new(),
             query_targets: HashMap::new(),
             entity_locations: Vec::with_capacity(DEFAULT_ENTITY_STORAGE_CAPACITY),
             archetypes: Archetypes::new(),
@@ -679,6 +683,19 @@ impl Scene {
         self.required_components
             .insert(type_id, requirements.into_components());
 
+        let mut needs = NeededComponents::new();
+        C::register_needed_components(&mut needs);
+        let needs = needs.into_components();
+        for needed in &needs {
+            if needed.type_id != type_id {
+                self.needed_by
+                    .entry(needed.type_id)
+                    .or_default()
+                    .insert(type_id);
+            }
+        }
+        self.needed_components.insert(type_id, needs);
+
         let mut query_targets = QueryTargets::new::<C>();
         query_targets.register_component::<C>();
         C::register_query_targets(&mut query_targets);
@@ -725,6 +742,23 @@ impl Scene {
             return;
         }
 
+        if let Some(dependents) = self.needed_by.get(&type_id) {
+            if !dependents.is_empty() {
+                let dependent_names = dependents
+                    .iter()
+                    .filter_map(|dependent| self.component_info.get(dependent))
+                    .map(|info| info.type_name)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                error!(
+                    "Cannot deregister component {} because it is needed by {}",
+                    std::any::type_name::<C>(),
+                    dependent_names
+                );
+                return;
+            }
+        }
+
         if self.has_live_component_instances(type_id) {
             error!(
                 "Cannot deregister component {} while live entities still contain it",
@@ -750,6 +784,21 @@ impl Scene {
         self.removed_component_events.remove(&type_id);
 
         self.required_components.remove(&type_id);
+        if let Some(needs) = self.needed_components.remove(&type_id) {
+            for needed in needs {
+                let remove_entry =
+                    self.needed_by
+                        .get_mut(&needed.type_id)
+                        .is_some_and(|dependents| {
+                            dependents.remove(&type_id);
+                            dependents.is_empty()
+                        });
+                if remove_entry {
+                    self.needed_by.remove(&needed.type_id);
+                }
+            }
+        }
+        self.needed_by.remove(&type_id);
 
         if self.component_info.remove(&type_id).is_some() {
             info!("Deregistered component: {}", std::any::type_name::<C>());
@@ -849,6 +898,48 @@ impl Scene {
         states.insert(type_id, 2);
     }
 
+    fn validate_needed_components(&self, component_set: &ComponentSet) -> Result<(), EcsError> {
+        for (dependent, needs) in &self.needed_components {
+            let Some(dependent_index) = self.component_index.get(dependent) else {
+                continue;
+            };
+            if !component_set.contains(*dependent_index) {
+                continue;
+            }
+            for needed in needs {
+                let present = self
+                    .component_index
+                    .get(&needed.type_id)
+                    .is_some_and(|index| component_set.contains(*index));
+                if !present {
+                    let dependent = self
+                        .component_info
+                        .get(dependent)
+                        .map_or("<unregistered>", |info| info.type_name);
+                    return Err(EcsError::MissingNeededComponent {
+                        dependent,
+                        missing: needed.type_name,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn assert_valid_needed_components(&self, component_set: &ComponentSet) {
+        if let Err(error) = self.validate_needed_components(component_set) {
+            fatal!("{}", error);
+        }
+    }
+
+    fn report_invalid_needed_components(&self, component_set: &ComponentSet) -> bool {
+        if let Err(error) = self.validate_needed_components(component_set) {
+            error!("{}", error);
+            return true;
+        }
+        false
+    }
+
     fn validate_components_registered(&self, components: &[ErasedComponent]) -> bool {
         for component in components {
             if !self.component_info.contains_key(&component.type_id) {
@@ -873,6 +964,30 @@ impl Scene {
             }
         }
         true
+    }
+
+    pub fn try_add_components<B: Bundle + 'static>(
+        &mut self,
+        entity_id: Entity,
+        bundle: B,
+    ) -> Result<(), EcsError> {
+        if !self.is_alive(entity_id) {
+            return Err(EcsError::EntityNotFound(entity_id));
+        }
+        bundle.ensure_registered(self);
+        let mut components = bundle.into_components();
+        let loc = self
+            .get_location(entity_id)
+            .ok_or(EcsError::EntityNotFound(entity_id))?;
+        let existing_types = self.archetypes.get(loc.archetype).types().to_vec();
+        self.expand_required_components(&mut components, existing_types);
+        let mut component_set = self.archetypes.get(loc.archetype).set().clone();
+        for component in &components {
+            component_set.insert(self.component_index[&component.type_id]);
+        }
+        self.validate_needed_components(&component_set)?;
+        self.add_with_components_immediate(entity_id, components);
+        Ok(())
     }
 
     pub fn add_components<B: Bundle + 'static>(&mut self, entity_id: Entity, bundle: B) {
@@ -914,6 +1029,9 @@ impl Scene {
             for &type_id in &type_ids {
                 let index = self.component_index[&type_id];
                 component_set.insert(index);
+            }
+            if self.report_invalid_needed_components(&component_set) {
+                return;
             }
             let target_arch = self.ensure_archetype(component_set);
             let col_indices: Arc<[usize]> = type_ids
@@ -978,12 +1096,48 @@ impl Scene {
         }
     }
 
+    pub fn try_remove_component<C: Component + 'static>(
+        &mut self,
+        entity_id: Entity,
+    ) -> Result<(), EcsError> {
+        self.validate_removal(entity_id, &[TypeId::of::<C>()])?;
+        self.remove_component_immediate::<C>(entity_id);
+        Ok(())
+    }
+
     pub fn remove_component<C: Component + 'static>(&mut self, entity_id: Entity) {
         self.remove_component_immediate::<C>(entity_id);
     }
 
+    pub fn try_remove_components<T: ComponentTuple>(
+        &mut self,
+        entity_id: Entity,
+    ) -> Result<(), EcsError> {
+        let component_types = T::type_ids();
+        self.validate_removal(entity_id, &component_types)?;
+        self.remove_with_components_immediate(entity_id, component_types);
+        Ok(())
+    }
+
     pub fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity) {
         self.remove_with_components_immediate(entity_id, T::type_ids());
+    }
+
+    fn validate_removal(
+        &self,
+        entity_id: Entity,
+        component_types: &[TypeId],
+    ) -> Result<(), EcsError> {
+        let loc = self
+            .get_location(entity_id)
+            .ok_or(EcsError::EntityNotFound(entity_id))?;
+        let mut component_set = self.archetypes.get(loc.archetype).set().clone();
+        for component_type in component_types {
+            if let Some(index) = self.component_index.get(component_type) {
+                component_set.remove(*index);
+            }
+        }
+        self.validate_needed_components(&component_set)
     }
 
     pub(crate) fn remove_with_components_immediate(
@@ -1027,6 +1181,9 @@ impl Scene {
             component_set.remove(index);
         }
 
+        if self.report_invalid_needed_components(&component_set) {
+            return;
+        }
         let new_arch_id = self.ensure_archetype(component_set);
         let old_len = self.archetypes.get(old_arch_id).len();
         if old_len == 0 {
@@ -1084,6 +1241,12 @@ impl Scene {
             .column_index(type_id)
             .is_none()
         {
+            return;
+        }
+
+        let mut component_set = self.archetypes.get(old_arch_id).set().clone();
+        component_set.remove(self.component_index[&type_id]);
+        if self.report_invalid_needed_components(&component_set) {
             return;
         }
 
@@ -1281,8 +1444,34 @@ impl Scene {
         )
     }
 
+    pub fn try_spawn<B: Bundle>(&mut self, bundle: B) -> Result<Entity, EcsError> {
+        bundle.try_spawn(self)
+    }
+
     pub fn spawn<B: Bundle>(&mut self, bundle: B) -> Entity {
         bundle.spawn(self)
+    }
+
+    pub fn try_spawn_batch<B: Bundle + 'static>(
+        &mut self,
+        bundles: Vec<B>,
+    ) -> Result<Vec<Entity>, EcsError> {
+        let mut prepared = Vec::with_capacity(bundles.len());
+        for bundle in bundles {
+            bundle.ensure_registered(self);
+            let mut components = bundle.into_components();
+            self.expand_required_components(&mut components, std::iter::empty());
+            let mut component_set = ComponentSet::new();
+            for component in &components {
+                component_set.insert(self.component_index[&component.type_id]);
+            }
+            self.validate_needed_components(&component_set)?;
+            prepared.push(components);
+        }
+        Ok(prepared
+            .into_iter()
+            .map(|components| self.spawn_with_components_immediate(components))
+            .collect())
     }
 
     pub fn spawn_batch<B: Bundle + 'static>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
@@ -1350,6 +1539,9 @@ impl Scene {
                 .copied()
                 .unwrap_or_else(|| panic!("Component {:?} missing index", component.type_id));
             component_set.insert(index);
+        }
+        if self.report_invalid_needed_components(&component_set) {
+            return;
         }
         let new_arch_id = self.ensure_archetype(component_set);
         let old_len = self.archetypes.get(old_arch_id).len();
@@ -1426,6 +1618,25 @@ impl Scene {
         }
     }
 
+    pub fn try_spawn_with_components(
+        &mut self,
+        mut components: Vec<ErasedComponent>,
+    ) -> Result<Entity, EcsError> {
+        if components.is_empty() {
+            return Ok(self.new_entity_immediate());
+        }
+        for component in &components {
+            (component.register_fn)(self);
+        }
+        self.expand_required_components(&mut components, std::iter::empty());
+        let mut component_set = ComponentSet::new();
+        for component in &components {
+            component_set.insert(self.component_index[&component.type_id]);
+        }
+        self.validate_needed_components(&component_set)?;
+        Ok(self.spawn_with_components_immediate(components))
+    }
+
     /// Spawns an entity from erased components immediately.
     pub fn spawn_with_components(&mut self, components: Vec<ErasedComponent>) -> Entity {
         self.spawn_with_components_immediate(components)
@@ -1455,6 +1666,7 @@ impl Scene {
                 .unwrap_or_else(|| panic!("Component {:?} missing index", component.type_id));
             component_set.insert(index);
         }
+        self.assert_valid_needed_components(&component_set);
         let archetype = self.ensure_archetype(component_set);
         let entity_id = self.allocate_entity_slot();
         let row = self.place_entity_in_archetype(entity_id, archetype);
@@ -1483,22 +1695,22 @@ impl Scene {
     }
 
     #[doc(hidden)]
-    pub fn __spawn_bundle_typed<F>(
+    pub fn __try_spawn_bundle_typed<F>(
         &mut self,
         bundle_type: TypeId,
         component_types: &[TypeId],
         writer: F,
-    ) -> Entity
+    ) -> Result<Entity, EcsError>
     where
         F: FnOnce(&mut [Column], &[usize], usize),
     {
         if component_types.is_empty() {
-            return self.new_entity_immediate();
+            return Ok(self.new_entity_immediate());
         }
 
         if !self.bundle_spawn_cache.contains_key(&bundle_type) {
             if !self.validate_type_ids_registered(component_types) {
-                return self.new_entity_immediate();
+                return Ok(self.new_entity_immediate());
             }
 
             let mut component_set = ComponentSet::new();
@@ -1511,6 +1723,7 @@ impl Scene {
                 component_set.insert(index);
             }
 
+            self.validate_needed_components(&component_set)?;
             let archetype = self.ensure_archetype(component_set);
             let arch = self.archetypes.get(archetype);
             let mut column_indices = Vec::with_capacity(component_types.len());
@@ -1558,7 +1771,7 @@ impl Scene {
             self.mark_component_added_and_changed(entity_id, *type_id);
         }
 
-        entity_id
+        Ok(entity_id)
     }
 
     #[doc(hidden)]
@@ -1600,6 +1813,7 @@ impl Scene {
                 component_set.insert(index);
             }
 
+            self.assert_valid_needed_components(&component_set);
             let archetype = self.ensure_archetype(component_set);
             let arch = self.archetypes.get(archetype);
             let mut column_indices = Vec::with_capacity(component_types.len());

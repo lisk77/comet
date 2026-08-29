@@ -1,6 +1,6 @@
 use crate::{
-    Bundle, Component, ComponentTuple, Entity, PrefabFactory, Query, QueryParam, QuerySpecMut,
-    Scene,
+    Bundle, Component, ComponentTuple, EcsError, Entity, PrefabFactory, Query, QueryParam,
+    QuerySpecMut, Scene,
 };
 use comet_app::{App, Module};
 use std::any::TypeId;
@@ -44,7 +44,12 @@ pub trait EcsModuleExt {
     fn scene(&self) -> &Scene;
     fn scene_mut(&mut self) -> &mut Scene;
 
+    fn try_spawn<B: Bundle + 'static>(&mut self, bundle: B) -> Result<Entity, EcsError>;
     fn spawn<B: Bundle + 'static>(&mut self, bundle: B) -> Entity;
+    fn try_spawn_batch<B: Bundle + 'static>(
+        &mut self,
+        bundles: Vec<B>,
+    ) -> Result<Vec<Entity>, EcsError>;
     fn spawn_batch<B: Bundle + 'static>(&mut self, bundles: Vec<B>) -> Vec<Entity>;
 
     fn deferred_spawn_empty(&mut self);
@@ -71,8 +76,18 @@ pub trait EcsModuleExt {
 
     fn ensure_component<C: Component>(&mut self);
     fn ensure_components<T: ComponentTuple>(&mut self);
+    fn try_add_components<B: Bundle + 'static>(
+        &mut self,
+        entity_id: Entity,
+        components: B,
+    ) -> Result<(), EcsError>;
     fn add_components<B: Bundle + 'static>(&mut self, entity_id: Entity, components: B);
+    fn try_remove_component<C: Component>(&mut self, entity_id: Entity) -> Result<(), EcsError>;
     fn remove_component<C: Component>(&mut self, entity_id: Entity);
+    fn try_remove_components<T: ComponentTuple>(
+        &mut self,
+        entity_id: Entity,
+    ) -> Result<(), EcsError>;
     fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity);
     fn get_component<C: Component>(&self, entity_id: Entity) -> Option<&C>;
     fn get_component_mut<C: Component>(&mut self, entity_id: Entity) -> Option<&mut C>;
@@ -93,8 +108,21 @@ impl EcsModuleExt for App {
         &mut self.get_module_mut::<EcsModule>().scene
     }
 
+    fn try_spawn<B: Bundle + 'static>(&mut self, bundle: B) -> Result<Entity, EcsError> {
+        self.get_module_mut::<EcsModule>().scene.try_spawn(bundle)
+    }
+
     fn spawn<B: Bundle + 'static>(&mut self, bundle: B) -> Entity {
         self.get_module_mut::<EcsModule>().scene.spawn(bundle)
+    }
+
+    fn try_spawn_batch<B: Bundle + 'static>(
+        &mut self,
+        bundles: Vec<B>,
+    ) -> Result<Vec<Entity>, EcsError> {
+        self.get_module_mut::<EcsModule>()
+            .scene
+            .try_spawn_batch(bundles)
     }
 
     fn spawn_batch<B: Bundle + 'static>(&mut self, bundles: Vec<B>) -> Vec<Entity> {
@@ -202,16 +230,41 @@ impl EcsModuleExt for App {
             .ensure_components::<T>();
     }
 
+    fn try_add_components<B: Bundle + 'static>(
+        &mut self,
+        entity_id: Entity,
+        components: B,
+    ) -> Result<(), EcsError> {
+        self.get_module_mut::<EcsModule>()
+            .scene
+            .try_add_components(entity_id, components)
+    }
+
     fn add_components<B: Bundle + 'static>(&mut self, entity_id: Entity, components: B) {
         self.get_module_mut::<EcsModule>()
             .scene
             .add_components(entity_id, components);
     }
 
+    fn try_remove_component<C: Component>(&mut self, entity_id: Entity) -> Result<(), EcsError> {
+        self.get_module_mut::<EcsModule>()
+            .scene
+            .try_remove_component::<C>(entity_id)
+    }
+
     fn remove_component<C: Component>(&mut self, entity_id: Entity) {
         self.get_module_mut::<EcsModule>()
             .scene
             .remove_component::<C>(entity_id);
+    }
+
+    fn try_remove_components<T: ComponentTuple>(
+        &mut self,
+        entity_id: Entity,
+    ) -> Result<(), EcsError> {
+        self.get_module_mut::<EcsModule>()
+            .scene
+            .try_remove_components::<T>(entity_id)
     }
 
     fn remove_components<T: ComponentTuple>(&mut self, entity_id: Entity) {

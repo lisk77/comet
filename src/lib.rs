@@ -36,16 +36,16 @@
 //! | `comet_math` | Includes mathematical utilities and data structures. |
 //! | `comet_renderer` | Implements a simple 2D renderer for drawing graphics and text. |
 //! | `comet_assets` | Manages resources such as textures, shaders and fonts. |
-pub use comet_gizmos as gizmos;
 pub use comet_app as app;
-pub use comet_window as window;
+pub use comet_assets as assets;
 pub use comet_colors as colors;
 pub use comet_ecs as ecs;
+pub use comet_gizmos as gizmos;
 pub use comet_input as input;
 pub use comet_log as log;
 pub use comet_math as math;
 pub use comet_renderer as renderer;
-pub use comet_assets as assets;
+pub use comet_window as window;
 
 use comet_app::App;
 use comet_assets::AssetModule;
@@ -118,10 +118,10 @@ pub mod prelude {
     pub use comet_ecs::{
         bundle, register_prefab, spawn_prefab, Added, Anchor, Bundle, Camera, Camera2d, Camera3d,
         CameraViewport, Changed, Collider, Component, EcsModule, EcsModuleExt, Entity,
-        OrthographicProjection, PerspectiveProjection, Projection, Query, QueryTargets,
-        RequiredComponents, ResolutionScaling, Scene, Screen, ScreenPosition, Sprite, Text,
-        TextJustification, TextLayout, TextSize, Timer, Transform, With, WithAny, Without,
-        WithoutAny,
+        EcsError, NeededComponents, OrthographicProjection, PerspectiveProjection, Projection,
+        Query, QueryTargets, RequiredComponents, ResolutionScaling, Scene, Screen, ScreenPosition,
+        Sprite, Text, TextJustification, TextLayout, TextSize, Timer, Transform, With, WithAny,
+        Without, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{
