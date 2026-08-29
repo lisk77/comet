@@ -58,6 +58,7 @@ comet_window = { path = "./crates/comet_window" }
 comet_gizmos = { path = "./crates/comet_gizmos" }
 
 anyhow = "1.0"
+thiserror = "2.0"
 bytemuck = { version = "1.16", features = ["derive"] }
 flume = "0.12.0"
 image = { version = "0.24", default-features = false, features = ["png", "jpeg", "hdr"] }

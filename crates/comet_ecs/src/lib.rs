@@ -6,6 +6,7 @@ pub use component_derive::*;
 pub use component_tuple::ComponentTuple;
 pub use ecs_module::{EcsModule, EcsModuleExt};
 pub use entity::*;
+pub use error::EcsError;
 pub use id::*;
 pub use prefabs::{ErasedComponent, PrefabFactory};
 pub use query::{
@@ -17,6 +18,11 @@ pub use sparse_set::SparseSet;
 
 pub type Tick = u32;
 
+#[doc(hidden)]
+pub mod __private {
+    pub use comet_structs::Column;
+}
+
 mod archetypes;
 mod bundles;
 mod component;
@@ -24,6 +30,7 @@ mod component_changes;
 mod component_tuple;
 mod ecs_module;
 mod entity;
+mod error;
 mod id;
 pub mod prefabs;
 mod query;

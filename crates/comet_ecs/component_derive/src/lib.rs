@@ -30,7 +30,7 @@ impl Parse for RequiredComponent {
     }
 }
 
-#[proc_macro_derive(Component, attributes(require, query_as))]
+#[proc_macro_derive(Component, attributes(require, needs, query_as))]
 pub fn component_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -70,6 +70,24 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
         }
     });
 
+    let needed_components = match input
+        .attrs
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("needs"))
+        .map(|attribute| attribute.parse_args_with(Punctuated::<Type, Token![,]>::parse_terminated))
+        .collect::<syn::Result<Vec<_>>>()
+    {
+        Ok(needed_components) => needed_components.into_iter().flatten().collect::<Vec<_>>(),
+        Err(error) => return error.into_compile_error().into(),
+    };
+    let register_needed_components = (!needed_components.is_empty()).then(|| {
+        quote! {
+            fn register_needed_components(needs: &mut NeededComponents) {
+                #(needs.need::<#needed_components>();)*
+            }
+        }
+    });
+
     let required_components = match input
         .attrs
         .iter()
@@ -103,6 +121,7 @@ pub fn component_derive(input: TokenStream) -> TokenStream {
                 #(#required_components)*
             }
 
+            #register_needed_components
             #register_query_targets
         }
     }

@@ -23,6 +23,43 @@ pub struct RequiredComponents {
     components: Vec<RequiredComponent>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct NeededComponent {
+    pub(crate) type_id: TypeId,
+    pub(crate) type_name: &'static str,
+}
+
+pub struct NeededComponents {
+    components: Vec<NeededComponent>,
+}
+
+impl NeededComponents {
+    pub(crate) fn new() -> Self {
+        Self {
+            components: Vec::new(),
+        }
+    }
+
+    pub fn need<C: Component>(&mut self) {
+        let type_id = TypeId::of::<C>();
+        if self
+            .components
+            .iter()
+            .any(|needed| needed.type_id == type_id)
+        {
+            return;
+        }
+        self.components.push(NeededComponent {
+            type_id,
+            type_name: std::any::type_name::<C>(),
+        });
+    }
+
+    pub(crate) fn into_components(self) -> Vec<NeededComponent> {
+        self.components
+    }
+}
+
 impl RequiredComponents {
     pub(crate) fn new() -> Self {
         Self {
@@ -157,6 +194,12 @@ pub trait Component: Send + Sync + 'static {
     }
 
     fn register_required_components(_requirements: &mut RequiredComponents)
+    where
+        Self: Sized,
+    {
+    }
+
+    fn register_needed_components(_needs: &mut NeededComponents)
     where
         Self: Sized,
     {
