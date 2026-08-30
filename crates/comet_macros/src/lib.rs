@@ -14,7 +14,7 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
     component::derive(item)
 }
 
-#[proc_macro_derive(Material, attributes(material, uniform, texture, sampler))]
+#[proc_macro_derive(Material, attributes(material, uniform, texture, sampler, color))]
 pub fn derive_material(item: TokenStream) -> TokenStream {
     material::derive(item)
 }

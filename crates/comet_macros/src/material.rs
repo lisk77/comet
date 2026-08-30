@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, LitStr};
+use syn::{parse_macro_input, Data, DeriveInput, Expr, Fields, Lit, LitStr, Type};
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -79,20 +79,52 @@ pub fn derive(input: TokenStream) -> TokenStream {
             .into_compile_error()
             .into();
         }
-        if field
+        let is_uniform = field
             .attrs
             .iter()
-            .any(|attribute| attribute.path().is_ident("uniform"))
-        {
+            .any(|attribute| attribute.path().is_ident("uniform"));
+        let is_color = field
+            .attrs
+            .iter()
+            .any(|attribute| attribute.path().is_ident("color"));
+        if is_uniform {
             uniform_fields.push((field_name, field_type));
         }
+        if is_color && !is_uniform {
+            return syn::Error::new_spanned(field, "#[color] requires #[uniform]")
+                .into_compile_error()
+                .into();
+        }
+        if is_color && !is_color_storage(field_type) {
+            return syn::Error::new_spanned(
+                field_type,
+                "#[color] fields must use [f32; 4] storage",
+            )
+            .into_compile_error()
+            .into();
+        }
         let builder_name = quote::format_ident!("with_{}", field_name);
-        builders.push(quote! {
-            pub fn #builder_name(mut self, value: #field_type) -> Self {
-                self.#field_name = value;
-                self
-            }
-        });
+        if is_color {
+            builders.push(quote! {
+                pub fn #builder_name(mut self, value: impl CometColor) -> Self {
+                    let value = value.to_wgpu();
+                    self.#field_name = [
+                        value.r as f32,
+                        value.g as f32,
+                        value.b as f32,
+                        value.a as f32,
+                    ];
+                    self
+                }
+            });
+        } else {
+            builders.push(quote! {
+                pub fn #builder_name(mut self, value: #field_type) -> Self {
+                    self.#field_name = value;
+                    self
+                }
+            });
+        }
     }
 
     let uniform_descriptors = uniform_fields.iter().map(|(field_name, field_type)| {
@@ -154,4 +186,20 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     }
     .into()
+}
+
+fn is_color_storage(field_type: &Type) -> bool {
+    let Type::Array(array) = field_type else {
+        return false;
+    };
+    let Type::Path(element) = array.elem.as_ref() else {
+        return false;
+    };
+    if !element.path.is_ident("f32") {
+        return false;
+    }
+    matches!(
+        &array.len,
+        Expr::Lit(literal) if matches!(&literal.lit, Lit::Int(length) if matches!(length.base10_parse::<usize>(), Ok(4)))
+    )
 }
