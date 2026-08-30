@@ -9,7 +9,6 @@ pub use entity::*;
 pub use error::EcsError;
 pub use id::*;
 
-pub use mesh::{Mesh, MeshData};
 pub use prefabs::{ErasedComponent, PrefabFactory};
 pub use query::{
     Added, Changed, Query, QueryParam, QuerySpec, QuerySpecMut, With, WithAny, Without, WithoutAny,
@@ -35,7 +34,6 @@ mod entity;
 mod error;
 mod id;
 
-mod mesh;
 pub mod prefabs;
 mod query;
 mod query_plan_cache;
