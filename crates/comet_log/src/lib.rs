@@ -88,6 +88,33 @@ macro_rules! fatal {
     }};
 }
 #[macro_export]
+macro_rules! cassert {
+    ($condition:expr $(,)?) => {{
+        $crate::cassert!(
+            $condition,
+            "assertion failed: {}",
+            stringify!($condition)
+        );
+    }};
+    ($condition:expr, $fmt:expr $(, $args:expr)* $(,)?) => {{
+        if !$condition {
+            use std::io::Write;
+            let stderr = std::io::stderr();
+            let mut handle = stderr.lock();
+            writeln!(
+                handle,
+                "{} [{}] [{}::{}] : {}",
+                $crate::chrono::Utc::now().to_rfc3339_opts($crate::chrono::SecondsFormat::Micros, true),
+                "\x1b[38;5;208m\x1b[1mASSERT\x1b[0m",
+                env!("CARGO_PKG_NAME"),
+                module_path!(),
+                format_args!($fmt $(, $args)*)
+            ).unwrap();
+            std::process::exit(1)
+        }
+    }};
+}
+#[macro_export]
 macro_rules! trace {
     ($fmt:expr $(, $args:expr)*) => {{
         use std::io::Write;
