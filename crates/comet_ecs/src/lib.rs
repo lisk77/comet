@@ -1,17 +1,14 @@
 pub use bundles::Bundle;
+pub use comet_macros::Component;
 pub use comet_math as math;
 pub use component::*;
 pub use component_changes::ComponentChange;
-pub use component_derive::*;
 pub use component_tuple::ComponentTuple;
 pub use ecs_module::{EcsModule, EcsModuleExt};
 pub use entity::*;
 pub use error::EcsError;
 pub use id::*;
-pub use material::{
-    EncodedUniform, Material, MaterialDescriptor, MaterialEncoder, ShaderData, ShaderDataSchema,
-    UniformDescriptor,
-};
+
 pub use mesh::{Mesh, MeshData};
 pub use prefabs::{ErasedComponent, PrefabFactory};
 pub use query::{
@@ -37,7 +34,7 @@ mod ecs_module;
 mod entity;
 mod error;
 mod id;
-mod material;
+
 mod mesh;
 pub mod prefabs;
 mod query;

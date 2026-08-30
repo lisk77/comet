@@ -117,12 +117,11 @@ pub mod prelude {
     };
     pub use comet_ecs::{
         bundle, register_prefab, spawn_prefab, Added, Anchor, Bundle, Camera, Camera2d, Camera3d,
-        CameraViewport, Changed, Collider, Component, EcsError, EcsModule, EcsModuleExt,
-        EncodedUniform, Entity, Material, MaterialDescriptor, MaterialEncoder, Mesh, MeshData,
-        NeededComponents, OrthographicProjection, PerspectiveProjection, Projection, Query,
-        QueryTargets, RequiredComponents, ResolutionScaling, Scene, Screen, ScreenPosition,
-        ShaderData, ShaderDataSchema, Sprite, Text, TextJustification, TextLayout, TextSize, Timer,
-        Transform, UniformDescriptor, With, WithAny, Without, WithoutAny,
+        CameraViewport, Changed, Collider, Component, EcsError, EcsModule, EcsModuleExt, Entity,
+        Mesh, MeshData, NeededComponents, OrthographicProjection, PerspectiveProjection,
+        Projection, Query, QueryTargets, RequiredComponents, ResolutionScaling, Scene, Screen,
+        ScreenPosition, Sprite, Text, TextJustification, TextLayout, TextSize, Timer, Transform,
+        With, WithAny, Without, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{
@@ -133,6 +132,9 @@ pub mod prelude {
     };
     pub use comet_log::*;
     pub use comet_math::*;
-    pub use comet_renderer::{RenderHandle2D, RenderHandle2DExt, Renderer2DModule};
+    pub use comet_renderer::{
+        EncodedUniform, Material, MaterialDescriptor, MaterialEncoder, RenderHandle2D,
+        RenderHandle2DExt, Renderer2DModule, ShaderData, ShaderDataSchema, UniformDescriptor,
+    };
     pub use comet_window::{WinitModule, WinitModuleExt};
 }

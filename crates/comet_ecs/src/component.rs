@@ -7,7 +7,7 @@ use crate::math::{deg, dp, m4, v2, v3, v4, Dp, EulerAngles, Px, Rad, ScreenSize,
 use comet_assets::{AssetSource, Image, ImageRef};
 use comet_colors::{Color, LinearRgba};
 use comet_gizmos::{Gizmo, GizmoBuffer};
-use component_derive::Component;
+use comet_macros::Component;
 use std::any::TypeId;
 use std::mem::MaybeUninit;
 use std::sync::Arc;

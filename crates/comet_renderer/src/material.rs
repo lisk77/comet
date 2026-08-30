@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use crate::Component;
+use comet_ecs::Component;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ShaderDataSchema {

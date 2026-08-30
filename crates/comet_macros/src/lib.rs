@@ -1,7 +1,23 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
+
+mod component;
+mod material;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, Pat, ReturnType, Type, Visibility};
+use syn::{
+    parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, Pat, ReturnType, Type,
+    Visibility,
+};
+
+#[proc_macro_derive(Component, attributes(require, needs, query_as))]
+pub fn derive_component(item: TokenStream) -> TokenStream {
+    component::derive(item)
+}
+
+#[proc_macro_derive(Material, attributes(material, uniform, texture, sampler))]
+pub fn derive_material(item: TokenStream) -> TokenStream {
+    material::derive(item)
+}
 
 #[proc_macro_derive(Action)]
 pub fn derive_action(item: TokenStream) -> TokenStream {
@@ -109,9 +125,8 @@ pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
             },
             _ => false,
         };
-        let is_builder = receiver.reference.is_some()
-            && receiver.mutability.is_some()
-            && returns_mut_self;
+        let is_builder =
+            receiver.reference.is_some() && receiver.mutability.is_some() && returns_mut_self;
 
         let param_names: Vec<_> = sig
             .inputs
@@ -132,9 +147,18 @@ pub fn module(_attr: TokenStream, item: TokenStream) -> TokenStream {
         let generics = &sig.generics;
         let where_clause = &sig.generics.where_clause;
 
-        let type_params: Vec<_> = sig.generics.params.iter().filter_map(|p| {
-            if let syn::GenericParam::Type(tp) = p { Some(&tp.ident) } else { None }
-        }).collect();
+        let type_params: Vec<_> = sig
+            .generics
+            .params
+            .iter()
+            .filter_map(|p| {
+                if let syn::GenericParam::Type(tp) = p {
+                    Some(&tp.ident)
+                } else {
+                    None
+                }
+            })
+            .collect();
         let turbofish = if type_params.is_empty() {
             quote! { #method_name }
         } else {

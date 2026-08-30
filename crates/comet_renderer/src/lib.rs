@@ -3,6 +3,7 @@ mod camera;
 pub mod draw_batch;
 pub(crate) mod gizmo_registry;
 pub mod gpu_texture;
+pub mod material;
 pub mod render_commands;
 pub mod render_events;
 pub mod render_graph;
@@ -13,10 +14,15 @@ pub mod renderer2d;
 pub mod sprite_instance;
 pub mod vertex;
 
+pub use comet_macros::Material;
 pub use draw_batch::{
     DrawCommand, DrawStreamError, GeometryDescriptor, IndexStreamDescriptor, VertexStreamDescriptor,
 };
 pub use gpu_texture::*;
+pub use material::{
+    EncodedUniform, Material, MaterialDescriptor, MaterialEncoder, ShaderData, ShaderDataSchema,
+    UniformDescriptor,
+};
 pub use render_commands::PassDescriptor;
 pub use render_graph::nodes::{PassNode, PostProcessNode};
 pub use render_graph::{BuildContext, NodeState, RenderGraph, RenderNode};
