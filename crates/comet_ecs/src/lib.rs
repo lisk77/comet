@@ -8,8 +8,11 @@ pub use ecs_module::{EcsModule, EcsModuleExt};
 pub use entity::*;
 pub use error::EcsError;
 pub use id::*;
-pub use material::Material;
-pub use mesh::{Mesh, MeshData, MeshVertex};
+pub use material::{
+    EncodedUniform, Material, MaterialDescriptor, MaterialEncoder, ShaderData, ShaderDataSchema,
+    UniformDescriptor,
+};
+pub use mesh::{Mesh, MeshData};
 pub use prefabs::{ErasedComponent, PrefabFactory};
 pub use query::{
     Added, Changed, Query, QueryParam, QuerySpec, QuerySpecMut, With, WithAny, Without, WithoutAny,

@@ -3,31 +3,19 @@ use std::sync::Arc;
 use crate::Component;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MeshVertex {
+struct MeshVertex {
     position: [f32; 3],
     tex_coords: [f32; 2],
     color: [f32; 4],
 }
 
 impl MeshVertex {
-    pub fn new(position: [f32; 3], tex_coords: [f32; 2], color: [f32; 4]) -> Self {
+    fn new(position: [f32; 3], tex_coords: [f32; 2], color: [f32; 4]) -> Self {
         Self {
             position,
             tex_coords,
             color,
         }
-    }
-
-    pub fn position(&self) -> [f32; 3] {
-        self.position
-    }
-
-    pub fn tex_coords(&self) -> [f32; 2] {
-        self.tex_coords
-    }
-
-    pub fn color(&self) -> [f32; 4] {
-        self.color
     }
 }
 
@@ -43,7 +31,7 @@ pub struct MeshData {
 }
 
 impl Mesh {
-    pub fn new(vertices: Vec<MeshVertex>, indices: Vec<u32>) -> Self {
+    fn new(vertices: Vec<MeshVertex>, indices: Vec<u32>) -> Self {
         assert!(
             !vertices.is_empty(),
             "mesh must contain at least one vertex"
@@ -80,26 +68,8 @@ impl Mesh {
         )
     }
 
-    pub fn vertices(&self) -> &[MeshVertex] {
-        self.data.vertices()
-    }
-
-    pub fn indices(&self) -> &[u32] {
-        self.data.indices()
-    }
-
     pub fn data(&self) -> &Arc<MeshData> {
         &self.data
-    }
-}
-
-impl MeshData {
-    pub fn vertices(&self) -> &[MeshVertex] {
-        &self.vertices
-    }
-
-    pub fn indices(&self) -> &[u32] {
-        &self.indices
     }
 }
 

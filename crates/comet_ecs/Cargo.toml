@@ -17,4 +17,5 @@ comet_structs = { workspace = true }
 comet_colors = { workspace = true }
 comet_gizmos = { workspace = true }
 thiserror = { workspace = true }
+bytemuck = { workspace = true }
 wgpu = { workspace = true }
