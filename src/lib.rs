@@ -119,9 +119,9 @@ pub mod prelude {
         bundle, register_prefab, spawn_prefab, Added, Anchor, Bundle, Camera, Camera2d, Camera3d,
         CameraViewport, Changed, Collider, Component, EcsError, EcsModule, EcsModuleExt, Entity,
         Mesh, MeshData, NeededComponents, OrthographicProjection, PerspectiveProjection,
-        Projection, Query, QueryTargets, RequiredComponents, ResolutionScaling, Scene, Screen,
-        ScreenPosition, Sprite, Text, TextJustification, TextLayout, TextSize, Timer, Transform,
-        With, WithAny, Without, WithoutAny,
+        Projection, Query, QueryTargets, RenderAsset, RequiredComponents, ResolutionScaling, Scene,
+        Screen, ScreenPosition, Sprite, Text, TextJustification, TextLayout, TextSize, Timer,
+        Transform, With, WithAny, Without, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{

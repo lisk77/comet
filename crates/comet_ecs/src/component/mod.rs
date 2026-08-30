@@ -1,6 +1,7 @@
 mod camera;
 mod collider;
 mod mesh;
+mod render_asset;
 mod screen;
 mod sprite;
 mod text;
@@ -10,6 +11,7 @@ mod transform;
 pub use camera::*;
 pub use collider::*;
 pub use mesh::{Mesh, MeshData};
+pub use render_asset::*;
 pub use screen::*;
 pub use sprite::*;
 pub use text::*;

@@ -1,10 +1,27 @@
 use super::*;
 
 #[derive(Component, Debug, Clone, PartialEq)]
+#[query_as(RenderAsset)]
+#[require(Mesh = Mesh::quad)]
+#[needs(Mesh)]
 pub struct Sprite {
     is_visible: bool,
     texture: ImageRef,
     draw_index: u32,
+}
+
+impl RenderAsset for Sprite {
+    fn resolve_asset(&mut self, assets: &comet_assets::AssetProvider) -> comet_assets::AssetId {
+        match self.texture.clone() {
+            ImageRef::Unresolved(path) => {
+                let handle = assets.resolve::<Image>(path);
+                self.texture = ImageRef::Handle(handle);
+                handle.id()
+            }
+            ImageRef::Atlas(atlas) => atlas.atlas().id(),
+            ImageRef::Handle(handle) | ImageRef::ResolvedHandle(handle, _) => handle.id(),
+        }
+    }
 }
 
 impl Sprite {
