@@ -101,6 +101,32 @@ impl_query_data_leaf!(Option<&'a mut C>);
 impl<'a, C: ?Sized + Component> ReadQueryData<'a> for &'a C {}
 impl<'a, C: ?Sized + Component> ReadQueryData<'a> for Option<&'a C> {}
 
+impl<'a> QueryData<'a> for Entity {
+    fn components() -> Vec<QueryComponent> {
+        Vec::new()
+    }
+
+    unsafe fn mark_changed(
+        _change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+        _component_event_tick: Tick,
+        _entity: Entity,
+        _columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        _component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
+    ) {
+    }
+
+    unsafe fn fetch(
+        entity: Entity,
+        _columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        _casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        _row: usize,
+    ) -> Option<Self> {
+        Some(entity)
+    }
+}
+
+impl<'a> ReadQueryData<'a> for Entity {}
+
 macro_rules! impl_tuple_query_data {
     ($($ty:ident: $index:literal),+) => {
         impl<'a, $($ty),+> QueryData<'a> for ($($ty,)+)

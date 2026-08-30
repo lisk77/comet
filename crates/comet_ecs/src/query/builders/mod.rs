@@ -4,10 +4,6 @@ use std::ptr;
 
 fn validate_components(components: &[QueryComponent]) {
     assert!(
-        !components.is_empty(),
-        "query must fetch at least one component"
-    );
-    assert!(
         components.len() <= MAX_QUERY_COMPONENTS,
         "query fetches more than {MAX_QUERY_COMPONENTS} components"
     );
@@ -151,6 +147,16 @@ fn resolved_accesses(
     components: &[QueryComponent],
     state: &QueryFilterState,
 ) -> Vec<(usize, [Option<QueryTarget>; MAX_QUERY_COMPONENTS])> {
+    if components.is_empty() {
+        return scene
+            .archetypes()
+            .iter()
+            .enumerate()
+            .filter(|(_, archetype)| archetype_matches_filters(scene, archetype, state))
+            .map(|(archetype, _)| (archetype, std::array::from_fn(|_| None)))
+            .collect();
+    }
+
     let anchor_targets = scene.query_targets(components[0].type_id).to_vec();
     let dynamic_slots = components
         .iter()

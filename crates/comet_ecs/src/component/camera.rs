@@ -1,7 +1,5 @@
 use super::*;
 
-use super::*;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PerspectiveProjection {
     vertical_fov: Rad,
