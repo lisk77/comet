@@ -225,11 +225,14 @@ impl AssetStore {
     }
 
     pub fn load_state<T: 'static>(&mut self, handle: Asset<T>) -> LoadState {
-        let index = handle.index() as usize;
-        let Some(slot) = self.slots.get_mut(index) else {
+        self.load_state_by_parts(handle.index(), handle.generation())
+    }
+
+    pub(crate) fn load_state_by_parts(&mut self, index: u32, generation: u32) -> LoadState {
+        let Some(slot) = self.slots.get_mut(index as usize) else {
             return LoadState::Failed;
         };
-        if slot.generation != handle.generation() {
+        if slot.generation != generation {
             return LoadState::Failed;
         }
 

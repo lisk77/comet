@@ -1,6 +1,6 @@
 use crate::{
     asset_handle::*, asset_store::*, audio_clip::AudioClip, font::Font, image::Image,
-    texture_atlas::TextureAtlas, AssetSettings,
+    texture_atlas::TextureAtlas, AssetId, AssetSettings,
 };
 use anyhow::Result;
 use std::any::TypeId;
@@ -161,6 +161,10 @@ impl StoreMap {
         self.map.get_mut(&TypeId::of::<T>())
     }
 
+    fn get_mut_by_type_id(&mut self, type_id: TypeId) -> Option<&mut AssetStore> {
+        self.map.get_mut(&type_id)
+    }
+
     fn record_path_by_type_id(&mut self, type_id: TypeId, index: u32, gen: u32, path: &str) {
         if let Some(store) = self.map.get_mut(&type_id) {
             store.record_path(index, gen, path);
@@ -308,6 +312,13 @@ impl AssetManager {
 
     pub fn load_state<T: Loadable>(&mut self, handle: Asset<T>) -> LoadState {
         self.stores.get_mut::<T>().load_state(handle)
+    }
+
+    pub fn load_state_by_id(&mut self, id: AssetId) -> LoadState {
+        self.stores
+            .get_mut_by_type_id(id.asset_type())
+            .map(|store| store.load_state_by_parts(id.index(), id.generation()))
+            .unwrap_or(LoadState::Failed)
     }
 
     pub(crate) fn record_path<T: Loadable>(&mut self, index: u32, generation: u32, path: &str) {

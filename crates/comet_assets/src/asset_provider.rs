@@ -2,7 +2,7 @@ use crate::asset_manager::{Loadable, ReloadFn};
 use crate::asset_store::LoadState;
 use crate::image::Image;
 use crate::texture_atlas::TextureAtlas;
-use crate::{Asset, AssetManager, AssetPath, AssetSettings, AssetSource};
+use crate::{Asset, AssetId, AssetManager, AssetPath, AssetSettings, AssetSource};
 use comet_app::file_extension;
 use notify::{EventKind, RecursiveMode, Watcher};
 use std::any::TypeId;
@@ -541,6 +541,15 @@ impl AssetProvider {
             .write()
             .ok()
             .map(|mut m| m.load_state(handle))
+            .unwrap_or(LoadState::Failed)
+    }
+
+    /// Non-blocking load state for a type-erased asset identity.
+    pub fn load_state_by_id(&self, id: AssetId) -> LoadState {
+        self.inner
+            .write()
+            .ok()
+            .map(|mut manager| manager.load_state_by_id(id))
             .unwrap_or(LoadState::Failed)
     }
 

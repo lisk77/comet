@@ -1,5 +1,6 @@
 use crate::{
-    Asset, AssetManager, AssetPath, AssetProvider, AssetSettings, AssetSource, LoadState, Loadable,
+    Asset, AssetId, AssetManager, AssetPath, AssetProvider, AssetSettings, AssetSource, LoadState,
+    Loadable,
 };
 use comet_app::{App, Module};
 use comet_macros::module;
@@ -62,6 +63,10 @@ impl AssetModule {
 
     pub fn load_state<T: Loadable>(&self, handle: Asset<T>) -> LoadState {
         self.provider.load_state(handle)
+    }
+
+    pub fn load_state_by_id(&self, id: AssetId) -> LoadState {
+        self.provider.load_state_by_id(id)
     }
 
     pub fn load_progress(&self) -> (usize, usize) {
