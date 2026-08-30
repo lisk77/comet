@@ -11,15 +11,11 @@ pub struct Sprite {
 }
 
 impl RenderAsset for Sprite {
-    fn resolve_asset(&mut self, assets: &comet_assets::AssetProvider) -> comet_assets::AssetId {
-        match self.texture.clone() {
-            ImageRef::Unresolved(path) => {
-                let handle = assets.resolve::<Image>(path);
-                self.texture = ImageRef::Handle(handle);
-                handle.id()
-            }
-            ImageRef::Atlas(atlas) => atlas.atlas().id(),
-            ImageRef::Handle(handle) | ImageRef::ResolvedHandle(handle, _) => handle.id(),
+    fn asset_id(&self) -> Option<comet_assets::AssetId> {
+        match &self.texture {
+            ImageRef::Unresolved(_) => None,
+            ImageRef::Atlas(atlas) => Some(atlas.atlas().id()),
+            ImageRef::Handle(handle) | ImageRef::ResolvedHandle(handle, _) => Some(handle.id()),
         }
     }
 }

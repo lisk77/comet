@@ -1,6 +1,6 @@
 use crate::Component;
-use comet_assets::{AssetId, AssetProvider};
+use comet_assets::AssetId;
 
 pub trait RenderAsset: Component {
-    fn resolve_asset(&mut self, assets: &AssetProvider) -> AssetId;
+    fn asset_id(&self) -> Option<AssetId>;
 }
