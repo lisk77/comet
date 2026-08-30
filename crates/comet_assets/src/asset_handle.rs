@@ -1,3 +1,4 @@
+use crate::AssetId;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
@@ -18,7 +19,11 @@ impl<T> std::fmt::Debug for Asset<T> {
 
 impl<T> Default for Asset<T> {
     fn default() -> Self {
-        Self { index: u32::MAX, generation: u32::MAX, _marker: PhantomData }
+        Self {
+            index: u32::MAX,
+            generation: u32::MAX,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -60,5 +65,11 @@ impl<T> Asset<T> {
 
     pub fn generation(&self) -> u32 {
         self.generation
+    }
+}
+
+impl<T: 'static> Asset<T> {
+    pub fn id(self) -> AssetId {
+        AssetId::new::<T>(self.index, self.generation)
     }
 }

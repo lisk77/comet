@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::mpsc;
 use crate::asset_handle::Asset;
 use anyhow::Result;
 use comet_log::error;
+use std::collections::HashMap;
+use std::sync::mpsc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadState {
@@ -76,8 +76,14 @@ unsafe fn try_recv_impl<T: 'static>(ptr: *mut u8) -> TryRecvResult {
     let rx = &*(ptr as *const mpsc::Receiver<Result<T>>);
     match rx.try_recv() {
         Ok(Ok(value)) => TryRecvResult::Ready(OwnedData::new(value)),
-        Ok(Err(e)) => { error!("Asset load failed: {}", e); TryRecvResult::Failed }
-        Err(mpsc::TryRecvError::Disconnected) => { error!("Asset load channel closed unexpectedly"); TryRecvResult::Failed }
+        Ok(Err(e)) => {
+            error!("Asset load failed: {}", e);
+            TryRecvResult::Failed
+        }
+        Err(mpsc::TryRecvError::Disconnected) => {
+            error!("Asset load channel closed unexpectedly");
+            TryRecvResult::Failed
+        }
         Err(mpsc::TryRecvError::Empty) => TryRecvResult::Empty,
     }
 }
@@ -86,8 +92,14 @@ unsafe fn recv_impl<T: 'static>(ptr: *mut u8) -> RecvResult {
     let rx = *Box::from_raw(ptr as *mut mpsc::Receiver<Result<T>>);
     match rx.recv() {
         Ok(Ok(value)) => RecvResult::Ready(OwnedData::new(value)),
-        Ok(Err(e)) => { error!("Asset load failed: {}", e); RecvResult::Failed }
-        Err(_) => { error!("Asset load channel closed unexpectedly"); RecvResult::Failed }
+        Ok(Err(e)) => {
+            error!("Asset load failed: {}", e);
+            RecvResult::Failed
+        }
+        Err(_) => {
+            error!("Asset load channel closed unexpectedly");
+            RecvResult::Failed
+        }
     }
 }
 
@@ -145,7 +157,12 @@ unsafe impl Sync for AssetStore {}
 
 impl AssetStore {
     pub fn new() -> Self {
-        Self { slots: Vec::new(), free_list: Vec::new(), paths: HashMap::new(), index_to_path: HashMap::new() }
+        Self {
+            slots: Vec::new(),
+            free_list: Vec::new(),
+            paths: HashMap::new(),
+            index_to_path: HashMap::new(),
+        }
     }
 
     fn alloc_slot(&mut self, state: SlotState) -> (u32, u32) {
@@ -156,17 +173,28 @@ impl AssetStore {
             (index, slot.generation)
         } else {
             let index = self.slots.len() as u32;
-            self.slots.push(Slot { generation: 0, value: Some(state) });
+            self.slots.push(Slot {
+                generation: 0,
+                value: Some(state),
+            });
             (index, 0)
         }
     }
 
     fn resolve_pending(slot: &mut Slot) -> bool {
-        if !matches!(&slot.value, Some(SlotState::Pending(_))) { return true; }
+        if !matches!(&slot.value, Some(SlotState::Pending(_))) {
+            return true;
+        }
         if let Some(SlotState::Pending(pending)) = slot.value.take() {
             match pending.recv_blocking() {
-                RecvResult::Ready(data) => { slot.value = Some(SlotState::Ready(data)); true }
-                RecvResult::Failed => { slot.value = Some(SlotState::Failed); false }
+                RecvResult::Ready(data) => {
+                    slot.value = Some(SlotState::Ready(data));
+                    true
+                }
+                RecvResult::Failed => {
+                    slot.value = Some(SlotState::Failed);
+                    false
+                }
             }
         } else {
             true
@@ -178,14 +206,19 @@ impl AssetStore {
         Asset::new(index, generation)
     }
 
-    pub(crate) fn set_reload_pending<T: Send + 'static>(&mut self, index: u32) -> Option<mpsc::Sender<Result<T>>> {
+    pub(crate) fn set_reload_pending<T: Send + 'static>(
+        &mut self,
+        index: u32,
+    ) -> Option<mpsc::Sender<Result<T>>> {
         let slot = self.slots.get_mut(index as usize)?;
         let (tx, rx) = mpsc::channel::<Result<T>>();
         slot.value = Some(SlotState::Pending(PendingData::new::<T>(rx)));
         Some(tx)
     }
 
-    pub(crate) fn insert_pending<T: Send + 'static>(&mut self) -> (Asset<T>, mpsc::Sender<Result<T>>) {
+    pub(crate) fn insert_pending<T: Send + 'static>(
+        &mut self,
+    ) -> (Asset<T>, mpsc::Sender<Result<T>>) {
         let (tx, rx) = mpsc::channel::<Result<T>>();
         let (index, generation) = self.alloc_slot(SlotState::Pending(PendingData::new(rx)));
         (Asset::new(index, generation), tx)
@@ -193,8 +226,12 @@ impl AssetStore {
 
     pub fn load_state<T: 'static>(&mut self, handle: Asset<T>) -> LoadState {
         let index = handle.index() as usize;
-        let Some(slot) = self.slots.get_mut(index) else { return LoadState::Failed; };
-        if slot.generation != handle.generation() { return LoadState::Failed; }
+        let Some(slot) = self.slots.get_mut(index) else {
+            return LoadState::Failed;
+        };
+        if slot.generation != handle.generation() {
+            return LoadState::Failed;
+        }
 
         match slot.value.take() {
             None | Some(SlotState::Failed) => {
@@ -228,8 +265,12 @@ impl AssetStore {
 
     pub fn get<T: 'static>(&mut self, handle: Asset<T>) -> Option<&T> {
         let slot = self.slots.get_mut(handle.index() as usize)?;
-        if slot.generation != handle.generation() { return None; }
-        if !Self::resolve_pending(slot) { return None; }
+        if slot.generation != handle.generation() {
+            return None;
+        }
+        if !Self::resolve_pending(slot) {
+            return None;
+        }
         match slot.value.as_ref()? {
             SlotState::Ready(data) => Some(unsafe { data.as_ref::<T>() }),
             _ => None,
@@ -238,8 +279,12 @@ impl AssetStore {
 
     pub fn get_mut<T: 'static>(&mut self, handle: Asset<T>) -> Option<&mut T> {
         let slot = self.slots.get_mut(handle.index() as usize)?;
-        if slot.generation != handle.generation() { return None; }
-        if !Self::resolve_pending(slot) { return None; }
+        if slot.generation != handle.generation() {
+            return None;
+        }
+        if !Self::resolve_pending(slot) {
+            return None;
+        }
         match slot.value.as_mut()? {
             SlotState::Ready(data) => Some(unsafe { data.as_mut::<T>() }),
             _ => None,
@@ -249,7 +294,9 @@ impl AssetStore {
     pub fn unload<T: 'static>(&mut self, handle: Asset<T>) -> Option<T> {
         let index = handle.index() as usize;
         let slot = self.slots.get_mut(index)?;
-        if slot.generation != handle.generation() { return None; }
+        if slot.generation != handle.generation() {
+            return None;
+        }
 
         if matches!(&slot.value, Some(SlotState::Pending(_))) {
             if let Some(SlotState::Pending(pending)) = slot.value.take() {
@@ -297,28 +344,43 @@ impl AssetStore {
     }
 
     pub fn find_by_path<T: 'static>(&self, path: &str) -> Option<Asset<T>> {
-        self.paths.get(path).map(|&(index, gen)| Asset::new(index, gen))
+        self.paths
+            .get(path)
+            .map(|&(index, gen)| Asset::new(index, gen))
     }
 
     pub fn find_by_stem<T: 'static>(&self, stem: &str) -> Option<Asset<T>> {
-        let matches: Vec<_> = self.paths.iter().filter_map(|(path, &(index, gen))| {
-            let s = std::path::Path::new(path).file_stem()?.to_str()?;
-            if s == stem { Some((path.as_str(), index, gen)) } else { None }
-        }).collect();
+        let matches: Vec<_> = self
+            .paths
+            .iter()
+            .filter_map(|(path, &(index, gen))| {
+                let s = std::path::Path::new(path).file_stem()?.to_str()?;
+                if s == stem {
+                    Some((path.as_str(), index, gen))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         match matches.len() {
             0 => None,
             1 => Some(Asset::new(matches[0].1, matches[0].2)),
             _ => {
                 let paths: Vec<_> = matches.iter().map(|(p, _, _)| *p).collect();
-                error!("Ambiguous stem '{}' matches multiple assets: {:?}: name your files better", stem, paths);
+                error!(
+                    "Ambiguous stem '{}' matches multiple assets: {:?}: name your files better",
+                    stem, paths
+                );
                 None
             }
         }
     }
 
     pub fn contains<T: 'static>(&self, handle: Asset<T>) -> bool {
-        let Some(slot) = self.slots.get(handle.index() as usize) else { return false; };
+        let Some(slot) = self.slots.get(handle.index() as usize) else {
+            return false;
+        };
         slot.generation == handle.generation() && slot.value.is_some()
     }
 }

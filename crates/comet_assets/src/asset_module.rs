@@ -1,7 +1,9 @@
-use std::sync::Arc;
-use comet_macros::module;
+use crate::{
+    Asset, AssetManager, AssetPath, AssetProvider, AssetSettings, AssetSource, LoadState, Loadable,
+};
 use comet_app::{App, Module};
-use crate::{Asset, AssetManager, AssetPath, AssetProvider, AssetSettings, AssetSource, Loadable, LoadState};
+use comet_macros::module;
+use std::sync::Arc;
 
 pub struct AssetModule {
     provider: Arc<AssetProvider>,
@@ -31,12 +33,19 @@ impl AssetModule {
         self.provider.load::<A>(path)
     }
 
-    pub fn load_with<S: AssetSettings>(&self, path: impl Into<AssetPath>, settings: S) -> Asset<S::Asset> {
+    pub fn load_with<S: AssetSettings>(
+        &self,
+        path: impl Into<AssetPath>,
+        settings: S,
+    ) -> Asset<S::Asset> {
         self.provider.load_with(path, settings)
     }
 
     pub fn load_assets<A: Loadable>(&self, paths: Vec<impl Into<AssetPath>>) -> Vec<Asset<A>> {
-        paths.into_iter().map(|path| self.provider.load::<A>(path)).collect()
+        paths
+            .into_iter()
+            .map(|path| self.provider.load::<A>(path))
+            .collect()
     }
 
     pub fn resolve<A: Loadable>(&self, source: impl Into<AssetSource<A>>) -> Asset<A> {

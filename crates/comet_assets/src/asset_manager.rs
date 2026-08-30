@@ -1,11 +1,16 @@
+use crate::{
+    asset_handle::*, asset_store::*, audio_clip::AudioClip, font::Font, image::Image,
+    texture_atlas::TextureAtlas, AssetSettings,
+};
+use anyhow::Result;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
-use anyhow::Result;
-use crate::{asset_store::*, asset_handle::*, image::Image, font::Font, texture_atlas::TextureAtlas, audio_clip::AudioClip, AssetSettings};
 
 pub trait Loadable: Send + Sync + 'static {
-    fn dependencies(&self) -> Vec<String> { vec![] }
+    fn dependencies(&self) -> Vec<String> {
+        vec![]
+    }
 }
 
 impl Loadable for Image {}
@@ -13,8 +18,21 @@ impl Loadable for Font {}
 impl Loadable for TextureAtlas {}
 impl Loadable for AudioClip {}
 
-pub(crate) type AllocFn = Arc<dyn Fn(&mut AssetManager) -> (u32, u32, Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>) + Send + Sync>;
-pub(crate) type ReloadFn = Arc<dyn Fn(&mut AssetManager, u32) -> Option<Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>> + Send + Sync>;
+pub(crate) type AllocFn = Arc<
+    dyn Fn(
+            &mut AssetManager,
+        ) -> (
+            u32,
+            u32,
+            Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>,
+        ) + Send
+        + Sync,
+>;
+pub(crate) type ReloadFn = Arc<
+    dyn Fn(&mut AssetManager, u32) -> Option<Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>>
+        + Send
+        + Sync,
+>;
 
 struct LoaderEntry {
     type_id: TypeId,
@@ -27,7 +45,11 @@ struct LoaderRegistry {
 }
 
 impl LoaderRegistry {
-    fn new() -> Self { Self { loaders: HashMap::new() } }
+    fn new() -> Self {
+        Self {
+            loaders: HashMap::new(),
+        }
+    }
 
     fn register<T: Loadable>(
         &mut self,
@@ -40,8 +62,8 @@ impl LoaderRegistry {
         let alloc: AllocFn = Arc::new(move |manager: &mut AssetManager| {
             let (handle, tx) = manager.stores.get_mut::<T>().insert_pending::<T>();
             let l = Arc::clone(&alloc_loader);
-            let worker: Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send> = Box::new(move |bytes: Vec<u8>, path: String| {
-                match l(&bytes, &path) {
+            let worker: Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send> =
+                Box::new(move |bytes: Vec<u8>, path: String| match l(&bytes, &path) {
                     Ok(asset) => {
                         let deps = asset.dependencies();
                         let _ = tx.send(Ok(asset));
@@ -51,35 +73,47 @@ impl LoaderRegistry {
                         let _ = tx.send(Err(e));
                         vec![]
                     }
-                }
-            });
+                });
             (handle.index(), handle.generation(), worker)
         });
 
         let reload_loader = Arc::clone(&loader);
         let reload: ReloadFn = Arc::new(move |manager: &mut AssetManager, index: u32| {
-            let tx = manager.stores.get_mut::<T>().set_reload_pending::<T>(index)?;
+            let tx = manager
+                .stores
+                .get_mut::<T>()
+                .set_reload_pending::<T>(index)?;
             let l = Arc::clone(&reload_loader);
-            Some(Box::new(move |bytes: Vec<u8>, path: String| -> Vec<String> {
-                match l(&bytes, &path) {
-                    Ok(asset) => {
-                        let deps = asset.dependencies();
-                        let _ = tx.send(Ok(asset));
-                        deps
+            Some(
+                Box::new(move |bytes: Vec<u8>, path: String| -> Vec<String> {
+                    match l(&bytes, &path) {
+                        Ok(asset) => {
+                            let deps = asset.dependencies();
+                            let _ = tx.send(Ok(asset));
+                            deps
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(e));
+                            vec![]
+                        }
                     }
-                    Err(e) => {
-                        let _ = tx.send(Err(e));
-                        vec![]
-                    }
-                }
-            }) as Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>)
+                }) as Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>,
+            )
         });
 
-        self.loaders.insert(ext.into(), LoaderEntry { type_id: TypeId::of::<T>(), alloc, reload });
+        self.loaders.insert(
+            ext.into(),
+            LoaderEntry {
+                type_id: TypeId::of::<T>(),
+                alloc,
+                reload,
+            },
+        );
     }
 
     fn get_alloc_typed<T: 'static>(&self, ext: &str) -> Option<AllocFn> {
-        self.loaders.get(ext)
+        self.loaders
+            .get(ext)
             .filter(|e| e.type_id == TypeId::of::<T>())
             .map(|e| e.alloc.clone())
     }
@@ -89,7 +123,8 @@ impl LoaderRegistry {
     }
 
     fn get_reload(&self, ext: &str, type_id: TypeId) -> Option<ReloadFn> {
-        self.loaders.get(ext)
+        self.loaders
+            .get(ext)
             .filter(|e| e.type_id == type_id)
             .map(|e| e.reload.clone())
     }
@@ -100,15 +135,21 @@ struct StoreMap {
 }
 
 impl StoreMap {
-    fn new() -> Self { Self { map: HashMap::new() } }
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
 
     fn register<T: Loadable>(&mut self) {
-        self.map.entry(TypeId::of::<T>())
+        self.map
+            .entry(TypeId::of::<T>())
             .or_insert_with(AssetStore::new);
     }
 
     fn get_mut<T: Loadable>(&mut self) -> &mut AssetStore {
-        self.map.get_mut(&TypeId::of::<T>())
+        self.map
+            .get_mut(&TypeId::of::<T>())
             .expect("asset store not registered")
     }
 
@@ -142,7 +183,9 @@ impl AssetManager {
         manager.register_loader("png", |bytes, _| Image::from_bytes(bytes, false));
         manager.register_loader("jpg", |bytes, _| Image::from_bytes(bytes, false));
         manager.register_loader("jpeg", |bytes, _| Image::from_bytes(bytes, false));
-        manager.register_loader("ttf", |bytes, path| Ok(Font::from_raw(bytes.to_vec(), path.to_string())));
+        manager.register_loader("ttf", |bytes, path| {
+            Ok(Font::from_raw(bytes.to_vec(), path.to_string()))
+        });
         manager.register_loader("ogg", |bytes, _| Ok(AudioClip::from_bytes(bytes.to_vec())));
         manager.register_loader("wav", |bytes, _| Ok(AudioClip::from_bytes(bytes.to_vec())));
         manager.register_loader("mp3", |bytes, _| Ok(AudioClip::from_bytes(bytes.to_vec())));
@@ -165,31 +208,22 @@ impl AssetManager {
         self.loader_registry.register(ext, loader);
     }
 
-    pub(crate) fn begin_load_with<S: AssetSettings>(&mut self, settings: S) -> (u32, u32, Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>) {
+    pub(crate) fn begin_load_with<S: AssetSettings>(
+        &mut self,
+        settings: S,
+    ) -> (
+        u32,
+        u32,
+        Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>,
+    ) {
         self.stores.register::<S::Asset>();
-        let (handle, tx) = self.stores.get_mut::<S::Asset>().insert_pending::<S::Asset>();
-        let worker = Box::new(move |bytes: Vec<u8>, path: String| {
-            match settings.load(&bytes, &path) {
-                Ok(asset) => {
-                    let dependencies = asset.dependencies();
-                    let _ = tx.send(Ok(asset));
-                    dependencies
-                }
-                Err(error) => {
-                    let _ = tx.send(Err(error));
-                    vec![]
-                }
-            }
-        });
-        (handle.index(), handle.generation(), worker)
-    }
-
-    pub(crate) fn settings_reload<S: AssetSettings>(settings: S) -> ReloadFn {
-        Arc::new(move |manager: &mut AssetManager, index: u32| {
-            let tx = manager.stores.get_mut::<S::Asset>().set_reload_pending::<S::Asset>(index)?;
-            let settings = settings.clone();
-            Some(Box::new(move |bytes: Vec<u8>, path: String| {
-                match settings.load(&bytes, &path) {
+        let (handle, tx) = self
+            .stores
+            .get_mut::<S::Asset>()
+            .insert_pending::<S::Asset>();
+        let worker =
+            Box::new(
+                move |bytes: Vec<u8>, path: String| match settings.load(&bytes, &path) {
                     Ok(asset) => {
                         let dependencies = asset.dependencies();
                         let _ = tx.send(Ok(asset));
@@ -199,8 +233,31 @@ impl AssetManager {
                         let _ = tx.send(Err(error));
                         vec![]
                     }
-                }
-            }))
+                },
+            );
+        (handle.index(), handle.generation(), worker)
+    }
+
+    pub(crate) fn settings_reload<S: AssetSettings>(settings: S) -> ReloadFn {
+        Arc::new(move |manager: &mut AssetManager, index: u32| {
+            let tx = manager
+                .stores
+                .get_mut::<S::Asset>()
+                .set_reload_pending::<S::Asset>(index)?;
+            let settings = settings.clone();
+            Some(Box::new(
+                move |bytes: Vec<u8>, path: String| match settings.load(&bytes, &path) {
+                    Ok(asset) => {
+                        let dependencies = asset.dependencies();
+                        let _ = tx.send(Ok(asset));
+                        dependencies
+                    }
+                    Err(error) => {
+                        let _ = tx.send(Err(error));
+                        vec![]
+                    }
+                },
+            ))
         })
     }
 
@@ -212,11 +269,23 @@ impl AssetManager {
         self.loader_registry.get_alloc_untyped(ext)
     }
 
-    pub(crate) fn record_path_untyped(&mut self, type_id: TypeId, index: u32, gen: u32, path: &str) {
-        self.stores.record_path_by_type_id(type_id, index, gen, path);
+    pub(crate) fn record_path_untyped(
+        &mut self,
+        type_id: TypeId,
+        index: u32,
+        gen: u32,
+        path: &str,
+    ) {
+        self.stores
+            .record_path_by_type_id(type_id, index, gen, path);
     }
 
-    pub(crate) fn begin_reload(&mut self, ext: &str, type_id: TypeId, index: u32) -> Option<Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>> {
+    pub(crate) fn begin_reload(
+        &mut self,
+        ext: &str,
+        type_id: TypeId,
+        index: u32,
+    ) -> Option<Box<dyn FnOnce(Vec<u8>, String) -> Vec<String> + Send>> {
         let reload = self.loader_registry.get_reload(ext, type_id)?;
         reload(self, index)
     }
@@ -242,7 +311,9 @@ impl AssetManager {
     }
 
     pub(crate) fn record_path<T: Loadable>(&mut self, index: u32, generation: u32, path: &str) {
-        self.stores.get_mut::<T>().record_path(index, generation, path);
+        self.stores
+            .get_mut::<T>()
+            .record_path(index, generation, path);
     }
 
     pub fn for_each_ready_mut<T: Loadable>(&mut self, f: impl FnMut(&mut T)) {
@@ -252,7 +323,10 @@ impl AssetManager {
     }
 
     pub fn path_for<T: Loadable>(&self, handle: Asset<T>) -> Option<String> {
-        self.stores.get::<T>()?.path_for_index(handle.index()).map(|s| s.to_string())
+        self.stores
+            .get::<T>()?
+            .path_for_index(handle.index())
+            .map(|s| s.to_string())
     }
 
     pub fn find_by_path<T: Loadable>(&self, path: &str) -> Option<Asset<T>> {

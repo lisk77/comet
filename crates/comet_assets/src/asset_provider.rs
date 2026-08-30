@@ -1,15 +1,15 @@
+use crate::asset_manager::{Loadable, ReloadFn};
+use crate::asset_store::LoadState;
+use crate::image::Image;
+use crate::texture_atlas::TextureAtlas;
+use crate::{Asset, AssetManager, AssetPath, AssetSettings, AssetSource};
+use comet_app::file_extension;
+use notify::{EventKind, RecursiveMode, Watcher};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use notify::{EventKind, RecursiveMode, Watcher};
-use crate::{AssetManager, Asset, AssetPath, AssetSettings, AssetSource};
-use crate::asset_manager::{Loadable, ReloadFn};
-use crate::image::Image;
-use crate::texture_atlas::TextureAtlas;
-use comet_app::file_extension;
-use crate::asset_store::LoadState;
+use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Clone)]
 struct ReloadEntry {
@@ -34,7 +34,8 @@ impl AssetProvider {
         let inner = Arc::new(RwLock::new(manager));
         let queued = Arc::new(AtomicUsize::new(0));
         let ready = Arc::new(AtomicUsize::new(0));
-        let reload_map: Arc<RwLock<HashMap<PathBuf, ReloadEntry>>> = Arc::new(RwLock::new(HashMap::new()));
+        let reload_map: Arc<RwLock<HashMap<PathBuf, ReloadEntry>>> =
+            Arc::new(RwLock::new(HashMap::new()));
 
         let watcher = Self::start_hot_reload(
             Arc::clone(&inner),
@@ -43,7 +44,13 @@ impl AssetProvider {
             Arc::clone(&ready),
         );
 
-        Self { inner, queued, ready, reload_map, _watcher: Arc::new(Mutex::new(watcher)) }
+        Self {
+            inner,
+            queued,
+            ready,
+            reload_map,
+            _watcher: Arc::new(Mutex::new(watcher)),
+        }
     }
 
     fn start_hot_reload(
@@ -54,36 +61,62 @@ impl AssetProvider {
     ) -> Option<notify::RecommendedWatcher> {
         let (event_tx, event_rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
 
-        let mut watcher = match notify::recommended_watcher(move |res| { let _ = event_tx.send(res); }) {
+        let mut watcher = match notify::recommended_watcher(move |res| {
+            let _ = event_tx.send(res);
+        }) {
             Ok(w) => w,
-            Err(e) => { comet_log::warn!("Hot reload unavailable: {}", e); return None; }
+            Err(e) => {
+                comet_log::warn!("Hot reload unavailable: {}", e);
+                return None;
+            }
         };
 
         let asset_root = comet_app::asset_root();
         if let Err(e) = watcher.watch(&asset_root, RecursiveMode::Recursive) {
-            comet_log::warn!("Hot reload: failed to watch '{}': {}", asset_root.display(), e);
+            comet_log::warn!(
+                "Hot reload: failed to watch '{}': {}",
+                asset_root.display(),
+                e
+            );
             return None;
         }
 
         std::thread::spawn(move || {
             for event in event_rx {
-                let Ok(event) = event else { continue; };
-                if !matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) { continue; }
+                let Ok(event) = event else {
+                    continue;
+                };
+                if !matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                    continue;
+                }
 
                 for resolved_path in event.paths {
                     let entry = {
-                        let Ok(map) = reload_map.read() else { continue; };
+                        let Ok(map) = reload_map.read() else {
+                            continue;
+                        };
                         map.get(&resolved_path).cloned()
                     };
-                    let Some(entry) = entry else { continue; };
+                    let Some(entry) = entry else {
+                        continue;
+                    };
 
                     let bytes = match std::fs::read(&resolved_path) {
                         Ok(b) => b,
-                        Err(e) => { comet_log::error!("Hot reload: failed to read '{}': {}", resolved_path.display(), e); continue; }
+                        Err(e) => {
+                            comet_log::error!(
+                                "Hot reload: failed to read '{}': {}",
+                                resolved_path.display(),
+                                e
+                            );
+                            continue;
+                        }
                     };
 
                     let worker = {
-                        let Ok(mut manager) = inner.write() else { continue; };
+                        let Ok(mut manager) = inner.write() else {
+                            continue;
+                        };
                         if entry.type_id == TypeId::of::<Image>() {
                             let image_handle = Asset::<Image>::new(entry.index, entry.generation);
                             manager.for_each_ready_mut::<TextureAtlas>(|atlas| {
@@ -91,12 +124,14 @@ impl AssetProvider {
                             });
                         }
                         if let Some(reload) = &entry.custom_reload {
-            reload(&mut manager, entry.index)
-        } else {
-            manager.begin_reload(&entry.ext, entry.type_id, entry.index)
-        }
+                            reload(&mut manager, entry.index)
+                        } else {
+                            manager.begin_reload(&entry.ext, entry.type_id, entry.index)
+                        }
                     };
-                    let Some(worker) = worker else { continue; };
+                    let Some(worker) = worker else {
+                        continue;
+                    };
 
                     comet_log::info!("Hot reloading '{}'", entry.original_path);
                     queued.fetch_add(1, Ordering::Relaxed);
@@ -127,13 +162,23 @@ impl AssetProvider {
     }
 
     pub fn with<T: Loadable, F, R>(&self, handle: Asset<T>, f: F) -> Option<R>
-    where F: FnOnce(&T) -> R {
-        self.inner.write().ok().and_then(|mut m| m.get(handle).map(f))
+    where
+        F: FnOnce(&T) -> R,
+    {
+        self.inner
+            .write()
+            .ok()
+            .and_then(|mut m| m.get(handle).map(f))
     }
 
     pub fn with_mut<T: Loadable, F, R>(&self, handle: Asset<T>, f: F) -> Option<R>
-    where F: FnOnce(&mut T) -> R {
-        self.inner.write().ok().and_then(|mut m| m.get_mut(handle).map(f))
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        self.inner
+            .write()
+            .ok()
+            .and_then(|mut m| m.get_mut(handle).map(f))
     }
 
     pub fn add<T: Loadable>(&self, asset: T) -> Option<Asset<T>> {
@@ -164,7 +209,10 @@ impl AssetProvider {
     }
 
     /// Loads multiple assets of the same type in the background. Returns handles immediately.
-    pub fn load_assets<T: Loadable>(&self, paths: &[impl Clone + Into<AssetPath>]) -> Vec<Asset<T>> {
+    pub fn load_assets<T: Loadable>(
+        &self,
+        paths: &[impl Clone + Into<AssetPath>],
+    ) -> Vec<Asset<T>> {
         paths.iter().cloned().map(|path| self.load(path)).collect()
     }
 
@@ -181,7 +229,10 @@ impl AssetProvider {
 
         let ext = match file_extension(&resolved, path) {
             Ok(e) => e,
-            Err(e) => { comet_log::error!("{}", e); return Asset::default(); }
+            Err(e) => {
+                comet_log::error!("{}", e);
+                return Asset::default();
+            }
         };
 
         let (index, generation, worker) = match self.inner.write() {
@@ -192,22 +243,31 @@ impl AssetProvider {
                     result
                 }
                 None => {
-                    comet_log::error!("No loader registered for '{}' producing the requested type", ext);
+                    comet_log::error!(
+                        "No loader registered for '{}' producing the requested type",
+                        ext
+                    );
                     return Asset::default();
                 }
             },
-            Err(_) => { comet_log::error!("AssetManager lock poisoned"); return Asset::default(); }
+            Err(_) => {
+                comet_log::error!("AssetManager lock poisoned");
+                return Asset::default();
+            }
         };
 
         if let Ok(mut map) = self.reload_map.write() {
-            map.insert(resolved.clone(), ReloadEntry {
-                original_path: path.to_string(),
-                ext: ext.to_string(),
-                type_id: TypeId::of::<T>(),
-                index,
-                generation,
-                custom_reload: None,
-            });
+            map.insert(
+                resolved.clone(),
+                ReloadEntry {
+                    original_path: path.to_string(),
+                    ext: ext.to_string(),
+                    type_id: TypeId::of::<T>(),
+                    index,
+                    generation,
+                    custom_reload: None,
+                },
+            );
         }
 
         let handle = Asset::<T>::new(index, generation);
@@ -242,13 +302,20 @@ impl AssetProvider {
         handle
     }
 
-    pub fn load_with<S: AssetSettings>(&self, path: impl Into<AssetPath>, settings: S) -> Asset<S::Asset> {
+    pub fn load_with<S: AssetSettings>(
+        &self,
+        path: impl Into<AssetPath>,
+        settings: S,
+    ) -> Asset<S::Asset> {
         let path = path.into();
         let path = path.as_str();
         let resolved = comet_app::resolve_asset_path(path);
         let ext = match file_extension(&resolved, path) {
             Ok(extension) => extension,
-            Err(error) => { comet_log::error!("{}", error); return Asset::default(); }
+            Err(error) => {
+                comet_log::error!("{}", error);
+                return Asset::default();
+            }
         };
 
         let reload = AssetManager::settings_reload(settings.clone());
@@ -258,18 +325,24 @@ impl AssetProvider {
                 manager.record_path::<S::Asset>(result.0, result.1, path);
                 result
             }
-            Err(_) => { comet_log::error!("AssetManager lock poisoned"); return Asset::default(); }
+            Err(_) => {
+                comet_log::error!("AssetManager lock poisoned");
+                return Asset::default();
+            }
         };
 
         if let Ok(mut map) = self.reload_map.write() {
-            map.insert(resolved.clone(), ReloadEntry {
-                original_path: path.to_string(),
-                ext: ext.to_string(),
-                type_id: TypeId::of::<S::Asset>(),
-                index,
-                generation,
-                custom_reload: Some(reload),
-            });
+            map.insert(
+                resolved.clone(),
+                ReloadEntry {
+                    original_path: path.to_string(),
+                    ext: ext.to_string(),
+                    type_id: TypeId::of::<S::Asset>(),
+                    index,
+                    generation,
+                    custom_reload: Some(reload),
+                },
+            );
         }
 
         let handle = Asset::<S::Asset>::new(index, generation);
@@ -312,30 +385,32 @@ impl AssetProvider {
 
     /// Registers a handle (created via `add`) for hot reload watching.
     /// Call this after `add` when you have a known file path for the asset.
-    pub fn track_for_reload<T: Loadable>(
-        &self,
-        handle: Asset<T>,
-        path: impl Into<AssetPath>,
-    ) {
+    pub fn track_for_reload<T: Loadable>(&self, handle: Asset<T>, path: impl Into<AssetPath>) {
         let path = path.into();
         let path = path.as_str();
         let resolved = comet_app::resolve_asset_path(path);
         let ext = match file_extension(&resolved, path) {
             Ok(e) => e,
-            Err(e) => { comet_log::error!("{}", e); return; }
+            Err(e) => {
+                comet_log::error!("{}", e);
+                return;
+            }
         };
         if let Ok(mut manager) = self.inner.write() {
             manager.record_path::<T>(handle.index(), handle.generation(), path);
         }
         if let Ok(mut map) = self.reload_map.write() {
-            map.insert(resolved.clone(), ReloadEntry {
-                original_path: path.to_string(),
-                ext: ext.to_string(),
-                type_id: TypeId::of::<T>(),
-                index: handle.index(),
-                generation: handle.generation(),
-                custom_reload: None,
-            });
+            map.insert(
+                resolved.clone(),
+                ReloadEntry {
+                    original_path: path.to_string(),
+                    ext: ext.to_string(),
+                    type_id: TypeId::of::<T>(),
+                    index: handle.index(),
+                    generation: handle.generation(),
+                    custom_reload: None,
+                },
+            );
         }
     }
 
@@ -351,15 +426,22 @@ impl AssetProvider {
         let resolved = comet_app::resolve_asset_path(path);
 
         {
-            let Ok(map) = reload_map.read() else { return; };
-            if map.contains_key(&resolved) { return; }
+            let Ok(map) = reload_map.read() else {
+                return;
+            };
+            if map.contains_key(&resolved) {
+                return;
+            }
         }
 
         let ext_owned;
         let alloc_result = {
             let ext = match file_extension(&resolved, path) {
                 Ok(e) => e,
-                Err(e) => { comet_log::error!("{}", e); return; }
+                Err(e) => {
+                    comet_log::error!("{}", e);
+                    return;
+                }
             };
             ext_owned = ext.to_string();
             match inner.write() {
@@ -370,25 +452,37 @@ impl AssetProvider {
                         Some((type_id, index, gen, worker))
                     }
                     None => {
-                        comet_log::error!("No loader registered for dependency '{}' (ext: {})", path, &ext_owned);
+                        comet_log::error!(
+                            "No loader registered for dependency '{}' (ext: {})",
+                            path,
+                            &ext_owned
+                        );
                         None
                     }
                 },
-                Err(_) => { comet_log::error!("AssetManager lock poisoned loading dep '{}'", path); None }
+                Err(_) => {
+                    comet_log::error!("AssetManager lock poisoned loading dep '{}'", path);
+                    None
+                }
             }
         };
 
-        let Some((type_id, index, gen, worker)) = alloc_result else { return; };
+        let Some((type_id, index, gen, worker)) = alloc_result else {
+            return;
+        };
 
         if let Ok(mut map) = reload_map.write() {
-            map.insert(resolved.clone(), ReloadEntry {
-                original_path: path.to_string(),
-                ext: ext_owned,
-                type_id,
-                index,
-                generation: gen,
-                custom_reload: None,
-            });
+            map.insert(
+                resolved.clone(),
+                ReloadEntry {
+                    original_path: path.to_string(),
+                    ext: ext_owned,
+                    type_id,
+                    index,
+                    generation: gen,
+                    custom_reload: None,
+                },
+            );
         }
 
         queued.fetch_add(1, Ordering::Relaxed);
@@ -425,10 +519,7 @@ impl AssetProvider {
     }
 
     /// Finds a previously loaded asset by its original load path.
-    pub fn find_by_path<T: Loadable>(
-        &self,
-        path: impl Into<AssetPath>,
-    ) -> Option<Asset<T>> {
+    pub fn find_by_path<T: Loadable>(&self, path: impl Into<AssetPath>) -> Option<Asset<T>> {
         let path = path.into();
         self.inner
             .read()
@@ -438,19 +529,27 @@ impl AssetProvider {
 
     /// Finds a previously loaded asset by the stem of its original path.
     pub fn find_by_stem<T: Loadable>(&self, stem: &str) -> Option<Asset<T>> {
-        self.inner.read().ok().and_then(|m| m.find_by_stem::<T>(stem))
+        self.inner
+            .read()
+            .ok()
+            .and_then(|m| m.find_by_stem::<T>(stem))
     }
 
     /// Non-blocking load state for a typed handle.
     pub fn load_state<T: Loadable>(&self, handle: Asset<T>) -> LoadState {
-        self.inner.write().ok()
+        self.inner
+            .write()
+            .ok()
             .map(|mut m| m.load_state(handle))
             .unwrap_or(LoadState::Failed)
     }
 
     /// Returns how many assets are ready and how many are queued.
     pub fn load_progress(&self) -> (usize, usize) {
-        (self.ready.load(Ordering::Relaxed), self.queued.load(Ordering::Relaxed))
+        (
+            self.ready.load(Ordering::Relaxed),
+            self.queued.load(Ordering::Relaxed),
+        )
     }
 
     /// Returns true when all queued background loads have finished (or there are none).
