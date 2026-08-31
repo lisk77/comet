@@ -86,6 +86,10 @@ impl RenderGraph {
         self.nodes.len()
     }
 
+    pub fn draw_count(&self) -> u32 {
+        self.nodes.iter().map(|node| node.draw_count()).sum()
+    }
+
     pub fn pass_mut(&mut self, name: &str) -> Option<&mut PassNode> {
         self.nodes
             .iter_mut()

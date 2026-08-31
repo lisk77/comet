@@ -36,35 +36,30 @@ impl Renderer2D {
         let width = self.render_state.config().width;
         let height = self.render_state.config().height;
 
-        let quad_vertices = [
-            Vertex::new([-1.0, 1.0, 0.0], [0.0, 0.0], [1.0; 4]),
-            Vertex::new([-1.0, -1.0, 0.0], [0.0, 1.0], [1.0; 4]),
-            Vertex::new([1.0, -1.0, 0.0], [1.0, 1.0], [1.0; 4]),
-            Vertex::new([1.0, 1.0, 0.0], [1.0, 0.0], [1.0; 4]),
-        ];
-        let quad_indices = [0u16, 1, 3, 1, 2, 3];
-        let sprite_geometry = GeometryDescriptor::new(
-            vec![
-                VertexStreamDescriptor::dynamic("Quad Vertex Buffer", Vertex::desc())
-                    .with_initial_data(&quad_vertices),
-                VertexStreamDescriptor::dynamic("Instance Buffer", SpriteInstance::desc())
-                    .with_initial_capacity_elements::<SpriteInstance>(1024),
-            ],
-            Some(
-                IndexStreamDescriptor::dynamic("Quad Index Buffer", wgpu::IndexFormat::Uint16)
-                    .with_initial_data_u16(&quad_indices),
+        let sprite_vertex_contract = vec![
+            MeshVertexAttribute::new(
+                comet_ecs::VertexSemantic::Position,
+                comet_ecs::VertexFormat::Float32x3,
+                0,
             ),
-        );
+            MeshVertexAttribute::new(
+                comet_ecs::VertexSemantic::TexCoord(0),
+                comet_ecs::VertexFormat::Float32x2,
+                1,
+            ),
+        ];
 
         self.graph.add_node(
-            PassNode::with_geometry(
+            PassNode::with_meshes(
                 "Universal",
                 SPRITE_SHADER,
                 wgpu::PrimitiveTopology::TriangleList,
                 Some(gpu_texture_arc),
                 vec![],
                 LoadOp::Background,
-                sprite_geometry,
+                sprite_vertex_contract,
+                SpriteInstance::desc(),
+                1024,
             ),
             self.render_state.device(),
             self.render_state.queue(),

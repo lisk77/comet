@@ -120,6 +120,10 @@ impl RenderNode for PostProcessNode {
         self.declared_load.clone()
     }
 
+    fn draw_count(&self) -> u32 {
+        u32::from(self.pipeline.is_some())
+    }
+
     fn build(&mut self, ctx: BuildContext<'_>) {
         let device = ctx.device;
         let input_count = self.declared_inputs.len();

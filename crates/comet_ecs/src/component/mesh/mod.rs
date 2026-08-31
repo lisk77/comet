@@ -4,9 +4,15 @@ pub use vertex::*;
 
 use comet_log::cassert;
 use comet_math::{v2, v3};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::Component;
+
+static NEXT_MESH_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct MeshId(u64);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mesh {
@@ -15,6 +21,7 @@ pub struct Mesh {
 
 #[derive(Debug, PartialEq)]
 pub struct MeshData {
+    id: MeshId,
     vertex_descriptor: VertexDescriptor,
     vertices: Arc<[u8]>,
     vertex_count: u32,
@@ -30,6 +37,10 @@ impl Mesh {
         cassert!(
             vertices.len() <= u32::MAX as usize,
             "mesh contains too many vertices"
+        );
+        cassert!(
+            indices.len() <= u32::MAX as usize,
+            "mesh contains too many indices"
         );
         cassert!(
             indices.iter().all(|&index| index < vertices.len() as u32),
@@ -51,8 +62,11 @@ impl Mesh {
             );
         }
         let vertices = encoded_vertices.into();
+        let id = NEXT_MESH_ID.fetch_add(1, Ordering::Relaxed);
+        cassert!(id != u64::MAX, "mesh identity space exhausted");
         Self {
             data: Arc::new(MeshData {
+                id: MeshId(id),
                 vertex_descriptor,
                 vertices,
                 vertex_count,
@@ -62,6 +76,13 @@ impl Mesh {
     }
 
     pub fn triangle() -> Self {
+        static TRIANGLE: std::sync::OnceLock<Arc<MeshData>> = std::sync::OnceLock::new();
+        Self {
+            data: Arc::clone(TRIANGLE.get_or_init(|| Self::triangle_owned().data)),
+        }
+    }
+
+    fn triangle_owned() -> Self {
         Self::new(
             vec![
                 ModelVertex::new(
@@ -85,6 +106,13 @@ impl Mesh {
     }
 
     pub fn quad() -> Self {
+        static QUAD: std::sync::OnceLock<Arc<MeshData>> = std::sync::OnceLock::new();
+        Self {
+            data: Arc::clone(QUAD.get_or_init(|| Self::quad_owned().data)),
+        }
+    }
+
+    fn quad_owned() -> Self {
         Self::new(
             vec![
                 ModelVertex::new(
@@ -118,6 +146,10 @@ impl Mesh {
 }
 
 impl MeshData {
+    pub fn id(&self) -> MeshId {
+        self.id
+    }
+
     pub fn vertex_descriptor(&self) -> &VertexDescriptor {
         &self.vertex_descriptor
     }

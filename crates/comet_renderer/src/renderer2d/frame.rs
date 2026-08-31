@@ -51,6 +51,8 @@ impl Renderer2D {
         let mut sprite_instances = std::mem::take(&mut self.sprite_instance_staging);
         sprite_instances.clear();
         sprite_instances.reserve(draws.len());
+        let mut sprite_mesh_runs = std::mem::take(&mut self.sprite_mesh_runs);
+        sprite_mesh_runs.clear();
         for draw in draws {
             if !draw.visible {
                 continue;
@@ -58,45 +60,68 @@ impl Renderer2D {
 
             let region = self.get_texture_region(draw.texture);
             let (width, height) = region.dimensions();
+            let instance_index = sprite_instances.len() as u32;
             sprite_instances.push(SpriteInstance::new(
                 draw.position,
-                [
-                    width as f32 * 0.5 * draw.scale[0],
-                    height as f32 * 0.5 * draw.scale[1],
-                ],
+                [width as f32 * draw.scale[0], height as f32 * draw.scale[1]],
                 draw.rotation_deg.to_radians(),
                 [region.u0(), region.v0(), region.u1(), region.v1()],
                 [1.0; 4],
             ));
+            if let Some((mesh, instances)) = sprite_mesh_runs.last_mut() {
+                if mesh.data().id() == draw.mesh.data().id() {
+                    instances.end = instance_index + 1;
+                    continue;
+                }
+            }
+            sprite_mesh_runs.push((draw.mesh, instance_index..instance_index + 1));
         }
+
+        self.render_state.begin_mesh_frame();
+        let mut mesh_draws = std::mem::take(&mut self.sprite_gpu_draws);
+        mesh_draws.clear();
+        let max_vertex_buffer_array_stride = self
+            .render_state
+            .device()
+            .limits()
+            .max_vertex_buffer_array_stride;
+        for (mesh, instances) in &sprite_mesh_runs {
+            let accepted = self
+                .graph
+                .pass_mut("Universal")
+                .is_some_and(|node| node.accepts_mesh(mesh.data(), max_vertex_buffer_array_stride));
+            if !accepted {
+                continue;
+            }
+            mesh_draws.push((self.render_state.prepare_mesh(mesh), instances.clone()));
+        }
+        self.render_state.evict_stale_meshes(0);
 
         let sprite_instances_changed = sprite_instances != self.sprite_instances;
         let device = self.render_state.device();
         let queue = self.render_state.queue();
 
-        if sprite_instances_changed {
-            if let Some(node) = self.graph.pass_mut("Universal") {
-                let instance_count = sprite_instances.len() as u32;
-                let update_result = node
-                    .write_vertex_stream(1, &sprite_instances, device, queue)
-                    .and_then(|()| {
-                        node.set_draw_command(DrawCommand::Indexed {
-                            indices: 0..6,
-                            base_vertex: 0,
-                            instances: 0..instance_count,
-                        })
-                    });
-                if let Err(error) = update_result {
-                    error!("Failed to update sprite draw batch: {}", error);
-                } else {
-                    #[cfg(feature = "diagnostics")]
-                    {
-                        self.frame_diagnostics.uploaded_bytes +=
-                            std::mem::size_of_val(sprite_instances.as_slice()) as u64;
-                    }
+        if let Some(node) = self.graph.pass_mut("Universal") {
+            let update_result = if sprite_instances_changed {
+                node.write_mesh_instances(&sprite_instances, device, queue)
+            } else {
+                Ok(())
+            }
+            .and_then(|()| node.set_mesh_draws(&mesh_draws, device));
+            if let Err(error) = update_result {
+                error!("Failed to update sprite draw batch: {}", error);
+            } else if sprite_instances_changed {
+                #[cfg(feature = "diagnostics")]
+                {
+                    self.frame_diagnostics.uploaded_bytes +=
+                        std::mem::size_of_val(sprite_instances.as_slice()) as u64;
                 }
             }
         }
+        sprite_mesh_runs.clear();
+        mesh_draws.clear();
+        self.sprite_mesh_runs = sprite_mesh_runs;
+        self.sprite_gpu_draws = mesh_draws;
         if sprite_instances_changed {
             self.sprite_instance_staging =
                 std::mem::replace(&mut self.sprite_instances, sprite_instances);

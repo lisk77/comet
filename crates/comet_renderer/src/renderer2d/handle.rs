@@ -294,8 +294,11 @@ impl RenderHandle2D {
 
         let mut draws = Vec::new();
         let mut referenced_handles = Vec::new();
-        for (transform, render) in
-            scene.query_mut::<(&comet_ecs::Transform, &mut comet_ecs::Sprite), ()>()
+        for (transform, mesh, render) in scene.query_mut::<(
+            &comet_ecs::Transform,
+            &comet_ecs::Mesh,
+            &mut comet_ecs::Sprite,
+        ), ()>()
         {
             if !render.is_visible() {
                 continue;
@@ -333,6 +336,7 @@ impl RenderHandle2D {
                 position: [transform.position().x(), transform.position().y()],
                 rotation_deg: transform.rotation().as_degrees().z(),
                 scale: [transform.scale().x(), transform.scale().y()],
+                mesh: mesh.clone(),
                 texture: atlas_ref,
                 draw_index: render.draw_index(),
                 visible: true,

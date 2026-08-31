@@ -1,5 +1,9 @@
-use crate::{batch::Batch, gpu_texture::GpuTexture, render_resources::RenderResources, Vertex};
+use crate::{
+    batch::Batch, gpu_mesh::GpuMesh, gpu_texture::GpuTexture, render_resources::RenderResources,
+    Vertex,
+};
 use comet_colors::Color;
+use comet_ecs::Mesh;
 use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -181,6 +185,18 @@ impl RenderState {
 
     pub fn resources_mut(&mut self) -> &mut RenderResources {
         &mut self.resources
+    }
+
+    pub(crate) fn begin_mesh_frame(&mut self) {
+        self.resources.begin_mesh_frame();
+    }
+
+    pub(crate) fn prepare_mesh(&mut self, mesh: &Mesh) -> Arc<GpuMesh> {
+        self.resources.prepare_mesh(&self.device, mesh)
+    }
+
+    pub(crate) fn evict_stale_meshes(&mut self, retention_frames: u64) {
+        self.resources.evict_stale_meshes(retention_frames);
     }
 
     pub fn create_intermediate_texture(

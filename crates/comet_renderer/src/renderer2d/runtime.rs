@@ -35,6 +35,8 @@ impl Renderer for Renderer2D {
             failed_font_variants: std::collections::HashSet::new(),
             sprite_instances: Vec::new(),
             sprite_instance_staging: Vec::new(),
+            sprite_mesh_runs: Vec::new(),
+            sprite_gpu_draws: Vec::new(),
             world_text_vertices: Vec::new(),
             world_text_indices: Vec::new(),
             world_text_staging_vertices: Vec::new(),
@@ -254,7 +256,7 @@ impl Renderer for Renderer2D {
             self.frame_diagnostics.cpu_render_work_time_ms =
                 (cpu_render_work_time_ms * 1000.0).round() / 1000.0;
             self.frame_diagnostics.passes = self.graph.node_count() as u32;
-            self.frame_diagnostics.draw_calls = self.frame_diagnostics.passes;
+            self.frame_diagnostics.draw_calls = self.graph.draw_count();
             self.frame_diagnostics.pending_font_jobs = self.pending_font_variants.len() as u32;
             diagnostics.publish(&self.frame_diagnostics);
         }

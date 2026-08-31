@@ -9,12 +9,11 @@ var<uniform> camera: CameraUniform;
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
-    @location(2) vertex_color: vec4<f32>,
-    @location(3) position_size: vec4<f32>,
-    @location(4) rotation: vec2<f32>,
-    @location(5) uv_min: vec2<f32>,
-    @location(6) uv_max: vec2<f32>,
-    @location(7) instance_color: vec4<f32>,
+    @location(2) position_size: vec4<f32>,
+    @location(3) rotation: vec2<f32>,
+    @location(4) uv_min: vec2<f32>,
+    @location(5) uv_max: vec2<f32>,
+    @location(6) instance_color: vec4<f32>,
 }
 
 struct VertexOutput {
@@ -34,7 +33,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     let world_position = model.position_size.xy + rotated;
     out.clip_position = camera.view_proj * vec4<f32>(world_position, model.position.z, 1.0);
     out.tex_coords = mix(model.uv_min, model.uv_max, model.tex_coords);
-    out.color = model.vertex_color * model.instance_color;
+    out.color = model.instance_color;
     return out;
 }
 

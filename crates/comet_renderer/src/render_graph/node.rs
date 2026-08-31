@@ -37,6 +37,9 @@ pub trait RenderNode: Send + Sync + 'static {
         &[]
     }
     fn load_op(&self) -> LoadOp;
+    fn draw_count(&self) -> u32 {
+        0
+    }
 
     fn build(&mut self, ctx: BuildContext<'_>);
     fn run<'rpass>(&mut self, rpass: &mut wgpu::RenderPass<'rpass>, state: &NodeState<'_>);

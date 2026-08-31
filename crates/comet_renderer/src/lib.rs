@@ -2,6 +2,7 @@ pub(crate) mod batch;
 mod camera;
 pub mod draw_batch;
 pub(crate) mod gizmo_registry;
+pub(crate) mod gpu_mesh;
 pub mod gpu_texture;
 pub mod material;
 pub mod render_commands;

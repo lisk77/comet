@@ -1,7 +1,13 @@
-use crate::gpu_texture::GpuTexture;
+use crate::{gpu_mesh::GpuMesh, gpu_texture::GpuTexture};
 use comet_assets;
-use comet_log::error;
+use comet_ecs::{Mesh, MeshId};
+use comet_log::{cassert, error};
 use std::{collections::HashMap, sync::Arc};
+
+struct CachedGpuMesh {
+    mesh: Arc<GpuMesh>,
+    last_used_frame: u64,
+}
 
 pub struct RenderResources {
     bind_groups: HashMap<String, Vec<Arc<wgpu::BindGroup>>>,
@@ -9,6 +15,8 @@ pub struct RenderResources {
     buffers: HashMap<String, Vec<Arc<wgpu::Buffer>>>,
     samplers: HashMap<String, wgpu::Sampler>,
     gpu_textures: HashMap<String, Arc<GpuTexture>>,
+    gpu_meshes: HashMap<MeshId, CachedGpuMesh>,
+    mesh_frame: u64,
     asset_atlas_handles: HashMap<String, comet_assets::Asset<comet_assets::TextureAtlas>>,
 }
 
@@ -20,6 +28,8 @@ impl RenderResources {
             buffers: HashMap::new(),
             samplers: HashMap::new(),
             gpu_textures: HashMap::new(),
+            gpu_meshes: HashMap::new(),
+            mesh_frame: 0,
             asset_atlas_handles: HashMap::new(),
         }
     }
@@ -86,7 +96,7 @@ impl RenderResources {
         };
     }
 
-    /// Replace a bind group at a specific position for a render pass.    
+    /// Replace a bind group at a specific position for a render pass.
     pub fn replace_bind_group(
         &mut self,
         render_pass_label: String,
@@ -111,7 +121,7 @@ impl RenderResources {
         }
     }
 
-    /// Insert a bind group layout for a render pass.         
+    /// Insert a bind group layout for a render pass.
     pub fn insert_bind_group_layout(
         &mut self,
         render_pass_label: String,
@@ -184,6 +194,37 @@ impl RenderResources {
     /// Remove a GPU texture from a render pass.
     pub fn remove_gpu_texture(&mut self, render_pass_label: &str) -> Option<Arc<GpuTexture>> {
         self.gpu_textures.remove(render_pass_label)
+    }
+
+    pub(crate) fn begin_mesh_frame(&mut self) {
+        self.mesh_frame = self.mesh_frame.saturating_add(1);
+    }
+
+    pub(crate) fn prepare_mesh(&mut self, device: &wgpu::Device, mesh: &Mesh) -> Arc<GpuMesh> {
+        let id = mesh.data().id();
+        if let Some(cached) = self.gpu_meshes.get_mut(&id) {
+            cassert!(
+                cached.mesh.matches(mesh.data()),
+                "cached GPU mesh does not match mesh metadata"
+            );
+            cached.last_used_frame = self.mesh_frame;
+            return Arc::clone(&cached.mesh);
+        }
+        let gpu_mesh = Arc::new(GpuMesh::new(device, mesh.data()));
+        self.gpu_meshes.insert(
+            id,
+            CachedGpuMesh {
+                mesh: Arc::clone(&gpu_mesh),
+                last_used_frame: self.mesh_frame,
+            },
+        );
+        gpu_mesh
+    }
+
+    pub(crate) fn evict_stale_meshes(&mut self, retention_frames: u64) {
+        let oldest_retained_frame = self.mesh_frame.saturating_sub(retention_frames);
+        self.gpu_meshes
+            .retain(|_, cached| cached.last_used_frame >= oldest_retained_frame);
     }
 
     /// Get a cached asset atlas handle for metadata lookups.

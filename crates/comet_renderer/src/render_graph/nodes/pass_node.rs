@@ -1,14 +1,31 @@
 use super::super::node::{BuildContext, NodeState, RenderNode};
+use super::pass_pipeline;
 use crate::{
     camera::{CameraUniform, ResolvedViewport},
     draw_batch::{DrawBatch, DrawCommand, DrawStreamError, GeometryDescriptor},
+    gpu_mesh::{GpuMesh, GpuMeshDrawBatch, GpuVertexLayout, MeshVertexAttribute},
     gpu_texture::GpuTexture,
     render_pass::LoadOp,
     Vertex,
 };
 use comet_math::m4;
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 use wgpu::util::DeviceExt;
+
+enum PassGeometry {
+    Dynamic {
+        descriptor: GeometryDescriptor,
+        pipeline: Option<wgpu::RenderPipeline>,
+        batch: Option<DrawBatch>,
+    },
+    Meshes {
+        contract: Vec<MeshVertexAttribute>,
+        instance_layout: wgpu::VertexBufferLayout<'static>,
+        initial_instance_capacity: usize,
+        pipelines: Vec<(GpuVertexLayout, wgpu::RenderPipeline)>,
+        batch: Option<GpuMeshDrawBatch>,
+    },
+}
 
 pub struct PassNode {
     name: String,
@@ -19,15 +36,15 @@ pub struct PassNode {
     load: LoadOp,
     viewport: Option<ResolvedViewport>,
 
-    pipeline: Option<wgpu::RenderPipeline>,
+    shader: Option<wgpu::ShaderModule>,
+    output_format: Option<wgpu::TextureFormat>,
     texture_layout: Option<Arc<wgpu::BindGroupLayout>>,
     texture_bind_group: Option<Arc<wgpu::BindGroup>>,
     sampler: Option<wgpu::Sampler>,
     camera_layout: Option<Arc<wgpu::BindGroupLayout>>,
     camera_buffer: Option<Arc<wgpu::Buffer>>,
     camera_bind_group: Option<Arc<wgpu::BindGroup>>,
-    geometry_descriptor: GeometryDescriptor,
-    batch: Option<DrawBatch>,
+    geometry: PassGeometry,
 }
 
 impl PassNode {
@@ -67,15 +84,56 @@ impl PassNode {
             run_after: run_after.into_iter().map(|s| s.to_string()).collect(),
             load,
             viewport: None,
-            pipeline: None,
+            shader: None,
+            output_format: None,
             texture_layout: None,
             texture_bind_group: None,
             sampler: None,
             camera_layout: None,
             camera_buffer: None,
             camera_bind_group: None,
-            geometry_descriptor,
-            batch: None,
+            geometry: PassGeometry::Dynamic {
+                descriptor: geometry_descriptor,
+                pipeline: None,
+                batch: None,
+            },
+        }
+    }
+
+    pub(crate) fn with_meshes(
+        name: impl Into<String>,
+        shader_src: &'static str,
+        topology: wgpu::PrimitiveTopology,
+        texture: Option<Arc<GpuTexture>>,
+        run_after: Vec<&str>,
+        load: LoadOp,
+        contract: Vec<MeshVertexAttribute>,
+        instance_layout: wgpu::VertexBufferLayout<'static>,
+        initial_instance_capacity: usize,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            shader_src,
+            topology,
+            texture,
+            run_after: run_after.into_iter().map(|s| s.to_string()).collect(),
+            load,
+            viewport: None,
+            shader: None,
+            output_format: None,
+            texture_layout: None,
+            texture_bind_group: None,
+            sampler: None,
+            camera_layout: None,
+            camera_buffer: None,
+            camera_bind_group: None,
+            geometry: PassGeometry::Meshes {
+                contract,
+                instance_layout,
+                initial_instance_capacity,
+                pipelines: Vec::new(),
+                batch: None,
+            },
         }
     }
 
@@ -109,7 +167,10 @@ impl PassNode {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<(), DrawStreamError> {
-        let batch = self.batch.as_mut().ok_or(DrawStreamError::BatchNotBuilt)?;
+        let PassGeometry::Dynamic { batch, .. } = &mut self.geometry else {
+            return Err(DrawStreamError::BatchNotBuilt);
+        };
+        let batch = batch.as_mut().ok_or(DrawStreamError::BatchNotBuilt)?;
         batch.write_vertex_stream(0, verts, device, queue)?;
         batch.write_indices_u16(indices, device, queue)?;
         batch.set_command(DrawCommand::Indexed {
@@ -126,17 +187,116 @@ impl PassNode {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<(), DrawStreamError> {
-        self.batch
+        let PassGeometry::Dynamic { batch, .. } = &mut self.geometry else {
+            return Err(DrawStreamError::BatchNotBuilt);
+        };
+        batch
             .as_mut()
             .ok_or(DrawStreamError::BatchNotBuilt)?
             .write_vertex_stream(slot, data, device, queue)
     }
 
     pub fn set_draw_command(&mut self, command: DrawCommand) -> Result<(), DrawStreamError> {
-        self.batch
+        let PassGeometry::Dynamic { batch, .. } = &mut self.geometry else {
+            return Err(DrawStreamError::BatchNotBuilt);
+        };
+        batch
             .as_mut()
             .ok_or(DrawStreamError::BatchNotBuilt)?
             .set_command(command)
+    }
+
+    pub(crate) fn write_mesh_instances<T: bytemuck::Pod>(
+        &mut self,
+        instances: &[T],
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<(), DrawStreamError> {
+        let PassGeometry::Meshes {
+            instance_layout,
+            batch,
+            ..
+        } = &mut self.geometry
+        else {
+            return Err(DrawStreamError::BatchNotBuilt);
+        };
+        let expected = instance_layout.array_stride;
+        batch
+            .as_mut()
+            .ok_or(DrawStreamError::BatchNotBuilt)?
+            .write_instances(instances, device, queue)
+            .map_err(|actual| DrawStreamError::VertexStrideMismatch {
+                slot: 1,
+                expected,
+                actual,
+            })
+    }
+
+    pub(crate) fn accepts_mesh(
+        &mut self,
+        mesh: &comet_ecs::MeshData,
+        max_vertex_buffer_array_stride: u32,
+    ) -> bool {
+        let PassGeometry::Meshes { batch, .. } = &mut self.geometry else {
+            return false;
+        };
+        let Some(batch) = batch.as_mut() else {
+            return false;
+        };
+        match batch.validate_mesh(mesh, max_vertex_buffer_array_stride) {
+            Ok(()) => true,
+            Err(error) => {
+                if batch.mark_invalid(mesh.id()) {
+                    comet_log::error!("Skipping incompatible mesh {:?}: {}", mesh.id(), error);
+                }
+                false
+            }
+        }
+    }
+
+    pub(crate) fn set_mesh_draws(
+        &mut self,
+        draws: &[(Arc<GpuMesh>, Range<u32>)],
+        device: &wgpu::Device,
+    ) -> Result<(), DrawStreamError> {
+        let (missing_layouts, instance_layout) = {
+            let PassGeometry::Meshes {
+                pipelines, batch, ..
+            } = &mut self.geometry
+            else {
+                return Err(DrawStreamError::BatchNotBuilt);
+            };
+            let batch = batch.as_mut().ok_or(DrawStreamError::BatchNotBuilt)?;
+            for (mesh, error) in
+                batch.set_draws(draws, device.limits().max_vertex_buffer_array_stride)
+            {
+                comet_log::error!("Skipping incompatible mesh {:?}: {}", mesh, error);
+            }
+            let mut missing_layouts = Vec::new();
+            for draw in batch.draws() {
+                if !pipelines.iter().any(|(layout, _)| layout == draw.layout())
+                    && !missing_layouts.iter().any(|layout| layout == draw.layout())
+                {
+                    missing_layouts.push(draw.layout().clone());
+                }
+            }
+            (missing_layouts, batch.instance_layout().clone())
+        };
+
+        let mut new_pipelines = Vec::with_capacity(missing_layouts.len());
+        for layout in missing_layouts {
+            let Some(pipeline) =
+                self.create_pipeline(device, &[layout.as_wgpu(), instance_layout.clone()])
+            else {
+                return Err(DrawStreamError::BatchNotBuilt);
+            };
+            new_pipelines.push((layout, pipeline));
+        }
+        let PassGeometry::Meshes { pipelines, .. } = &mut self.geometry else {
+            return Err(DrawStreamError::BatchNotBuilt);
+        };
+        pipelines.extend(new_pipelines);
+        Ok(())
     }
 
     pub fn set_camera(&mut self, uniform: &CameraUniform, queue: &wgpu::Queue) {
@@ -147,6 +307,23 @@ impl PassNode {
 
     pub fn set_viewport(&mut self, viewport: Option<ResolvedViewport>) {
         self.viewport = viewport;
+    }
+
+    fn create_pipeline(
+        &self,
+        device: &wgpu::Device,
+        vertex_buffers: &[wgpu::VertexBufferLayout<'_>],
+    ) -> Option<wgpu::RenderPipeline> {
+        Some(pass_pipeline::create(
+            device,
+            &self.name,
+            self.shader.as_ref()?,
+            self.output_format?,
+            self.topology,
+            self.texture_layout.as_deref(),
+            self.camera_layout.as_deref()?,
+            vertex_buffers,
+        ))
     }
 }
 
@@ -161,6 +338,18 @@ impl RenderNode for PassNode {
 
     fn load_op(&self) -> LoadOp {
         self.load.clone()
+    }
+
+    fn draw_count(&self) -> u32 {
+        match &self.geometry {
+            PassGeometry::Dynamic {
+                batch: Some(batch), ..
+            } => u32::from(!batch.command.is_empty() && batch.validate().is_ok()),
+            PassGeometry::Meshes {
+                batch: Some(batch), ..
+            } => batch.draws().len() as u32,
+            _ => 0,
+        }
     }
 
     fn build(&mut self, ctx: BuildContext<'_>) {
@@ -275,106 +464,64 @@ impl RenderNode for PassNode {
             source: wgpu::ShaderSource::Wgsl(self.shader_src.into()),
         });
 
-        let mut layout_refs: Vec<&wgpu::BindGroupLayout> = Vec::new();
-        if let Some(tl) = texture_layout.as_ref() {
-            layout_refs.push(tl);
-        }
-        layout_refs.push(&camera_layout);
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some(&format!("{} Pipeline Layout", self.name)),
-            bind_group_layouts: &layout_refs,
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some(&format!("{} Pipeline", self.name)),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &self
-                    .geometry_descriptor
-                    .vertex_streams()
-                    .iter()
-                    .map(|stream| stream.layout().clone())
-                    .collect::<Vec<_>>(),
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: ctx.format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: self.topology,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: if self.topology == wgpu::PrimitiveTopology::TriangleList {
-                    Some(wgpu::Face::Back)
-                } else {
-                    None
-                },
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
-
-        let batch = DrawBatch::new(device, &self.geometry_descriptor, &self.name);
-
+        self.shader = Some(shader);
+        self.output_format = Some(ctx.format);
         self.texture_layout = texture_layout;
         self.texture_bind_group = texture_bind_group;
         self.sampler = sampler;
         self.camera_layout = Some(camera_layout);
         self.camera_buffer = Some(camera_buffer);
         self.camera_bind_group = Some(camera_bind_group);
-        self.pipeline = Some(pipeline);
-        self.batch = Some(batch);
+
+        match &self.geometry {
+            PassGeometry::Dynamic { descriptor, .. } => {
+                let vertex_buffers = descriptor
+                    .vertex_streams()
+                    .iter()
+                    .map(|stream| stream.layout().clone())
+                    .collect::<Vec<_>>();
+                let pipeline = self.create_pipeline(device, &vertex_buffers);
+                let batch = DrawBatch::new(device, descriptor, &self.name);
+                let PassGeometry::Dynamic {
+                    pipeline: target_pipeline,
+                    batch: target_batch,
+                    ..
+                } = &mut self.geometry
+                else {
+                    return;
+                };
+                *target_pipeline = pipeline;
+                *target_batch = Some(batch);
+            }
+            PassGeometry::Meshes {
+                contract,
+                instance_layout,
+                initial_instance_capacity,
+                ..
+            } => {
+                let batch = GpuMeshDrawBatch::new(
+                    device,
+                    &self.name,
+                    contract.clone(),
+                    instance_layout.clone(),
+                    *initial_instance_capacity,
+                );
+                let PassGeometry::Meshes {
+                    batch: target_batch,
+                    ..
+                } = &mut self.geometry
+                else {
+                    return;
+                };
+                *target_batch = Some(batch);
+            }
+        }
     }
 
     fn run<'rpass>(&mut self, rpass: &mut wgpu::RenderPass<'rpass>, _state: &NodeState<'_>) {
-        let (Some(pipeline), Some(cam_bg), Some(batch)) = (
-            self.pipeline.as_ref(),
-            self.camera_bind_group.as_ref(),
-            self.batch.as_ref(),
-        ) else {
+        let Some(camera_bind_group) = self.camera_bind_group.as_ref() else {
             return;
         };
-
-        if batch.command.is_empty() {
-            return;
-        }
-        if let Err(error) = batch.validate() {
-            comet_log::error!("Skipping invalid draw batch '{}': {}", self.name, error);
-            return;
-        }
-
-        rpass.set_pipeline(pipeline);
 
         if let Some(viewport) = self.viewport {
             rpass.set_viewport(
@@ -388,39 +535,80 @@ impl RenderNode for PassNode {
             rpass.set_scissor_rect(viewport.x, viewport.y, viewport.width, viewport.height);
         }
 
-        if let Some(tex_bg) = &self.texture_bind_group {
-            rpass.set_bind_group(0, tex_bg, &[]);
-            rpass.set_bind_group(1, cam_bg, &[]);
+        if let Some(texture_bind_group) = self.texture_bind_group.as_ref() {
+            rpass.set_bind_group(0, texture_bind_group, &[]);
+            rpass.set_bind_group(1, camera_bind_group, &[]);
         } else {
-            rpass.set_bind_group(0, cam_bg, &[]);
+            rpass.set_bind_group(0, camera_bind_group, &[]);
         }
 
-        for (slot, stream) in batch.vertex_streams.iter().enumerate() {
-            let Some(slice) = stream.buffer.slice() else {
-                return;
-            };
-            rpass.set_vertex_buffer(slot as u32, slice);
-        }
-
-        match &batch.command {
-            DrawCommand::NonIndexed {
-                vertices,
-                instances,
-            } => rpass.draw(vertices.clone(), instances.clone()),
-            DrawCommand::Indexed {
-                indices,
-                base_vertex,
-                instances,
+        match &self.geometry {
+            PassGeometry::Dynamic {
+                pipeline: Some(pipeline),
+                batch: Some(batch),
+                ..
             } => {
-                let Some(index_stream) = batch.index_stream.as_ref() else {
+                if batch.command.is_empty() {
                     return;
-                };
-                let Some(slice) = index_stream.buffer.slice() else {
+                }
+                if let Err(error) = batch.validate() {
+                    comet_log::error!("Skipping invalid draw batch '{}': {}", self.name, error);
                     return;
-                };
-                rpass.set_index_buffer(slice, index_stream.format);
-                rpass.draw_indexed(indices.clone(), *base_vertex, instances.clone());
+                }
+                rpass.set_pipeline(pipeline);
+                for (slot, stream) in batch.vertex_streams.iter().enumerate() {
+                    let Some(slice) = stream.buffer.slice() else {
+                        return;
+                    };
+                    rpass.set_vertex_buffer(slot as u32, slice);
+                }
+                match &batch.command {
+                    DrawCommand::NonIndexed {
+                        vertices,
+                        instances,
+                    } => rpass.draw(vertices.clone(), instances.clone()),
+                    DrawCommand::Indexed {
+                        indices,
+                        base_vertex,
+                        instances,
+                    } => {
+                        let Some(index_stream) = batch.index_stream.as_ref() else {
+                            return;
+                        };
+                        let Some(slice) = index_stream.buffer.slice() else {
+                            return;
+                        };
+                        rpass.set_index_buffer(slice, index_stream.format);
+                        rpass.draw_indexed(indices.clone(), *base_vertex, instances.clone());
+                    }
+                }
             }
+            PassGeometry::Meshes {
+                pipelines,
+                batch: Some(batch),
+                ..
+            } => {
+                let Some(instance_slice) = batch.instance_slice() else {
+                    return;
+                };
+                rpass.set_vertex_buffer(1, instance_slice);
+                for draw in batch.draws() {
+                    let Some((_, pipeline)) =
+                        pipelines.iter().find(|(layout, _)| layout == draw.layout())
+                    else {
+                        continue;
+                    };
+                    rpass.set_pipeline(pipeline);
+                    rpass.set_vertex_buffer(0, draw.mesh.vertex_buffer.slice(..));
+                    if let Some(index_buffer) = draw.mesh.index_buffer.as_ref() {
+                        rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        rpass.draw_indexed(0..draw.mesh.index_count, 0, draw.instances.clone());
+                    } else {
+                        rpass.draw(0..draw.mesh.vertex_count, draw.instances.clone());
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

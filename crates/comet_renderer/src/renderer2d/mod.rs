@@ -1,7 +1,7 @@
 use crate::gizmo_registry::GizmoRegistry;
 use crate::{
     camera::{resolve_camera_viewport, CameraUniform, RenderCamera, ResolvedViewport},
-    draw_batch::{DrawCommand, GeometryDescriptor, IndexStreamDescriptor, VertexStreamDescriptor},
+    gpu_mesh::{GpuMesh, MeshVertexAttribute},
     gpu_texture::GpuTexture,
     render_commands::{
         CameraPacket2D, Draw2D, FramePacket2D, Renderer2DCommand, ScreenText2D, Text2D,
@@ -85,6 +85,8 @@ pub struct Renderer2D {
     failed_font_variants: std::collections::HashSet<FontVariantKey>,
     sprite_instances: Vec<SpriteInstance>,
     sprite_instance_staging: Vec<SpriteInstance>,
+    sprite_mesh_runs: Vec<(comet_ecs::Mesh, std::ops::Range<u32>)>,
+    sprite_gpu_draws: Vec<(Arc<GpuMesh>, std::ops::Range<u32>)>,
     world_text_vertices: Vec<Vertex>,
     world_text_indices: Vec<u16>,
     world_text_staging_vertices: Vec<Vertex>,
