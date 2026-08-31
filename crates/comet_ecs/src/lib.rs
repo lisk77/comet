@@ -1,5 +1,5 @@
 pub use bundles::Bundle;
-pub use comet_macros::Component;
+pub use comet_macros::{Component, Vertex};
 pub use comet_math as math;
 pub use component::*;
 pub use component_changes::ComponentChange;

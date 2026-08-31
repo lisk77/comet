@@ -1,5 +1,5 @@
 use crate::App;
-use comet_log::*;
+use comet_log::info;
 
 pub trait Runner: Send + 'static {
     fn run(self: Box<Self>, app: App, setup: fn(&mut App), update: fn(&mut App, f32));
@@ -17,7 +17,9 @@ impl Runner for HeadlessRunner {
 
         loop {
             app.run_tick_cycle(&mut last_tick, &mut time_stack, update);
-            if app.should_quit() { break; }
+            if app.should_quit() {
+                break;
+            }
             sleep_until_next_tick(app.dt(), last_tick);
         }
 

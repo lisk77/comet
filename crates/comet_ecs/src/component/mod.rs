@@ -10,7 +10,7 @@ mod transform;
 
 pub use camera::*;
 pub use collider::*;
-pub use mesh::{Mesh, MeshData};
+pub use mesh::*;
 pub use render_asset::*;
 pub use screen::*;
 pub use sprite::*;

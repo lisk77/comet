@@ -21,7 +21,7 @@ use comet_colors::Color;
 use comet_ecs::Component;
 use comet_ecs::EcsModuleExt;
 use comet_gizmos::{Gizmo, GizmoBuffer, GizmoShape};
-use comet_log::*;
+use comet_log::{error, fatal, info, warn};
 use comet_macros::module;
 use comet_math::{v2, v3};
 use comet_window::renderer::{Renderer, RendererHandle};

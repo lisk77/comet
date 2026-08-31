@@ -9,7 +9,7 @@ use crate::{
     Component, ComponentTuple, EcsError, Entity, EntityLocation, IdQueue, NeededComponent,
     NeededComponents, QueryTarget, QueryTargets, RequiredComponent, RequiredComponents, Tick,
 };
-use comet_log::*;
+use comet_log::{error, fatal, info, warn};
 use comet_structs::{Column, ComponentSet};
 use std::alloc::Layout;
 use std::any::TypeId;

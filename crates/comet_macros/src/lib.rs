@@ -3,6 +3,7 @@ use proc_macro2::TokenStream as TokenStream2;
 
 mod component;
 mod material;
+mod vertex;
 use quote::{format_ident, quote};
 use syn::{
     parse_macro_input, Data, DeriveInput, Fields, FnArg, ImplItem, ItemImpl, Pat, ReturnType, Type,
@@ -17,6 +18,23 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
 #[proc_macro_derive(Material, attributes(material, uniform, texture, sampler, color))]
 pub fn derive_material(item: TokenStream) -> TokenStream {
     material::derive(item)
+}
+
+#[proc_macro_derive(
+    Vertex,
+    attributes(
+        position,
+        normal,
+        tangent,
+        tex_coord,
+        color,
+        joint_indices,
+        joint_weights,
+        custom
+    )
+)]
+pub fn derive_vertex(item: TokenStream) -> TokenStream {
+    vertex::derive(item)
 }
 
 #[proc_macro_derive(Action)]

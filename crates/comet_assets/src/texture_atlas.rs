@@ -2,7 +2,7 @@ use crate::asset_handle::Asset;
 use crate::font::GlyphData;
 use crate::image::Image;
 use comet_app::resolve_asset_path;
-use comet_log::*;
+use comet_log::{error, info};
 use guillotiere::{size2, AllocId, AtlasAllocator};
 use image::{DynamicImage, RgbaImage};
 use std::collections::HashMap;

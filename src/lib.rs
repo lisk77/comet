@@ -118,10 +118,11 @@ pub mod prelude {
     pub use comet_ecs::{
         bundle, register_prefab, spawn_prefab, Added, Anchor, Bundle, Camera, Camera2d, Camera3d,
         CameraViewport, Changed, Collider, Component, EcsError, EcsModule, EcsModuleExt, Entity,
-        Mesh, MeshData, NeededComponents, OrthographicProjection, PerspectiveProjection,
-        Projection, Query, QueryTargets, RenderAsset, RequiredComponents, ResolutionScaling, Scene,
-        Screen, ScreenPosition, Sprite, Text, TextJustification, TextLayout, TextSize, Timer,
-        Transform, With, WithAny, Without, WithoutAny,
+        Mesh, MeshData, ModelVertex, NeededComponents, OrthographicProjection,
+        PerspectiveProjection, Projection, Query, QueryTargets, RenderAsset, RequiredComponents,
+        ResolutionScaling, Scene, Screen, ScreenPosition, Sprite, Text, TextJustification,
+        TextLayout, TextSize, Timer, Transform, Vertex, VertexAttribute, VertexDescriptor,
+        VertexFormat, VertexSemantic, VertexValue, With, WithAny, Without, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{
@@ -130,7 +131,7 @@ pub mod prelude {
         mouse::Button,
         Action, InputModule, InputModuleExt,
     };
-    pub use comet_log::*;
+    pub use comet_log::{cassert, debug, error, fatal, info, trace, warn};
     pub use comet_math::*;
     pub use comet_renderer::{
         EncodedUniform, Material, MaterialDescriptor, MaterialEncoder, RenderHandle2D,
