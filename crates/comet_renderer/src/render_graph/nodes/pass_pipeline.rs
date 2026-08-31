@@ -2,6 +2,8 @@ pub(super) fn create(
     device: &wgpu::Device,
     name: &str,
     shader: &wgpu::ShaderModule,
+    vertex_entry: &str,
+    fragment_entry: &str,
     format: wgpu::TextureFormat,
     topology: wgpu::PrimitiveTopology,
     texture_layout: Option<&wgpu::BindGroupLayout>,
@@ -23,13 +25,13 @@ pub(super) fn create(
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: shader,
-            entry_point: "vs_main",
+            entry_point: vertex_entry,
             buffers: vertex_buffers,
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: "fs_main",
+            entry_point: fragment_entry,
             targets: &[Some(wgpu::ColorTargetState {
                 format,
                 blend: Some(wgpu::BlendState {

@@ -12,6 +12,7 @@ pub mod render_pass;
 pub mod render_resources;
 pub mod render_state;
 pub mod renderer2d;
+pub(crate) mod shader;
 pub mod sprite_instance;
 pub mod vertex;
 

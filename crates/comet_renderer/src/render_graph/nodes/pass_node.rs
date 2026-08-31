@@ -37,6 +37,8 @@ pub struct PassNode {
     viewport: Option<ResolvedViewport>,
 
     shader: Option<wgpu::ShaderModule>,
+    vertex_entry: Option<String>,
+    fragment_entry: Option<String>,
     output_format: Option<wgpu::TextureFormat>,
     texture_layout: Option<Arc<wgpu::BindGroupLayout>>,
     texture_bind_group: Option<Arc<wgpu::BindGroup>>,
@@ -85,6 +87,8 @@ impl PassNode {
             load,
             viewport: None,
             shader: None,
+            vertex_entry: None,
+            fragment_entry: None,
             output_format: None,
             texture_layout: None,
             texture_bind_group: None,
@@ -120,6 +124,8 @@ impl PassNode {
             load,
             viewport: None,
             shader: None,
+            vertex_entry: None,
+            fragment_entry: None,
             output_format: None,
             texture_layout: None,
             texture_bind_group: None,
@@ -318,6 +324,8 @@ impl PassNode {
             device,
             &self.name,
             self.shader.as_ref()?,
+            self.vertex_entry.as_deref()?,
+            self.fragment_entry.as_deref()?,
             self.output_format?,
             self.topology,
             self.texture_layout.as_deref(),
@@ -459,11 +467,19 @@ impl RenderNode for PassNode {
             }],
         }));
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(&format!("{} Shader", self.name)),
-            source: wgpu::ShaderSource::Wgsl(self.shader_src.into()),
-        });
+        let shader_path = format!("comet://renderer2d/{}", self.name);
+        let compiled_shader =
+            match crate::shader::CompiledShader::compile(&shader_path, self.shader_src) {
+                Ok(shader) => shader,
+                Err(error) => {
+                    comet_log::error!("Failed to compile render pass '{}': {}", self.name, error);
+                    return;
+                }
+            };
+        let shader = compiled_shader.create_module(device, &format!("{} Shader", self.name));
 
+        self.vertex_entry = Some(compiled_shader.vertex_entry().to_string());
+        self.fragment_entry = Some(compiled_shader.fragment_entry().to_string());
         self.shader = Some(shader);
         self.output_format = Some(ctx.format);
         self.texture_layout = texture_layout;

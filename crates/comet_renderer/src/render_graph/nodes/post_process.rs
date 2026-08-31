@@ -177,10 +177,20 @@ impl RenderNode for PostProcessNode {
             push_constant_ranges: &[],
         });
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(&format!("{} Shader", self.label)),
-            source: wgpu::ShaderSource::Wgsl(self.shader_src.clone().into()),
-        });
+        let shader_path = format!("comet://renderer2d/post-process/{}", self.label);
+        let compiled_shader =
+            match crate::shader::CompiledShader::compile(&shader_path, &self.shader_src) {
+                Ok(shader) => shader,
+                Err(error) => {
+                    comet_log::error!(
+                        "Failed to compile post-process pass '{}': {}",
+                        self.label,
+                        error
+                    );
+                    return;
+                }
+            };
+        let shader = compiled_shader.create_module(device, &format!("{} Shader", self.label));
 
         let output_format = self.declared_output_format.unwrap_or(ctx.format);
 
@@ -190,13 +200,13 @@ impl RenderNode for PostProcessNode {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: compiled_shader.vertex_entry(),
                     buffers: &[],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: compiled_shader.fragment_entry(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: output_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
