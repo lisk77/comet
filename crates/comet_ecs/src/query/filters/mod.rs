@@ -17,44 +17,24 @@ pub struct Or<Filters>(PhantomData<Filters>);
 pub struct Not<Filter>(PhantomData<Filter>);
 
 #[doc(hidden)]
-pub trait WithFilterTuple {
-    type Filters;
+pub trait FilterTuple {
+    type With;
+    type Added;
+    type Changed;
 }
 
-#[doc(hidden)]
-pub trait AddedFilterTuple {
-    type Filters;
-}
-
-#[doc(hidden)]
-pub trait ChangedFilterTuple {
-    type Filters;
-}
-
-impl WithFilterTuple for () {
-    type Filters = ();
-}
-
-impl AddedFilterTuple for () {
-    type Filters = ();
-}
-
-impl ChangedFilterTuple for () {
-    type Filters = ();
+impl FilterTuple for () {
+    type With = ();
+    type Added = ();
+    type Changed = ();
 }
 
 macro_rules! impl_filter_tuple {
     ($($name:ident),+) => {
-        impl<$($name: Component),+> WithFilterTuple for ($($name,)+) {
-            type Filters = ($(With<$name>,)+);
-        }
-
-        impl<$($name: Component),+> AddedFilterTuple for ($($name,)+) {
-            type Filters = ($(Added<$name>,)+);
-        }
-
-        impl<$($name: Component),+> ChangedFilterTuple for ($($name,)+) {
-            type Filters = ($(Changed<$name>,)+);
+        impl<$($name: Component),+> FilterTuple for ($($name,)+) {
+            type With = ($(With<$name>,)+);
+            type Added = ($(Added<$name>,)+);
+            type Changed = ($(Changed<$name>,)+);
         }
     };
 }
@@ -69,12 +49,12 @@ impl_filter_tuple!(A, B, C, D, E, F, G);
 impl_filter_tuple!(A, B, C, D, E, F, G, H);
 
 pub type Without<C> = Not<With<C>>;
-pub type WithAll<Cs> = <Cs as WithFilterTuple>::Filters;
-pub type WithAny<Cs> = Or<<Cs as WithFilterTuple>::Filters>;
-pub type WithoutAll<Cs> = Not<<Cs as WithFilterTuple>::Filters>;
-pub type WithoutAny<Cs> = Not<Or<<Cs as WithFilterTuple>::Filters>>;
-pub type AddedAny<Cs> = Or<<Cs as AddedFilterTuple>::Filters>;
-pub type ChangedAny<Cs> = Or<<Cs as ChangedFilterTuple>::Filters>;
+pub type WithAll<Cs> = <Cs as FilterTuple>::With;
+pub type WithAny<Cs> = Or<<Cs as FilterTuple>::With>;
+pub type WithoutAll<Cs> = Not<<Cs as FilterTuple>::With>;
+pub type WithoutAny<Cs> = Not<Or<<Cs as FilterTuple>::With>>;
+pub type AddedAny<Cs> = Or<<Cs as FilterTuple>::Added>;
+pub type ChangedAny<Cs> = Or<<Cs as FilterTuple>::Changed>;
 
 pub(crate) trait QueryFilterSet {
     fn expression(scene: &Scene) -> QueryFilterExpr;
