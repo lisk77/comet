@@ -101,7 +101,7 @@ fn tick_is_newer_than(tick: Tick, last_seen_tick: Tick) -> bool {
 }
 
 impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
-    type Item = Data;
+    type Item = Data::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {

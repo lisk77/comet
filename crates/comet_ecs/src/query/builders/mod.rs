@@ -72,6 +72,23 @@ fn has_trait_filters(scene: &Scene, state: &QueryFilterState) -> bool {
         })
 }
 
+fn selected_archetype_targets(
+    scene: &Scene,
+    arch: &crate::archetypes::Archetype,
+    component: &QueryComponent,
+) -> Vec<QueryTarget> {
+    let mut targets = scene
+        .query_targets(component.type_id)
+        .iter()
+        .filter(|target| arch.column_index(target.component_type).is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+    for selector in &component.selectors {
+        targets = selector.select(targets);
+    }
+    targets
+}
+
 fn resolve_archetype_targets(
     scene: &Scene,
     arch: &crate::archetypes::Archetype,
@@ -83,12 +100,7 @@ fn resolve_archetype_targets(
     let mut resolved = vec![initial];
 
     for (slot, component) in components.iter().enumerate().skip(1) {
-        let candidates = scene
-            .query_targets(component.type_id)
-            .iter()
-            .filter(|target| arch.column_index(target.component_type).is_some())
-            .cloned()
-            .collect::<Vec<_>>();
+        let candidates = selected_archetype_targets(scene, arch, component);
 
         if candidates.is_empty() {
             if component.required {
@@ -132,19 +144,20 @@ fn resolve_archetype_targets(
 fn resolve_change_filters(
     scene: &Scene,
     arch: &crate::archetypes::Archetype,
+    components: &[QueryComponent],
     targets: &[Option<QueryTarget>; MAX_QUERY_COMPONENTS],
     filters: &[(TypeId, Tick)],
 ) -> Vec<ResolvedChangeFilter> {
     filters
         .iter()
         .map(|(target_type, since_tick)| {
-            let selected_types = targets
+            let selected_slots = components
                 .iter()
-                .flatten()
-                .filter(|target| target.target_type == *target_type)
-                .map(|target| target.component_type)
+                .enumerate()
+                .filter(|(_, component)| component.type_id == *target_type)
+                .map(|(slot, _)| slot)
                 .collect::<Vec<_>>();
-            let component_types = if selected_types.is_empty() {
+            let component_types = if selected_slots.is_empty() {
                 scene
                     .query_targets(*target_type)
                     .iter()
@@ -152,7 +165,11 @@ fn resolve_change_filters(
                     .map(|target| target.component_type)
                     .collect()
             } else {
-                selected_types
+                selected_slots
+                    .into_iter()
+                    .filter_map(|slot| targets[slot].as_ref())
+                    .map(|target| target.component_type)
+                    .collect()
             };
             ResolvedChangeFilter {
                 component_types,
@@ -195,6 +212,20 @@ fn resolved_accesses(
     }
 
     let mut resolved = Vec::new();
+    if components[0].required && !components[0].selectors.is_empty() {
+        for (arch_id, arch) in scene.archetypes().iter().enumerate() {
+            if !archetype_matches_filters(scene, arch, state) {
+                continue;
+            }
+            for anchor in selected_archetype_targets(scene, arch, &components[0]) {
+                for targets in resolve_archetype_targets(scene, arch, components, Some(anchor)) {
+                    resolved.push((arch_id, targets));
+                }
+            }
+        }
+        return resolved;
+    }
+
     if components[0].required {
         let trait_filters = has_trait_filters(scene, state);
         for anchor in anchor_targets {
@@ -235,11 +266,7 @@ fn resolved_accesses(
         if !archetype_matches_filters(scene, arch, state) {
             continue;
         }
-        let present = anchor_targets
-            .iter()
-            .filter(|target| arch.column_index(target.component_type).is_some())
-            .cloned()
-            .collect::<Vec<_>>();
+        let present = selected_archetype_targets(scene, arch, &components[0]);
         if present.is_empty() {
             for targets in resolve_archetype_targets(scene, arch, components, None) {
                 resolved.push((arch_id, targets));
@@ -268,10 +295,20 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
 
     for (arch_id, targets) in resolved {
         let arch = scene.archetypes().get(arch_id);
-        let added_since_filters =
-            resolve_change_filters(scene, arch, &targets, &state.added_since_filters);
-        let changed_since_filters =
-            resolve_change_filters(scene, arch, &targets, &state.changed_since_filters);
+        let added_since_filters = resolve_change_filters(
+            scene,
+            arch,
+            &components,
+            &targets,
+            &state.added_since_filters,
+        );
+        let changed_since_filters = resolve_change_filters(
+            scene,
+            arch,
+            &components,
+            &targets,
+            &state.changed_since_filters,
+        );
         let mut columns = [ptr::null_mut(); MAX_QUERY_COMPONENTS];
         let mut component_types = [None; MAX_QUERY_COMPONENTS];
         let mut casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS] =
@@ -316,10 +353,20 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
         .into_iter()
         .map(|(arch_id, targets)| {
             let arch = scene.archetypes().get(arch_id);
-            let added_since_filters =
-                resolve_change_filters(scene, arch, &targets, &state.added_since_filters);
-            let changed_since_filters =
-                resolve_change_filters(scene, arch, &targets, &state.changed_since_filters);
+            let added_since_filters = resolve_change_filters(
+                scene,
+                arch,
+                &components,
+                &targets,
+                &state.added_since_filters,
+            );
+            let changed_since_filters = resolve_change_filters(
+                scene,
+                arch,
+                &components,
+                &targets,
+                &state.changed_since_filters,
+            );
             (arch_id, targets, added_since_filters, changed_since_filters)
         })
         .collect::<Vec<_>>();

@@ -12,14 +12,18 @@ mod iterators;
 mod query_data;
 mod query_types;
 mod scene_query;
+mod selectors;
 
 pub(crate) use arities::has_duplicate_type_ids;
 pub(crate) use builders::{build_query_accesses, build_query_accesses_mut};
 pub(crate) use fetch::{EntityFetch, QueryAccess, ReadFetch, WriteFetch};
 pub(crate) use filters::{typed_filters, QueryFilterSet, QueryFilterState, ResolvedChangeFilter};
 pub use filters::{Added, Changed, QueryParam, With, WithAny, Without, WithoutAny};
+pub use query_data::QueryItem;
 pub(crate) use query_data::{QueryComponent, QueryData, MAX_QUERY_COMPONENTS};
 pub use query_types::Query;
+pub(crate) use selectors::QuerySelector;
+pub use selectors::{First, Last, Range, Skip, Take};
 
 /// Describes data that can be fetched by a read-only query.
 pub trait QuerySpec<'a> {

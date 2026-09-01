@@ -9,8 +9,11 @@ pub use entity::*;
 pub use error::EcsError;
 pub use id::*;
 pub use prefabs::{ErasedComponent, PrefabFactory};
+#[doc(hidden)]
+pub use query::QueryItem;
 pub use query::{
-    Added, Changed, Query, QueryParam, QuerySpec, QuerySpecMut, With, WithAny, Without, WithoutAny,
+    Added, Changed, First, Last, Query, QueryParam, QuerySpec, QuerySpecMut, Range, Skip, Take,
+    With, WithAny, Without, WithoutAny,
 };
 pub use scene::*;
 pub use scene_commands::{SceneCommand, SceneCommands};
