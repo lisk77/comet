@@ -39,37 +39,9 @@ fn archetype_matches_filters(
     state: &QueryFilterState,
 ) -> bool {
     state
-        .with_components
-        .iter()
-        .all(|type_id| archetype_has_target(scene, arch, *type_id))
-        && state
-            .without_components
-            .iter()
-            .all(|type_id| !archetype_has_target(scene, arch, *type_id))
-        && (state.with_any_components.is_empty()
-            || state
-                .with_any_components
-                .iter()
-                .any(|type_id| archetype_has_target(scene, arch, *type_id)))
-        && state
-            .without_any_components
-            .iter()
-            .all(|type_id| !archetype_has_target(scene, arch, *type_id))
-}
-
-fn has_trait_filters(scene: &Scene, state: &QueryFilterState) -> bool {
-    state
-        .with_components
-        .iter()
-        .chain(&state.without_components)
-        .chain(&state.with_any_components)
-        .chain(&state.without_any_components)
-        .any(|target_type| {
-            scene
-                .query_targets(*target_type)
-                .iter()
-                .any(|target| target.component_type != *target_type)
-        })
+        .expression
+        .archetype_match(&|type_id| archetype_has_target(scene, arch, type_id))
+        != ArchetypeFilterMatch::Never
 }
 
 fn selected_archetype_targets(
@@ -141,42 +113,79 @@ fn resolve_archetype_targets(
     resolved
 }
 
-fn resolve_change_filters(
+fn resolve_change_filter(
     scene: &Scene,
     arch: &crate::archetypes::Archetype,
     components: &[QueryComponent],
     targets: &[Option<QueryTarget>; MAX_QUERY_COMPONENTS],
-    filters: &[(TypeId, Tick)],
-) -> Vec<ResolvedChangeFilter> {
-    filters
+    target_type: TypeId,
+    since_tick: Tick,
+) -> ResolvedChangeFilter {
+    let selected_slots = components
         .iter()
-        .map(|(target_type, since_tick)| {
-            let selected_slots = components
-                .iter()
-                .enumerate()
-                .filter(|(_, component)| component.type_id == *target_type)
-                .map(|(slot, _)| slot)
-                .collect::<Vec<_>>();
-            let component_types = if selected_slots.is_empty() {
-                scene
-                    .query_targets(*target_type)
-                    .iter()
-                    .filter(|target| arch.column_index(target.component_type).is_some())
-                    .map(|target| target.component_type)
-                    .collect()
+        .enumerate()
+        .filter(|(_, component)| component.type_id == target_type)
+        .map(|(slot, _)| slot)
+        .collect::<Vec<_>>();
+    let component_types = if selected_slots.is_empty() {
+        scene
+            .query_targets(target_type)
+            .iter()
+            .filter(|target| arch.column_index(target.component_type).is_some())
+            .map(|target| target.component_type)
+            .collect()
+    } else {
+        selected_slots
+            .into_iter()
+            .filter_map(|slot| targets[slot].as_ref())
+            .map(|target| target.component_type)
+            .collect()
+    };
+    ResolvedChangeFilter {
+        component_types,
+        since_tick,
+    }
+}
+
+fn resolve_filter(
+    scene: &Scene,
+    arch: &crate::archetypes::Archetype,
+    components: &[QueryComponent],
+    targets: &[Option<QueryTarget>; MAX_QUERY_COMPONENTS],
+    filter: &QueryFilterExpr,
+) -> ResolvedQueryFilter {
+    match filter {
+        QueryFilterExpr::True => ResolvedQueryFilter::True,
+        QueryFilterExpr::False => ResolvedQueryFilter::False,
+        QueryFilterExpr::With(type_id) => {
+            if archetype_has_target(scene, arch, *type_id) {
+                ResolvedQueryFilter::True
             } else {
-                selected_slots
-                    .into_iter()
-                    .filter_map(|slot| targets[slot].as_ref())
-                    .map(|target| target.component_type)
-                    .collect()
-            };
-            ResolvedChangeFilter {
-                component_types,
-                since_tick: *since_tick,
+                ResolvedQueryFilter::False
             }
-        })
-        .collect()
+        }
+        QueryFilterExpr::Added(type_id, since_tick) => ResolvedQueryFilter::Added(
+            resolve_change_filter(scene, arch, components, targets, *type_id, *since_tick),
+        ),
+        QueryFilterExpr::Changed(type_id, since_tick) => ResolvedQueryFilter::Changed(
+            resolve_change_filter(scene, arch, components, targets, *type_id, *since_tick),
+        ),
+        QueryFilterExpr::And(filters) => ResolvedQueryFilter::and(
+            filters
+                .iter()
+                .map(|filter| resolve_filter(scene, arch, components, targets, filter))
+                .collect(),
+        ),
+        QueryFilterExpr::Or(filters) => ResolvedQueryFilter::or(
+            filters
+                .iter()
+                .map(|filter| resolve_filter(scene, arch, components, targets, filter))
+                .collect(),
+        ),
+        QueryFilterExpr::Not(filter) => {
+            ResolvedQueryFilter::not(resolve_filter(scene, arch, components, targets, filter))
+        }
+    }
 }
 
 fn resolved_accesses(
@@ -227,9 +236,9 @@ fn resolved_accesses(
     }
 
     if components[0].required {
-        let trait_filters = has_trait_filters(scene, state);
+        let scan_archetypes = state.simple.is_none() || state.has_trait_presence_filter(scene);
         for anchor in anchor_targets {
-            if trait_filters {
+            if scan_archetypes {
                 for (arch_id, arch) in scene.archetypes().iter().enumerate() {
                     if arch.column_index(anchor.component_type).is_none()
                         || !archetype_matches_filters(scene, arch, state)
@@ -243,12 +252,13 @@ fn resolved_accesses(
                     }
                 }
             } else {
+                let simple = state.simple.as_ref().unwrap();
                 for (arch_id, _) in scene.cached_single_plan(
                     anchor.component_type,
-                    &state.with_components,
-                    &state.without_components,
-                    &state.with_any_components,
-                    &state.without_any_components,
+                    &simple.with_components,
+                    &simple.without_components,
+                    &simple.with_any_components,
+                    &simple.without_any_components,
                 ) {
                     let arch = scene.archetypes().get(arch_id);
                     for targets in
@@ -295,20 +305,10 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
 
     for (arch_id, targets) in resolved {
         let arch = scene.archetypes().get(arch_id);
-        let added_since_filters = resolve_change_filters(
-            scene,
-            arch,
-            &components,
-            &targets,
-            &state.added_since_filters,
-        );
-        let changed_since_filters = resolve_change_filters(
-            scene,
-            arch,
-            &components,
-            &targets,
-            &state.changed_since_filters,
-        );
+        let filter = resolve_filter(scene, arch, &components, &targets, &state.expression);
+        if filter.is_false() {
+            continue;
+        }
         let mut columns = [ptr::null_mut(); MAX_QUERY_COMPONENTS];
         let mut component_types = [None; MAX_QUERY_COMPONENTS];
         let mut casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS] =
@@ -333,8 +333,7 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
             casters,
             change_state,
             component_event_tick,
-            added_since_filters,
-            changed_since_filters,
+            filter,
             len: arch.len(),
             row: 0,
         });
@@ -351,30 +350,17 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
     validate_components(&components);
     let resolved = resolved_accesses(scene, &components, state)
         .into_iter()
-        .map(|(arch_id, targets)| {
+        .filter_map(|(arch_id, targets)| {
             let arch = scene.archetypes().get(arch_id);
-            let added_since_filters = resolve_change_filters(
-                scene,
-                arch,
-                &components,
-                &targets,
-                &state.added_since_filters,
-            );
-            let changed_since_filters = resolve_change_filters(
-                scene,
-                arch,
-                &components,
-                &targets,
-                &state.changed_since_filters,
-            );
-            (arch_id, targets, added_since_filters, changed_since_filters)
+            let filter = resolve_filter(scene, arch, &components, &targets, &state.expression);
+            (!filter.is_false()).then_some((arch_id, targets, filter))
         })
         .collect::<Vec<_>>();
     let (archetypes, change_state, component_event_tick) = scene.query_parts_mut();
     let change_state = change_state as *mut _;
     let mut accesses = Vec::with_capacity(resolved.len());
 
-    for (arch_id, targets, added_since_filters, changed_since_filters) in resolved {
+    for (arch_id, targets, filter) in resolved {
         let arch = archetypes.get_mut(arch_id);
         let entities = arch.entities().as_ptr();
         let len = arch.len();
@@ -403,8 +389,7 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
             casters,
             change_state,
             component_event_tick,
-            added_since_filters,
-            changed_since_filters,
+            filter,
             len,
             row: 0,
         });

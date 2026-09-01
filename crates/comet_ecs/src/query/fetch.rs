@@ -7,8 +7,7 @@ pub(crate) struct QueryAccess {
     pub(crate) casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
     pub(crate) change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
     pub(crate) component_event_tick: Tick,
-    pub(crate) added_since_filters: Vec<ResolvedChangeFilter>,
-    pub(crate) changed_since_filters: Vec<ResolvedChangeFilter>,
+    pub(crate) filter: ResolvedQueryFilter,
     pub(crate) len: usize,
     pub(crate) row: usize,
 }

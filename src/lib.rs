@@ -116,12 +116,13 @@ pub mod prelude {
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
     pub use comet_ecs::{
-        bundle, register_prefab, spawn_prefab, Added, Anchor, Bundle, Camera, Camera2d, Camera3d,
-        CameraViewport, Changed, Collider, Component, EcsError, EcsModule, EcsModuleExt, Entity,
-        First, Last, NeededComponents, OrthographicProjection, PerspectiveProjection, Projection,
-        Query, QueryTargets, Range, RequiredComponents, ResolutionScaling, Scene, Screen,
-        ScreenPosition, Skip, Sprite, Take, Text, TextJustification, TextLayout, TextSize, Timer,
-        Transform, With, WithAny, Without, WithoutAny,
+        bundle, register_prefab, spawn_prefab, Added, AddedAny, Anchor, Bundle, Camera, Camera2d,
+        Camera3d, CameraViewport, Changed, ChangedAny, Collider, Component, EcsError, EcsModule,
+        EcsModuleExt, Entity, First, Last, NeededComponents, Not, Or, OrthographicProjection,
+        PerspectiveProjection, Projection, Query, QueryTargets, Range, RequiredComponents,
+        ResolutionScaling, Scene, Screen, ScreenPosition, Skip, Sprite, Take, Text,
+        TextJustification, TextLayout, TextSize, Timer, Transform, With, WithAll, WithAny, Without,
+        WithoutAll, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{

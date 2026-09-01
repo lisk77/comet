@@ -12,8 +12,8 @@ pub use prefabs::{ErasedComponent, PrefabFactory};
 #[doc(hidden)]
 pub use query::QueryItem;
 pub use query::{
-    Added, Changed, First, Last, Query, QueryParam, QuerySpec, QuerySpecMut, Range, Skip, Take,
-    With, WithAny, Without, WithoutAny,
+    Added, AddedAny, Changed, ChangedAny, First, Last, Not, Or, Query, QueryParam, QuerySpec,
+    QuerySpecMut, Range, Skip, Take, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
 };
 pub use scene::*;
 pub use scene_commands::{SceneCommand, SceneCommands};

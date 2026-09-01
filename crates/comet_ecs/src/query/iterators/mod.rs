@@ -48,35 +48,6 @@ pub(super) unsafe fn fetch_entity(
 }
 
 #[inline(always)]
-pub(super) unsafe fn matches_change_filters(
-    change_state: *const HashMap<(u32, TypeId), ComponentChangeState>,
-    entity: Entity,
-    added_since_filters: &[ResolvedChangeFilter],
-    changed_since_filters: &[ResolvedChangeFilter],
-) -> bool {
-    let change_state = unsafe { &*change_state };
-    for filter in added_since_filters {
-        if !filter.component_types.iter().any(|type_id| {
-            change_state
-                .get(&(entity.index, *type_id))
-                .is_some_and(|state| tick_is_newer_than(state.added_tick, filter.since_tick))
-        }) {
-            return false;
-        }
-    }
-    for filter in changed_since_filters {
-        if !filter.component_types.iter().any(|type_id| {
-            change_state
-                .get(&(entity.index, *type_id))
-                .is_some_and(|state| tick_is_newer_than(state.changed_tick, filter.since_tick))
-        }) {
-            return false;
-        }
-    }
-    true
-}
-
-#[inline(always)]
 unsafe fn matches_concrete_change_filters(
     change_state: *const HashMap<(u32, TypeId), ComponentChangeState>,
     entity: Entity,
@@ -108,17 +79,14 @@ impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
             let (access, row) = next_access_row(&mut self.accesses, &mut self.idx)?;
             unsafe {
                 let entity = fetch_entity(access.entities, access.len, row)?;
-                if !matches_change_filters(
-                    access.change_state,
-                    entity,
-                    &access.added_since_filters,
-                    &access.changed_since_filters,
-                ) || !matches_concrete_change_filters(
-                    access.change_state,
-                    entity,
-                    &self.added_since_filters,
-                    &self.changed_since_filters,
-                ) {
+                if !access.filter.matches(access.change_state, entity)
+                    || !matches_concrete_change_filters(
+                        access.change_state,
+                        entity,
+                        &self.added_since_filters,
+                        &self.changed_since_filters,
+                    )
+                {
                     continue;
                 }
                 Data::mark_changed(

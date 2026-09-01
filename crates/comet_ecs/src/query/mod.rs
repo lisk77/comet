@@ -1,5 +1,5 @@
 use crate::component_changes::ComponentChangeState;
-use crate::{Component, ComponentTuple, Entity, Scene, Tick};
+use crate::{Component, Entity, Scene, Tick};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -17,8 +17,14 @@ mod selectors;
 pub(crate) use arities::has_duplicate_type_ids;
 pub(crate) use builders::{build_query_accesses, build_query_accesses_mut};
 pub(crate) use fetch::{EntityFetch, QueryAccess, ReadFetch, WriteFetch};
-pub(crate) use filters::{typed_filters, QueryFilterSet, QueryFilterState, ResolvedChangeFilter};
-pub use filters::{Added, Changed, QueryParam, With, WithAny, Without, WithoutAny};
+pub(crate) use filters::{
+    typed_filters, ArchetypeFilterMatch, QueryFilterExpr, QueryFilterSet, QueryFilterState,
+    ResolvedChangeFilter, ResolvedQueryFilter,
+};
+pub use filters::{
+    Added, AddedAny, Changed, ChangedAny, Not, Or, QueryParam, With, WithAll, WithAny, Without,
+    WithoutAll, WithoutAny,
+};
 pub use query_data::QueryItem;
 pub(crate) use query_data::{QueryComponent, QueryData, MAX_QUERY_COMPONENTS};
 pub use query_types::Query;
