@@ -38,6 +38,10 @@ impl<'a, T: QueryItem<'a>> QueryItem<'a> for Option<T> {
     type Item = Option<T::Item>;
 }
 
+impl<'a> QueryItem<'a> for Entity {
+    type Item = Entity;
+}
+
 pub(crate) trait QueryData<'a>: QueryItem<'a> + Sized {
     fn components() -> Vec<QueryComponent>;
 
@@ -136,6 +140,32 @@ impl_query_data_leaf!([T, const COUNT: usize] Take<T, COUNT>);
 impl_query_data_leaf!([T] First<T>);
 impl_query_data_leaf!([T] Last<T>);
 
+impl<'a> QueryData<'a> for Entity {
+    fn components() -> Vec<QueryComponent> {
+        Vec::new()
+    }
+
+    unsafe fn mark_changed(
+        _change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+        _component_event_tick: Tick,
+        _entity: Entity,
+        _columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        _component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
+    ) {
+    }
+
+    unsafe fn fetch(
+        entity: Entity,
+        _columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        _casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        _row: usize,
+    ) -> Option<Self::Item> {
+        Some(entity)
+    }
+}
+
+impl<'a> ReadQueryData<'a> for Entity {}
+
 macro_rules! impl_tuple_query_data {
     ($($ty:ident: $index:literal),+) => {
         impl<'a, $($ty),+> QueryItem<'a> for ($($ty,)+)
@@ -200,13 +230,6 @@ macro_rules! impl_tuple_query_data {
 
 macro_rules! impl_entity_tuple_query_data {
     ($($ty:ident: $index:literal),+) => {
-        impl<'a, $($ty),+> QueryItem<'a> for (Entity, $($ty,)+)
-        where
-            $($ty: QueryItem<'a> + 'a),+
-        {
-            type Item = (Entity, $(<$ty as QueryItem<'a>>::Item,)+);
-        }
-
         impl<'a, $($ty),+> QueryData<'a> for (Entity, $($ty,)+)
         where
             $($ty: WriteFetch<'a> + 'a),+
@@ -267,6 +290,30 @@ impl_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4);
 impl_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
 impl_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6);
 impl_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6, H: 7);
+
+impl<'a, A, B, C, D, E, F, G, H> QueryItem<'a> for (Entity, A, B, C, D, E, F, G, H)
+where
+    A: QueryItem<'a> + 'a,
+    B: QueryItem<'a> + 'a,
+    C: QueryItem<'a> + 'a,
+    D: QueryItem<'a> + 'a,
+    E: QueryItem<'a> + 'a,
+    F: QueryItem<'a> + 'a,
+    G: QueryItem<'a> + 'a,
+    H: QueryItem<'a> + 'a,
+{
+    type Item = (
+        Entity,
+        A::Item,
+        B::Item,
+        C::Item,
+        D::Item,
+        E::Item,
+        F::Item,
+        G::Item,
+        H::Item,
+    );
+}
 
 impl_entity_tuple_query_data!(A: 0);
 impl_entity_tuple_query_data!(A: 0, B: 1);
