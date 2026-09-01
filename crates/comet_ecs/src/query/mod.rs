@@ -28,7 +28,7 @@ pub use filters::{
 pub use query_data::QueryItem;
 pub(crate) use query_data::{QueryComponent, QueryData, MAX_QUERY_COMPONENTS};
 pub use query_types::Query;
-pub(crate) use selectors::QuerySelector;
+pub(crate) use selectors::QueryRange;
 pub use selectors::{First, Last, Range, Skip, Take};
 
 /// Describes data that can be fetched by a read-only query.

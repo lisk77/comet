@@ -54,7 +54,7 @@ pub(crate) trait WriteFetch<'a>: QueryItem<'a> {
         true
     }
 
-    fn selectors() -> Vec<QuerySelector> {
+    fn ranges() -> Vec<QueryRange> {
         Vec::new()
     }
 }
@@ -120,7 +120,7 @@ where
         false
     }
 
-    fn selectors() -> Vec<QuerySelector> {
-        T::selectors()
+    fn ranges() -> Vec<QueryRange> {
+        T::ranges()
     }
 }

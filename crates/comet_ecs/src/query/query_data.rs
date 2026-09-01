@@ -7,7 +7,7 @@ pub(crate) struct QueryComponent {
     pub(crate) type_id: TypeId,
     pub(crate) required: bool,
     pub(crate) writes: bool,
-    pub(crate) selectors: Vec<QuerySelector>,
+    pub(crate) ranges: Vec<QueryRange>,
 }
 
 impl QueryComponent {
@@ -16,7 +16,7 @@ impl QueryComponent {
             type_id: T::type_id(),
             required: T::required(),
             writes: T::writes(),
-            selectors: T::selectors(),
+            ranges: T::ranges(),
         }
     }
 }
@@ -135,9 +135,6 @@ impl_query_data_leaf!([C: ?Sized + Component] &'a C);
 impl_query_data_leaf!([C: ?Sized + Component] &'a mut C);
 impl_query_data_leaf!([T] Option<T>);
 impl_query_data_leaf!([T, const START: usize, const END: usize] Range<T, START, END>);
-impl_query_data_leaf!([T, const COUNT: usize] Skip<T, COUNT>);
-impl_query_data_leaf!([T, const COUNT: usize] Take<T, COUNT>);
-impl_query_data_leaf!([T] First<T>);
 impl_query_data_leaf!([T] Last<T>);
 
 impl<'a> QueryData<'a> for Entity {

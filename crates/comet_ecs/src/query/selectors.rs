@@ -1,24 +1,47 @@
 use super::*;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum QuerySelector {
-    Range { start: usize, end: usize },
-    Skip(usize),
-    Take(usize),
-    First,
-    Last,
+#[derive(Clone, Copy)]
+enum QueryRangeBound {
+    Index(usize),
+    End,
+    FromEnd(usize),
 }
 
-impl QuerySelector {
+impl QueryRangeBound {
+    fn resolve(self, len: usize) -> usize {
+        match self {
+            Self::Index(index) => index.min(len),
+            Self::End => len,
+            Self::FromEnd(offset) => len.saturating_sub(offset),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct QueryRange {
+    start: QueryRangeBound,
+    end: QueryRangeBound,
+}
+
+impl QueryRange {
+    fn fixed(start: usize, end: usize) -> Self {
+        Self {
+            start: QueryRangeBound::Index(start),
+            end: QueryRangeBound::Index(end),
+        }
+    }
+
+    fn last() -> Self {
+        Self {
+            start: QueryRangeBound::FromEnd(1),
+            end: QueryRangeBound::End,
+        }
+    }
+
     pub(crate) fn select<T>(self, values: Vec<T>) -> Vec<T> {
         let len = values.len();
-        let (start, end) = match self {
-            Self::Range { start, end } => (start.min(len), end.min(len)),
-            Self::Skip(count) => (count.min(len), len),
-            Self::Take(count) => (0, count.min(len)),
-            Self::First => (0, 1.min(len)),
-            Self::Last => (len.saturating_sub(1), len),
-        };
+        let start = self.start.resolve(len);
+        let end = self.end.resolve(len);
         values
             .into_iter()
             .skip(start)
@@ -28,26 +51,15 @@ impl QuerySelector {
 }
 
 pub struct Range<T, const START: usize, const END: usize>(PhantomData<T>);
-pub struct Skip<T, const COUNT: usize>(PhantomData<T>);
-pub struct Take<T, const COUNT: usize>(PhantomData<T>);
-pub struct First<T>(PhantomData<T>);
 pub struct Last<T>(PhantomData<T>);
+
+pub type Skip<T, const COUNT: usize> = Range<T, COUNT, { usize::MAX }>;
+pub type Take<T, const COUNT: usize> = Range<T, 0, COUNT>;
+pub type First<T> = Range<T, 0, 1>;
 
 impl<'a, T: QueryItem<'a>, const START: usize, const END: usize> QueryItem<'a>
     for Range<T, START, END>
 {
-    type Item = T::Item;
-}
-
-impl<'a, T: QueryItem<'a>, const COUNT: usize> QueryItem<'a> for Skip<T, COUNT> {
-    type Item = T::Item;
-}
-
-impl<'a, T: QueryItem<'a>, const COUNT: usize> QueryItem<'a> for Take<T, COUNT> {
-    type Item = T::Item;
-}
-
-impl<'a, T: QueryItem<'a>> QueryItem<'a> for First<T> {
     type Item = T::Item;
 }
 
@@ -77,13 +89,10 @@ where
         T::required()
     }
 
-    fn selectors() -> Vec<QuerySelector> {
-        let mut selectors = T::selectors();
-        selectors.push(QuerySelector::Range {
-            start: START,
-            end: END,
-        });
-        selectors
+    fn ranges() -> Vec<QueryRange> {
+        let mut ranges = T::ranges();
+        ranges.push(QueryRange::fixed(START, END));
+        ranges
     }
 }
 
@@ -91,105 +100,6 @@ impl<'a, T, const START: usize, const END: usize> ReadFetch<'a> for Range<T, STA
     T: ReadFetch<'a> + WriteFetch<'a>
 {
 }
-
-impl<'a, T, const COUNT: usize> WriteFetch<'a> for Skip<T, COUNT>
-where
-    T: WriteFetch<'a>,
-{
-    type Target = T::Target;
-
-    unsafe fn get(
-        col: *mut comet_structs::Column,
-        caster: Option<&crate::QueryCaster>,
-        row: usize,
-    ) -> Option<Self::Item> {
-        unsafe { T::get(col, caster, row) }
-    }
-
-    fn writes() -> bool {
-        T::writes()
-    }
-
-    fn required() -> bool {
-        T::required()
-    }
-
-    fn selectors() -> Vec<QuerySelector> {
-        let mut selectors = T::selectors();
-        selectors.push(QuerySelector::Skip(COUNT));
-        selectors
-    }
-}
-
-impl<'a, T, const COUNT: usize> ReadFetch<'a> for Skip<T, COUNT> where
-    T: ReadFetch<'a> + WriteFetch<'a>
-{
-}
-
-impl<'a, T, const COUNT: usize> WriteFetch<'a> for Take<T, COUNT>
-where
-    T: WriteFetch<'a>,
-{
-    type Target = T::Target;
-
-    unsafe fn get(
-        col: *mut comet_structs::Column,
-        caster: Option<&crate::QueryCaster>,
-        row: usize,
-    ) -> Option<Self::Item> {
-        unsafe { T::get(col, caster, row) }
-    }
-
-    fn writes() -> bool {
-        T::writes()
-    }
-
-    fn required() -> bool {
-        T::required()
-    }
-
-    fn selectors() -> Vec<QuerySelector> {
-        let mut selectors = T::selectors();
-        selectors.push(QuerySelector::Take(COUNT));
-        selectors
-    }
-}
-
-impl<'a, T, const COUNT: usize> ReadFetch<'a> for Take<T, COUNT> where
-    T: ReadFetch<'a> + WriteFetch<'a>
-{
-}
-
-impl<'a, T> WriteFetch<'a> for First<T>
-where
-    T: WriteFetch<'a>,
-{
-    type Target = T::Target;
-
-    unsafe fn get(
-        col: *mut comet_structs::Column,
-        caster: Option<&crate::QueryCaster>,
-        row: usize,
-    ) -> Option<Self::Item> {
-        unsafe { T::get(col, caster, row) }
-    }
-
-    fn writes() -> bool {
-        T::writes()
-    }
-
-    fn required() -> bool {
-        T::required()
-    }
-
-    fn selectors() -> Vec<QuerySelector> {
-        let mut selectors = T::selectors();
-        selectors.push(QuerySelector::First);
-        selectors
-    }
-}
-
-impl<'a, T> ReadFetch<'a> for First<T> where T: ReadFetch<'a> + WriteFetch<'a> {}
 
 impl<'a, T> WriteFetch<'a> for Last<T>
 where
@@ -213,10 +123,10 @@ where
         T::required()
     }
 
-    fn selectors() -> Vec<QuerySelector> {
-        let mut selectors = T::selectors();
-        selectors.push(QuerySelector::Last);
-        selectors
+    fn ranges() -> Vec<QueryRange> {
+        let mut ranges = T::ranges();
+        ranges.push(QueryRange::last());
+        ranges
     }
 }
 
