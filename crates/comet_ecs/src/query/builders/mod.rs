@@ -7,15 +7,6 @@ fn validate_components(components: &[QueryComponent]) {
         components.len() <= MAX_QUERY_COMPONENTS,
         "query fetches more than {MAX_QUERY_COMPONENTS} components"
     );
-    assert!(
-        !has_duplicate_type_ids(
-            &components
-                .iter()
-                .map(|component| component.type_id)
-                .collect::<Vec<_>>()
-        ),
-        "query called with duplicate component types"
-    );
 }
 
 fn archetype_has_target(
@@ -104,24 +95,17 @@ fn resolve_archetype_targets(
         resolved = expanded;
     }
 
-    resolved.retain(|targets| {
-        for first in 0..components.len() {
-            let Some(first_target) = targets[first].as_ref() else {
-                continue;
-            };
-            for second in (first + 1)..components.len() {
-                let Some(second_target) = targets[second].as_ref() else {
-                    continue;
-                };
-                if first_target.component_type == second_target.component_type
-                    && (components[first].writes || components[second].writes)
-                {
-                    return false;
-                }
-            }
-        }
-        true
-    });
+    for targets in &resolved {
+        let component_types = targets
+            .iter()
+            .flatten()
+            .map(|target| target.component_type)
+            .collect::<Vec<_>>();
+        assert!(
+            !has_duplicate_type_ids(&component_types),
+            "query called with duplicate component types"
+        );
+    }
     resolved
 }
 
@@ -185,12 +169,11 @@ fn resolved_accesses(
         })
         .map(|(slot, _)| slot)
         .collect::<Vec<_>>();
-    if dynamic_slots.len() > 1 {
-        assert!(
-            !components.iter().any(|component| component.writes),
-            "multiple flattened trait fetches must be immutable"
-        );
-    } else if let Some(&dynamic_slot) = dynamic_slots.first() {
+    assert!(
+        dynamic_slots.len() <= 1,
+        "multiple flattened trait fetches require explicit grouping semantics"
+    );
+    if let Some(&dynamic_slot) = dynamic_slots.first() {
         assert!(
             !components
                 .iter()
