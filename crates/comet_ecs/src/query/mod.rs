@@ -22,8 +22,8 @@ pub(crate) use filters::{
     ResolvedChangeFilter, ResolvedQueryFilter,
 };
 pub use filters::{
-    Added, AddedAny, Changed, ChangedAny, Not, Or, QueryParam, With, WithAll, WithAny, Without,
-    WithoutAll, WithoutAny,
+    Added, AddedAll, AddedAny, AtLeast, AtMost, Changed, ChangedAll, ChangedAny, Count, Exactly,
+    Not, Or, QueryParam, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
 };
 pub use query_data::QueryItem;
 pub(crate) use query_data::{

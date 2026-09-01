@@ -18,15 +18,18 @@ fn validate_components(components: &[QueryComponent]) {
     );
 }
 
-fn archetype_has_target(
+fn archetype_target_count(
     scene: &Scene,
     arch: &crate::archetypes::Archetype,
     target_type: TypeId,
-) -> bool {
+) -> usize {
     scene
         .query_targets(target_type)
         .iter()
-        .any(|target| arch.column_index(target.component_type).is_some())
+        .filter(|target| arch.column_index(target.component_type).is_some())
+        .map(|target| target.component_type)
+        .collect::<HashSet<_>>()
+        .len()
 }
 
 fn archetype_matches_filters(
@@ -36,7 +39,7 @@ fn archetype_matches_filters(
 ) -> bool {
     state
         .expression
-        .archetype_match(&|type_id| archetype_has_target(scene, arch, type_id))
+        .archetype_match(&|type_id| archetype_target_count(scene, arch, type_id))
         != ArchetypeFilterMatch::Never
 }
 
@@ -153,8 +156,9 @@ fn resolve_filter(
     match filter {
         QueryFilterExpr::True => ResolvedQueryFilter::True,
         QueryFilterExpr::False => ResolvedQueryFilter::False,
-        QueryFilterExpr::With(type_id) => {
-            if archetype_has_target(scene, arch, *type_id) {
+        QueryFilterExpr::Count(type_id, min, max) => {
+            let count = archetype_target_count(scene, arch, *type_id);
+            if count >= *min && count <= *max {
                 ResolvedQueryFilter::True
             } else {
                 ResolvedQueryFilter::False
@@ -242,7 +246,7 @@ fn resolved_accesses(
     }
 
     if components[0].required {
-        let scan_archetypes = state.simple.is_none() || state.has_trait_presence_filter(scene);
+        let scan_archetypes = state.simple.is_none() || state.has_trait_cardinality_filter(scene);
         for anchor in anchor_targets {
             if scan_archetypes {
                 for (arch_id, arch) in scene.archetypes().iter().enumerate() {

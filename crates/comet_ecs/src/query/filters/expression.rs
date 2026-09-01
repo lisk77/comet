@@ -10,7 +10,7 @@ pub(crate) struct ResolvedChangeFilter {
 pub(crate) enum QueryFilterExpr {
     True,
     False,
-    With(TypeId),
+    Count(TypeId, usize, usize),
     Added(TypeId, Tick),
     Changed(TypeId, Tick),
     And(Vec<Self>),
@@ -64,14 +64,17 @@ impl QueryFilterExpr {
 
     pub(crate) fn archetype_match(
         &self,
-        has_target: &impl Fn(TypeId) -> bool,
+        target_count: &impl Fn(TypeId) -> usize,
     ) -> ArchetypeFilterMatch {
         match self {
             Self::True => ArchetypeFilterMatch::Always,
             Self::False => ArchetypeFilterMatch::Never,
-            Self::With(type_id) => ArchetypeFilterMatch::from_bool(has_target(*type_id)),
+            Self::Count(type_id, min, max) => {
+                let count = target_count(*type_id);
+                ArchetypeFilterMatch::from_bool(count >= *min && count <= *max)
+            }
             Self::Added(type_id, _) | Self::Changed(type_id, _) => {
-                if has_target(*type_id) {
+                if target_count(*type_id) > 0 {
                     ArchetypeFilterMatch::Dynamic
                 } else {
                     ArchetypeFilterMatch::Never
@@ -80,27 +83,27 @@ impl QueryFilterExpr {
             Self::And(filters) => filters
                 .iter()
                 .fold(ArchetypeFilterMatch::Always, |result, filter| {
-                    result.and(filter.archetype_match(has_target))
+                    result.and(filter.archetype_match(target_count))
                 }),
             Self::Or(filters) => filters
                 .iter()
                 .fold(ArchetypeFilterMatch::Never, |result, filter| {
-                    result.or(filter.archetype_match(has_target))
+                    result.or(filter.archetype_match(target_count))
                 }),
-            Self::Not(filter) => filter.archetype_match(has_target).not(),
+            Self::Not(filter) => filter.archetype_match(target_count).not(),
         }
     }
 
-    fn has_trait_presence_filter(&self, scene: &Scene) -> bool {
+    fn has_trait_cardinality_filter(&self, scene: &Scene) -> bool {
         match self {
-            Self::With(type_id) => scene
+            Self::Count(type_id, _, _) => scene
                 .query_targets(*type_id)
                 .iter()
                 .any(|target| target.component_type != *type_id),
             Self::And(filters) | Self::Or(filters) => filters
                 .iter()
-                .any(|filter| filter.has_trait_presence_filter(scene)),
-            Self::Not(filter) => filter.has_trait_presence_filter(scene),
+                .any(|filter| filter.has_trait_cardinality_filter(scene)),
+            Self::Not(filter) => filter.has_trait_cardinality_filter(scene),
             Self::True | Self::False | Self::Added(_, _) | Self::Changed(_, _) => false,
         }
     }
@@ -280,8 +283,15 @@ pub(crate) struct QueryFilterState {
 }
 
 impl QueryFilterState {
-    pub(crate) fn has_trait_presence_filter(&self, scene: &Scene) -> bool {
-        self.expression.has_trait_presence_filter(scene)
+    pub(crate) fn has_trait_cardinality_filter(&self, scene: &Scene) -> bool {
+        self.expression.has_trait_cardinality_filter(scene)
+    }
+}
+
+fn with_type_id(expression: &QueryFilterExpr) -> Option<TypeId> {
+    match expression {
+        QueryFilterExpr::Count(type_id, 1, usize::MAX) => Some(*type_id),
+        _ => None,
     }
 }
 
@@ -291,46 +301,39 @@ pub(super) fn simple_filters(expression: &QueryFilterExpr) -> Option<SimpleQuery
             Some(SimpleQueryFilters::default())
         }
         QueryFilterExpr::False => None,
-        QueryFilterExpr::With(type_id) => Some(SimpleQueryFilters {
+        QueryFilterExpr::Count(type_id, 1, usize::MAX) => Some(SimpleQueryFilters {
             with_components: vec![*type_id],
             ..Default::default()
         }),
+        QueryFilterExpr::Count(type_id, 0, 0) => Some(SimpleQueryFilters {
+            without_components: vec![*type_id],
+            ..Default::default()
+        }),
+        QueryFilterExpr::Count(_, _, _) => None,
         QueryFilterExpr::Not(filter) => match filter.as_ref() {
-            QueryFilterExpr::With(type_id) => Some(SimpleQueryFilters {
+            QueryFilterExpr::Count(type_id, 1, usize::MAX) => Some(SimpleQueryFilters {
                 without_components: vec![*type_id],
                 ..Default::default()
             }),
+            QueryFilterExpr::Count(type_id, 0, 0) => Some(SimpleQueryFilters {
+                with_components: vec![*type_id],
+                ..Default::default()
+            }),
             QueryFilterExpr::Or(filters)
-                if filters
-                    .iter()
-                    .all(|filter| matches!(filter, QueryFilterExpr::With(_))) =>
+                if filters.iter().all(|filter| with_type_id(filter).is_some()) =>
             {
                 Some(SimpleQueryFilters {
-                    without_any_components: filters
-                        .iter()
-                        .filter_map(|filter| match filter {
-                            QueryFilterExpr::With(type_id) => Some(*type_id),
-                            _ => None,
-                        })
-                        .collect(),
+                    without_any_components: filters.iter().filter_map(with_type_id).collect(),
                     ..Default::default()
                 })
             }
             _ => None,
         },
         QueryFilterExpr::Or(filters)
-            if filters
-                .iter()
-                .all(|filter| matches!(filter, QueryFilterExpr::With(_))) =>
+            if filters.iter().all(|filter| with_type_id(filter).is_some()) =>
         {
             Some(SimpleQueryFilters {
-                with_any_components: filters
-                    .iter()
-                    .filter_map(|filter| match filter {
-                        QueryFilterExpr::With(type_id) => Some(*type_id),
-                        _ => None,
-                    })
-                    .collect(),
+                with_any_components: filters.iter().filter_map(with_type_id).collect(),
                 ..Default::default()
             })
         }

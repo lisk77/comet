@@ -10,7 +10,7 @@ pub(crate) use expression::{
 
 pub struct QueryParam<Data, Filters = ()>(PhantomData<(Data, Filters)>);
 
-pub struct With<C: ?Sized + Component>(PhantomData<C>);
+pub struct Count<C: ?Sized + Component, const MIN: usize, const MAX: usize>(PhantomData<C>);
 pub struct Added<C: ?Sized + Component>(PhantomData<C>);
 pub struct Changed<C: ?Sized + Component>(PhantomData<C>);
 pub struct Or<Filters>(PhantomData<Filters>);
@@ -48,12 +48,18 @@ impl_filter_tuple!(A, B, C, D, E, F);
 impl_filter_tuple!(A, B, C, D, E, F, G);
 impl_filter_tuple!(A, B, C, D, E, F, G, H);
 
-pub type Without<C> = Not<With<C>>;
+pub type Exactly<C, const COUNT: usize> = Count<C, COUNT, COUNT>;
+pub type AtLeast<C, const COUNT: usize> = Count<C, COUNT, { usize::MAX }>;
+pub type AtMost<C, const COUNT: usize> = Count<C, 0, COUNT>;
+pub type With<C> = AtLeast<C, 1>;
+pub type Without<C> = Exactly<C, 0>;
 pub type WithAll<Cs> = <Cs as FilterTuple>::With;
 pub type WithAny<Cs> = Or<<Cs as FilterTuple>::With>;
 pub type WithoutAll<Cs> = Not<<Cs as FilterTuple>::With>;
 pub type WithoutAny<Cs> = Not<Or<<Cs as FilterTuple>::With>>;
+pub type AddedAll<Cs> = <Cs as FilterTuple>::Added;
 pub type AddedAny<Cs> = Or<<Cs as FilterTuple>::Added>;
+pub type ChangedAll<Cs> = <Cs as FilterTuple>::Changed;
 pub type ChangedAny<Cs> = Or<<Cs as FilterTuple>::Changed>;
 
 pub(crate) trait QueryFilterSet {
@@ -66,9 +72,11 @@ impl QueryFilterSet for () {
     }
 }
 
-impl<C: ?Sized + Component> QueryFilterSet for With<C> {
+impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
+    for Count<C, MIN, MAX>
+{
     fn expression(_scene: &Scene) -> QueryFilterExpr {
-        QueryFilterExpr::With(TypeId::of::<C>())
+        QueryFilterExpr::Count(TypeId::of::<C>(), MIN, MAX)
     }
 }
 
