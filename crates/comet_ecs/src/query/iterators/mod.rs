@@ -71,21 +71,80 @@ fn tick_is_newer_than(tick: Tick, last_seen_tick: Tick) -> bool {
     tick != last_seen_tick && tick.wrapping_sub(last_seen_tick) <= (u32::MAX / 2)
 }
 
-impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
-    type Item = Data::Item;
+#[inline(always)]
+unsafe fn row_matches(
+    access: &QueryAccess,
+    entity: Entity,
+    added_since_filters: &[(TypeId, Tick)],
+    changed_since_filters: &[(TypeId, Tick)],
+) -> bool {
+    unsafe {
+        access.filter.matches(access.change_state, entity)
+            && matches_concrete_change_filters(
+                access.change_state,
+                entity,
+                added_since_filters,
+                changed_since_filters,
+            )
+    }
+}
 
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let (access, row) = next_access_row(&mut self.accesses, &mut self.idx)?;
-            unsafe {
-                let entity = fetch_entity(access.entities, access.len, row)?;
-                if !access.filter.matches(access.change_state, entity)
-                    || !matches_concrete_change_filters(
-                        access.change_state,
+impl<'a, Data, Filters> Query<'a, Data, Filters> {
+    fn prepare_entity_selection(&mut self)
+    where
+        Data: QueryData<'a>,
+    {
+        if self.entity_ranges.is_empty() || self.selected_entities.is_some() {
+            return;
+        }
+
+        let mut seen = HashSet::new();
+        let mut entities = Vec::new();
+        for access in &self.accesses {
+            for row in 0..access.len {
+                let Some(entity) = (unsafe { fetch_entity(access.entities, access.len, row) })
+                else {
+                    continue;
+                };
+                if unsafe {
+                    row_matches(
+                        access,
                         entity,
                         &self.added_since_filters,
                         &self.changed_since_filters,
                     )
+                } && seen.insert(entity)
+                {
+                    entities.push(entity);
+                }
+            }
+        }
+
+        for range in &self.entity_ranges {
+            entities = range.select(entities);
+        }
+        self.selected_entities = Some(entities.into_iter().collect());
+    }
+}
+
+impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
+    type Item = Data::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.prepare_entity_selection();
+        loop {
+            let (access, row) = next_access_row(&mut self.accesses, &mut self.idx)?;
+            unsafe {
+                let entity = fetch_entity(access.entities, access.len, row)?;
+                if !row_matches(
+                    access,
+                    entity,
+                    &self.added_since_filters,
+                    &self.changed_since_filters,
+                ) || self
+                    .selected_entities
+                    .as_ref()
+                    .is_some_and(|entities| !entities.contains(&entity))
                 {
                     continue;
                 }

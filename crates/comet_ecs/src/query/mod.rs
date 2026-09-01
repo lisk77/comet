@@ -1,7 +1,7 @@
 use crate::component_changes::ComponentChangeState;
 use crate::{Component, Entity, Scene, Tick};
 use std::any::TypeId;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
 mod arities;
@@ -26,7 +26,10 @@ pub use filters::{
     WithoutAll, WithoutAny,
 };
 pub use query_data::QueryItem;
-pub(crate) use query_data::{QueryComponent, QueryData, MAX_QUERY_COMPONENTS};
+pub(crate) use query_data::{
+    QueryComponent, QueryData, QueryElement, QueryElementInfo, ReadQueryElement,
+    MAX_QUERY_COMPONENTS,
+};
 pub use query_types::Query;
 pub(crate) use selectors::QueryRange;
 pub use selectors::{First, Last, Range, Skip, Take};

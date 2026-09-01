@@ -21,6 +21,40 @@ impl QueryComponent {
     }
 }
 
+pub(crate) enum QueryElementInfo {
+    Entity(Vec<QueryRange>),
+    Component(QueryComponent),
+}
+
+pub(crate) struct QueryLayout {
+    pub(crate) components: Vec<QueryComponent>,
+    pub(crate) entity_ranges: Vec<QueryRange>,
+}
+
+impl QueryLayout {
+    fn empty() -> Self {
+        Self {
+            components: Vec::new(),
+            entity_ranges: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, info: QueryElementInfo) {
+        match info {
+            QueryElementInfo::Entity(ranges) => {
+                if !ranges.is_empty() {
+                    assert!(
+                        self.entity_ranges.is_empty(),
+                        "query cannot contain multiple ranged entity fetches"
+                    );
+                    self.entity_ranges = ranges;
+                }
+            }
+            QueryElementInfo::Component(component) => self.components.push(component),
+        }
+    }
+}
+
 #[doc(hidden)]
 pub trait QueryItem<'a> {
     type Item;
@@ -42,8 +76,39 @@ impl<'a> QueryItem<'a> for Entity {
     type Item = Entity;
 }
 
+pub(crate) trait QueryElement<'a>: QueryItem<'a> {
+    fn info() -> QueryElementInfo;
+
+    unsafe fn mark_changed(
+        change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+        component_event_tick: Tick,
+        entity: Entity,
+        columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
+        component_slot: &mut usize,
+    );
+
+    unsafe fn fetch(
+        entity: Entity,
+        columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        row: usize,
+        component_slot: &mut usize,
+    ) -> Option<Self::Item>;
+}
+
+pub(crate) trait ReadQueryElement<'a>: QueryElement<'a> {}
+
 pub(crate) trait QueryData<'a>: QueryItem<'a> + Sized {
-    fn components() -> Vec<QueryComponent>;
+    fn layout() -> QueryLayout;
+
+    fn components() -> Vec<QueryComponent> {
+        Self::layout().components
+    }
+
+    fn entity_ranges() -> Vec<QueryRange> {
+        Self::layout().entity_ranges
+    }
 
     unsafe fn mark_changed(
         change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
@@ -84,14 +149,11 @@ unsafe fn mark_component_changed(
     }
 }
 
-macro_rules! impl_query_data_leaf {
-    ([$($generic:tt)*] $data:ty) => {
-        impl<'a, $($generic)*> QueryData<'a> for $data
-        where
-            $data: WriteFetch<'a>,
-        {
-            fn components() -> Vec<QueryComponent> {
-                vec![QueryComponent::of::<Self>()]
+macro_rules! impl_component_query_element {
+    ($data:ty) => {
+        impl<'a, C: ?Sized + Component> QueryElement<'a> for $data {
+            fn info() -> QueryElementInfo {
+                QueryElementInfo::Component(QueryComponent::of::<Self>())
             }
 
             unsafe fn mark_changed(
@@ -100,14 +162,18 @@ macro_rules! impl_query_data_leaf {
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
                 component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
+                component_slot: &mut usize,
             ) {
-                if <Self as WriteFetch<'a>>::writes() && !columns[0].is_null() {
+                let slot = *component_slot;
+                *component_slot += 1;
+                if <Self as WriteFetch<'a>>::writes() && !columns[slot].is_null() {
                     unsafe {
                         mark_component_changed(
                             change_state,
                             component_event_tick,
                             entity,
-                            component_types[0].expect("query access is missing its component type"),
+                            component_types[slot]
+                                .expect("query access is missing its component type"),
                         );
                     }
                 }
@@ -118,28 +184,162 @@ macro_rules! impl_query_data_leaf {
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
                 casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
                 row: usize,
+                component_slot: &mut usize,
             ) -> Option<Self::Item> {
-                unsafe { <Self as WriteFetch<'a>>::get(columns[0], casters[0].as_ref(), row) }
+                let slot = *component_slot;
+                *component_slot += 1;
+                unsafe { <Self as WriteFetch<'a>>::get(columns[slot], casters[slot].as_ref(), row) }
+            }
+        }
+    };
+}
+
+impl_component_query_element!(&'a C);
+impl_component_query_element!(&'a mut C);
+
+impl<'a, C: ?Sized + Component> ReadQueryElement<'a> for &'a C {}
+
+impl<'a, T> QueryElement<'a> for Option<T>
+where
+    Option<T>: WriteFetch<'a>,
+{
+    fn info() -> QueryElementInfo {
+        QueryElementInfo::Component(QueryComponent::of::<Self>())
+    }
+
+    unsafe fn mark_changed(
+        change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+        component_event_tick: Tick,
+        entity: Entity,
+        columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
+        component_slot: &mut usize,
+    ) {
+        let slot = *component_slot;
+        *component_slot += 1;
+        if <Self as WriteFetch<'a>>::writes() && !columns[slot].is_null() {
+            unsafe {
+                mark_component_changed(
+                    change_state,
+                    component_event_tick,
+                    entity,
+                    component_types[slot].expect("query access is missing its component type"),
+                );
+            }
+        }
+    }
+
+    unsafe fn fetch(
+        _entity: Entity,
+        columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        row: usize,
+        component_slot: &mut usize,
+    ) -> Option<Self::Item> {
+        let slot = *component_slot;
+        *component_slot += 1;
+        unsafe { <Self as WriteFetch<'a>>::get(columns[slot], casters[slot].as_ref(), row) }
+    }
+}
+
+impl<'a, T> ReadQueryElement<'a> for Option<T> where Option<T>: ReadFetch<'a> + WriteFetch<'a> {}
+
+impl<'a> QueryElement<'a> for Entity {
+    fn info() -> QueryElementInfo {
+        QueryElementInfo::Entity(Vec::new())
+    }
+
+    unsafe fn mark_changed(
+        _change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+        _component_event_tick: Tick,
+        _entity: Entity,
+        _columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        _component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
+        _component_slot: &mut usize,
+    ) {
+    }
+
+    unsafe fn fetch(
+        entity: Entity,
+        _columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+        _casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        _row: usize,
+        _component_slot: &mut usize,
+    ) -> Option<Self::Item> {
+        Some(entity)
+    }
+}
+
+impl<'a> ReadQueryElement<'a> for Entity {}
+
+macro_rules! impl_query_data_element {
+    ([$($generic:tt)*] $data:ty) => {
+        impl<'a, $($generic)*> QueryData<'a> for $data
+        where
+            $data: QueryElement<'a>,
+        {
+            fn layout() -> QueryLayout {
+                let mut layout = QueryLayout::empty();
+                layout.push(<Self as QueryElement<'a>>::info());
+                layout
+            }
+
+            unsafe fn mark_changed(
+                change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+                component_event_tick: Tick,
+                entity: Entity,
+                columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+                component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
+            ) {
+                let mut component_slot = 0;
+                unsafe {
+                    <Self as QueryElement<'a>>::mark_changed(
+                        change_state,
+                        component_event_tick,
+                        entity,
+                        columns,
+                        component_types,
+                        &mut component_slot,
+                    );
+                }
+            }
+
+            unsafe fn fetch(
+                entity: Entity,
+                columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
+                casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+                row: usize,
+            ) -> Option<Self::Item> {
+                let mut component_slot = 0;
+                unsafe {
+                    <Self as QueryElement<'a>>::fetch(
+                        entity,
+                        columns,
+                        casters,
+                        row,
+                        &mut component_slot,
+                    )
+                }
             }
         }
 
         impl<'a, $($generic)*> ReadQueryData<'a> for $data
         where
-            $data: ReadFetch<'a> + WriteFetch<'a>,
+            $data: ReadQueryElement<'a>,
         {
         }
     };
 }
 
-impl_query_data_leaf!([C: ?Sized + Component] &'a C);
-impl_query_data_leaf!([C: ?Sized + Component] &'a mut C);
-impl_query_data_leaf!([T] Option<T>);
-impl_query_data_leaf!([T, const START: usize, const END: usize] Range<T, START, END>);
-impl_query_data_leaf!([T] Last<T>);
+impl_query_data_element!([C: ?Sized + Component] &'a C);
+impl_query_data_element!([C: ?Sized + Component] &'a mut C);
+impl_query_data_element!([T] Option<T>);
+impl_query_data_element!([T, const START: usize, const END: usize] Range<T, START, END>);
+impl_query_data_element!([T] Last<T>);
 
 impl<'a> QueryData<'a> for Entity {
-    fn components() -> Vec<QueryComponent> {
-        Vec::new()
+    fn layout() -> QueryLayout {
+        QueryLayout::empty()
     }
 
     unsafe fn mark_changed(
@@ -164,7 +364,7 @@ impl<'a> QueryData<'a> for Entity {
 impl<'a> ReadQueryData<'a> for Entity {}
 
 macro_rules! impl_tuple_query_data {
-    ($($ty:ident: $index:literal),+) => {
+    ($($ty:ident),+) => {
         impl<'a, $($ty),+> QueryItem<'a> for ($($ty,)+)
         where
             $($ty: QueryItem<'a> + 'a),+
@@ -174,10 +374,12 @@ macro_rules! impl_tuple_query_data {
 
         impl<'a, $($ty),+> QueryData<'a> for ($($ty,)+)
         where
-            $($ty: WriteFetch<'a> + 'a),+
+            $($ty: QueryElement<'a> + 'a),+
         {
-            fn components() -> Vec<QueryComponent> {
-                vec![$(QueryComponent::of::<$ty>()),+]
+            fn layout() -> QueryLayout {
+                let mut layout = QueryLayout::empty();
+                $(layout.push(<$ty as QueryElement<'a>>::info());)+
+                layout
             }
 
             unsafe fn mark_changed(
@@ -187,32 +389,35 @@ macro_rules! impl_tuple_query_data {
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
                 component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
             ) {
+                let mut component_slot = 0;
                 $(
-                    if <$ty as WriteFetch<'a>>::writes() && !columns[$index].is_null() {
-                        unsafe {
-                            mark_component_changed(
-                                change_state,
-                                component_event_tick,
-                                entity,
-                                component_types[$index]
-                                    .expect("query access is missing its component type"),
-                            );
-                        }
+                    unsafe {
+                        <$ty as QueryElement<'a>>::mark_changed(
+                            change_state,
+                            component_event_tick,
+                            entity,
+                            columns,
+                            component_types,
+                            &mut component_slot,
+                        );
                     }
                 )+
             }
 
             unsafe fn fetch(
-                _entity: Entity,
+                entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
                 casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
                 row: usize,
             ) -> Option<Self::Item> {
+                let mut component_slot = 0;
                 unsafe {
-                    Some(($(<$ty as WriteFetch<'a>>::get(
-                        columns[$index],
-                        casters[$index].as_ref(),
+                    Some(($(<$ty as QueryElement<'a>>::fetch(
+                        entity,
+                        columns,
+                        casters,
                         row,
+                        &mut component_slot,
                     )?,)+))
                 }
             }
@@ -220,106 +425,21 @@ macro_rules! impl_tuple_query_data {
 
         impl<'a, $($ty),+> ReadQueryData<'a> for ($($ty,)+)
         where
-            $($ty: ReadFetch<'a> + WriteFetch<'a> + 'a),+
-        {}
-    };
-}
-
-macro_rules! impl_entity_tuple_query_data {
-    ($($ty:ident: $index:literal),+) => {
-        impl<'a, $($ty),+> QueryData<'a> for (Entity, $($ty,)+)
-        where
-            $($ty: WriteFetch<'a> + 'a),+
+            $($ty: ReadQueryElement<'a> + 'a),+
         {
-            fn components() -> Vec<QueryComponent> {
-                vec![$(QueryComponent::of::<$ty>()),+]
-            }
-
-            unsafe fn mark_changed(
-                change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
-                component_event_tick: Tick,
-                entity: Entity,
-                columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
-                component_types: &[Option<TypeId>; MAX_QUERY_COMPONENTS],
-            ) {
-                $(
-                    if <$ty as WriteFetch<'a>>::writes() && !columns[$index].is_null() {
-                        unsafe {
-                            mark_component_changed(
-                                change_state,
-                                component_event_tick,
-                                entity,
-                                component_types[$index]
-                                    .expect("query access is missing its component type"),
-                            );
-                        }
-                    }
-                )+
-            }
-
-            unsafe fn fetch(
-                entity: Entity,
-                columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
-                casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
-                row: usize,
-            ) -> Option<Self::Item> {
-                unsafe {
-                    Some((entity, $(<$ty as WriteFetch<'a>>::get(
-                        columns[$index],
-                        casters[$index].as_ref(),
-                        row,
-                    )?,)+))
-                }
-            }
         }
-
-        impl<'a, $($ty),+> ReadQueryData<'a> for (Entity, $($ty,)+)
-        where
-            $($ty: ReadFetch<'a> + WriteFetch<'a> + 'a),+
-        {}
     };
 }
 
-impl_tuple_query_data!(A: 0, B: 1);
-impl_tuple_query_data!(A: 0, B: 1, C: 2);
-impl_tuple_query_data!(A: 0, B: 1, C: 2, D: 3);
-impl_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4);
-impl_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
-impl_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6);
-impl_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6, H: 7);
-
-impl<'a, A, B, C, D, E, F, G, H> QueryItem<'a> for (Entity, A, B, C, D, E, F, G, H)
-where
-    A: QueryItem<'a> + 'a,
-    B: QueryItem<'a> + 'a,
-    C: QueryItem<'a> + 'a,
-    D: QueryItem<'a> + 'a,
-    E: QueryItem<'a> + 'a,
-    F: QueryItem<'a> + 'a,
-    G: QueryItem<'a> + 'a,
-    H: QueryItem<'a> + 'a,
-{
-    type Item = (
-        Entity,
-        A::Item,
-        B::Item,
-        C::Item,
-        D::Item,
-        E::Item,
-        F::Item,
-        G::Item,
-        H::Item,
-    );
-}
-
-impl_entity_tuple_query_data!(A: 0);
-impl_entity_tuple_query_data!(A: 0, B: 1);
-impl_entity_tuple_query_data!(A: 0, B: 1, C: 2);
-impl_entity_tuple_query_data!(A: 0, B: 1, C: 2, D: 3);
-impl_entity_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4);
-impl_entity_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
-impl_entity_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6);
-impl_entity_tuple_query_data!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6, H: 7);
+impl_tuple_query_data!(A);
+impl_tuple_query_data!(A, B);
+impl_tuple_query_data!(A, B, C);
+impl_tuple_query_data!(A, B, C, D);
+impl_tuple_query_data!(A, B, C, D, E);
+impl_tuple_query_data!(A, B, C, D, E, F);
+impl_tuple_query_data!(A, B, C, D, E, F, G);
+impl_tuple_query_data!(A, B, C, D, E, F, G, H);
+impl_tuple_query_data!(A, B, C, D, E, F, G, H, I);
 
 impl<'a, Data, Filters> QuerySpec<'a> for QueryParam<Data, Filters>
 where

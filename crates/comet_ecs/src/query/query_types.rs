@@ -5,6 +5,8 @@ pub struct Query<'a, Data, Filters = ()> {
     pub(crate) idx: usize,
     pub(crate) added_since_filters: Vec<(TypeId, Tick)>,
     pub(crate) changed_since_filters: Vec<(TypeId, Tick)>,
+    pub(crate) entity_ranges: Vec<QueryRange>,
+    pub(crate) selected_entities: Option<HashSet<Entity>>,
     pub(crate) _marker: PhantomData<(&'a (), Data, Filters)>,
 }
 
@@ -18,6 +20,8 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
             idx: 0,
             added_since_filters: Vec::new(),
             changed_since_filters: Vec::new(),
+            entity_ranges: Data::entity_ranges(),
+            selected_entities: None,
             _marker: PhantomData,
         }
     }
@@ -31,17 +35,21 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
             idx: 0,
             added_since_filters: Vec::new(),
             changed_since_filters: Vec::new(),
+            entity_ranges: Data::entity_ranges(),
+            selected_entities: None,
             _marker: PhantomData,
         }
     }
 
     pub fn added_since<C: Component>(mut self, tick: Tick) -> Self {
         set_since_filter(&mut self.added_since_filters, TypeId::of::<C>(), tick);
+        self.selected_entities = None;
         self
     }
 
     pub fn changed_since<C: Component>(mut self, tick: Tick) -> Self {
         set_since_filter(&mut self.changed_since_filters, TypeId::of::<C>(), tick);
+        self.selected_entities = None;
         self
     }
 }
