@@ -7,7 +7,7 @@ use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan};
 use crate::{
     Component, ComponentTuple, EcsError, Entity, EntityLocation, IdQueue, NeededComponent,
-    NeededComponents, QueryTarget, QueryTargets, RequiredComponent, RequiredComponents, Tick,
+    NeededComponents, QueryTarget, QueryTargets, RequiredBundle, RequiredComponents, Tick,
 };
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
@@ -32,7 +32,7 @@ pub struct Scene {
     component_registry: Vec<Option<TypeId>>,
     component_index: HashMap<TypeId, usize>,
     component_info: HashMap<TypeId, ComponentInfo>,
-    required_components: HashMap<TypeId, Vec<RequiredComponent>>,
+    required_components: HashMap<TypeId, Vec<RequiredBundle>>,
     needed_components: HashMap<TypeId, Vec<NeededComponent>>,
     needed_by: HashMap<TypeId, HashSet<TypeId>>,
     query_targets: HashMap<TypeId, Vec<QueryTarget>>,
@@ -681,7 +681,7 @@ impl Scene {
         let mut requirements = RequiredComponents::new();
         C::register_required_components(&mut requirements);
         self.required_components
-            .insert(type_id, requirements.into_components());
+            .insert(type_id, requirements.into_bundles());
 
         let mut needs = NeededComponents::new();
         C::register_needed_components(&mut needs);
@@ -886,11 +886,24 @@ impl Scene {
             .unwrap_or_default();
 
         for required in requirements {
-            (required.register_fn)(self);
-            if present.insert(required.type_id) {
-                components.push((required.factory)());
+            if required
+                .component_types
+                .iter()
+                .any(|component_type| !present.contains(component_type))
+            {
+                let required_components = (required.factory)();
+                for component in &required_components {
+                    (component.register_fn)(self);
+                }
+                for component in required_components {
+                    if present.insert(component.type_id) {
+                        components.push(component);
+                    }
+                }
             }
-            self.expand_requirements_from(required.type_id, components, present, states, stack);
+            for component_type in required.component_types {
+                self.expand_requirements_from(component_type, components, present, states, stack);
+            }
         }
 
         let popped = stack.pop();

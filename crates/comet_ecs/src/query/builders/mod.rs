@@ -54,8 +54,10 @@ fn selected_archetype_targets(
         .filter(|target| arch.column_index(target.component_type).is_some())
         .cloned()
         .collect::<Vec<_>>();
-    for range in &component.ranges {
-        targets = range.select(targets);
+    if uses_candidate_ranges(scene, component.type_id) {
+        for range in &component.ranges {
+            targets = range.select(targets);
+        }
     }
     targets
 }
@@ -231,7 +233,10 @@ fn resolved_accesses(
     }
 
     let mut resolved = Vec::new();
-    if components[0].required && !components[0].ranges.is_empty() {
+    if components[0].required
+        && !components[0].ranges.is_empty()
+        && uses_candidate_ranges(scene, components[0].type_id)
+    {
         for (arch_id, arch) in scene.archetypes().iter().enumerate() {
             if !archetype_matches_filters(scene, arch, state) {
                 continue;

@@ -24,6 +24,7 @@ pub type Tick = u32;
 
 #[doc(hidden)]
 pub mod __private {
+    pub use crate::bundles::BundleInfo;
     pub use comet_structs::Column;
 }
 

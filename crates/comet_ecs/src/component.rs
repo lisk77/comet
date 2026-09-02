@@ -9,18 +9,19 @@ use comet_colors::{Color, LinearRgba};
 use comet_gizmos::{Gizmo, GizmoBuffer};
 use component_derive::Component;
 use std::any::TypeId;
+use std::collections::HashSet;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub(crate) struct RequiredComponent {
-    pub(crate) type_id: TypeId,
-    pub(crate) register_fn: fn(&mut crate::Scene),
-    pub(crate) factory: Arc<dyn Fn() -> crate::ErasedComponent + Send + Sync>,
+pub(crate) struct RequiredBundle {
+    pub(crate) bundle_type: TypeId,
+    pub(crate) component_types: Vec<TypeId>,
+    pub(crate) factory: Arc<dyn Fn() -> Vec<crate::ErasedComponent> + Send + Sync>,
 }
 
 pub struct RequiredComponents {
-    components: Vec<RequiredComponent>,
+    bundles: Vec<RequiredBundle>,
 }
 
 #[derive(Clone, Copy)]
@@ -63,37 +64,36 @@ impl NeededComponents {
 impl RequiredComponents {
     pub(crate) fn new() -> Self {
         Self {
-            components: Vec::new(),
+            bundles: Vec::new(),
         }
     }
 
-    pub fn require<C: Component + Default>(&mut self) {
-        self.require_with(C::default);
+    pub fn require<B: crate::__private::BundleInfo + Default>(&mut self) {
+        self.require_with(B::default);
     }
 
-    pub fn require_with<C: Component>(&mut self, factory: fn() -> C) {
-        fn register<C: Component>(scene: &mut crate::Scene) {
-            scene.ensure_component::<C>();
-        }
-
-        let type_id = TypeId::of::<C>();
+    pub fn require_with<B: crate::__private::BundleInfo>(&mut self, factory: fn() -> B) {
+        let bundle_type = TypeId::of::<B>();
         if self
-            .components
+            .bundles
             .iter()
-            .any(|required| required.type_id == type_id)
+            .any(|required| required.bundle_type == bundle_type)
         {
             return;
         }
 
-        self.components.push(RequiredComponent {
-            type_id,
-            register_fn: register::<C>,
-            factory: Arc::new(move || crate::ErasedComponent::new(factory())),
+        let mut component_types = B::component_type_ids();
+        let mut seen = HashSet::new();
+        component_types.retain(|component_type| seen.insert(*component_type));
+        self.bundles.push(RequiredBundle {
+            bundle_type,
+            component_types,
+            factory: Arc::new(move || factory().into_components()),
         });
     }
 
-    pub(crate) fn into_components(self) -> Vec<RequiredComponent> {
-        self.components
+    pub(crate) fn into_bundles(self) -> Vec<RequiredBundle> {
+        self.bundles
     }
 }
 

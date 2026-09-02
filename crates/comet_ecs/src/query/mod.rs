@@ -34,6 +34,22 @@ pub use query_types::Query;
 pub(crate) use selectors::QueryRange;
 pub use selectors::{First, Last, Range, Skip, Take};
 
+pub(crate) fn uses_candidate_ranges(scene: &Scene, type_id: TypeId) -> bool {
+    let targets = scene.query_targets(type_id);
+    targets.is_empty()
+        || targets
+            .iter()
+            .any(|target| target.component_type != type_id)
+}
+
+pub(crate) fn concrete_row_ranges(scene: &Scene, components: &[QueryComponent]) -> Vec<QueryRange> {
+    components
+        .iter()
+        .filter(|component| !uses_candidate_ranges(scene, component.type_id))
+        .flat_map(|component| component.ranges.iter().copied())
+        .collect()
+}
+
 /// Describes data that can be fetched by a read-only query.
 pub trait QuerySpec<'a> {
     type Data;
