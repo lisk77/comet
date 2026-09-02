@@ -13,6 +13,7 @@ pub struct QueryParam<Data, Filters = ()>(PhantomData<(Data, Filters)>);
 pub struct Count<C: ?Sized + Component, const MIN: usize, const MAX: usize>(PhantomData<C>);
 pub struct Added<C: ?Sized + Component>(PhantomData<C>);
 pub struct Changed<C: ?Sized + Component>(PhantomData<C>);
+pub struct Spawned;
 pub struct Or<Filters>(PhantomData<Filters>);
 pub struct Not<Filter>(PhantomData<Filter>);
 
@@ -89,6 +90,12 @@ impl<C: ?Sized + Component> QueryFilterSet for Added<C> {
 impl<C: ?Sized + Component> QueryFilterSet for Changed<C> {
     fn expression(scene: &Scene) -> QueryFilterExpr {
         QueryFilterExpr::Changed(TypeId::of::<C>(), scene.default_query_since_tick())
+    }
+}
+
+impl QueryFilterSet for Spawned {
+    fn expression(scene: &Scene) -> QueryFilterExpr {
+        QueryFilterExpr::Spawned(scene.default_query_since_tick())
     }
 }
 

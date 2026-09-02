@@ -80,7 +80,9 @@ unsafe fn row_matches(
     changed_since_filters: &[(TypeId, Tick)],
 ) -> bool {
     unsafe {
-        access.filter.matches(access.change_state, entity)
+        access
+            .filter
+            .matches(access.change_state, access.spawn_ticks, entity)
             && matches_concrete_change_filters(
                 access.change_state,
                 entity,

@@ -6,6 +6,7 @@ pub(crate) struct QueryAccess {
     pub(crate) component_types: [Option<TypeId>; MAX_QUERY_COMPONENTS],
     pub(crate) casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
     pub(crate) change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+    pub(crate) spawn_ticks: *const HashMap<Entity, Tick>,
     pub(crate) component_event_tick: Tick,
     pub(crate) filter: ResolvedQueryFilter,
     pub(crate) len: usize,

@@ -172,6 +172,7 @@ fn resolve_filter(
         QueryFilterExpr::Changed(type_id, since_tick) => ResolvedQueryFilter::Changed(
             resolve_change_filter(scene, arch, components, targets, *type_id, *since_tick),
         ),
+        QueryFilterExpr::Spawned(since_tick) => ResolvedQueryFilter::Spawned(*since_tick),
         QueryFilterExpr::And(filters) => ResolvedQueryFilter::and(
             filters
                 .iter()
@@ -315,6 +316,7 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
     validate_components(&components);
     let resolved = resolved_accesses(scene, &components, state);
     let change_state = scene.query_change_state() as *const _ as *mut _;
+    let spawn_ticks = scene.query_spawn_ticks() as *const _;
     let component_event_tick = scene.component_event_tick();
     let mut accesses = Vec::with_capacity(resolved.len());
 
@@ -347,6 +349,7 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
             component_types,
             casters,
             change_state,
+            spawn_ticks,
             component_event_tick,
             filter,
             len: arch.len(),
@@ -371,8 +374,9 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
             (!filter.is_false()).then_some((arch_id, targets, filter))
         })
         .collect::<Vec<_>>();
-    let (archetypes, change_state, component_event_tick) = scene.query_parts_mut();
+    let (archetypes, change_state, spawn_ticks, component_event_tick) = scene.query_parts_mut();
     let change_state = change_state as *mut _;
+    let spawn_ticks = spawn_ticks as *const _;
     let mut accesses = Vec::with_capacity(resolved.len());
 
     for (arch_id, targets, filter) in resolved {
@@ -403,6 +407,7 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
             component_types,
             casters,
             change_state,
+            spawn_ticks,
             component_event_tick,
             filter,
             len,

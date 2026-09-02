@@ -121,8 +121,8 @@ pub mod prelude {
         Collider, Component, Count, EcsError, EcsModule, EcsModuleExt, Entity, Exactly, First,
         Last, NeededComponents, Not, Or, OrthographicProjection, PerspectiveProjection, Projection,
         Query, QueryTargets, Range, RequiredComponents, ResolutionScaling, Scene, Screen,
-        ScreenPosition, Skip, Sprite, Take, Text, TextJustification, TextLayout, TextSize, Timer,
-        Transform, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
+        ScreenPosition, Skip, Spawned, Sprite, Take, Text, TextJustification, TextLayout, TextSize,
+        Timer, Transform, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{

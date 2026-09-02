@@ -13,6 +13,7 @@ pub(crate) enum QueryFilterExpr {
     Count(TypeId, usize, usize),
     Added(TypeId, Tick),
     Changed(TypeId, Tick),
+    Spawned(Tick),
     And(Vec<Self>),
     Or(Vec<Self>),
     Not(Box<Self>),
@@ -80,6 +81,7 @@ impl QueryFilterExpr {
                     ArchetypeFilterMatch::Never
                 }
             }
+            Self::Spawned(_) => ArchetypeFilterMatch::Dynamic,
             Self::And(filters) => filters
                 .iter()
                 .fold(ArchetypeFilterMatch::Always, |result, filter| {
@@ -104,7 +106,11 @@ impl QueryFilterExpr {
                 .iter()
                 .any(|filter| filter.has_trait_cardinality_filter(scene)),
             Self::Not(filter) => filter.has_trait_cardinality_filter(scene),
-            Self::True | Self::False | Self::Added(_, _) | Self::Changed(_, _) => false,
+            Self::True
+            | Self::False
+            | Self::Added(_, _)
+            | Self::Changed(_, _)
+            | Self::Spawned(_) => false,
         }
     }
 }
@@ -156,6 +162,7 @@ pub(crate) enum ResolvedQueryFilter {
     False,
     Added(ResolvedChangeFilter),
     Changed(ResolvedChangeFilter),
+    Spawned(Tick),
     And(Vec<Self>),
     Or(Vec<Self>),
     Not(Box<Self>),
@@ -212,6 +219,7 @@ impl ResolvedQueryFilter {
     pub(crate) unsafe fn matches(
         &self,
         change_state: *const HashMap<(u32, TypeId), ComponentChangeState>,
+        spawn_ticks: *const HashMap<Entity, Tick>,
         entity: Entity,
     ) -> bool {
         match self {
@@ -223,13 +231,18 @@ impl ResolvedQueryFilter {
             Self::Changed(filter) => unsafe {
                 matches_change_filter(change_state, entity, filter, |state| state.changed_tick)
             },
+            Self::Spawned(since_tick) => unsafe {
+                (&*spawn_ticks)
+                    .get(&entity)
+                    .is_some_and(|tick| tick_is_newer_than(*tick, *since_tick))
+            },
             Self::And(filters) => filters
                 .iter()
-                .all(|filter| unsafe { filter.matches(change_state, entity) }),
+                .all(|filter| unsafe { filter.matches(change_state, spawn_ticks, entity) }),
             Self::Or(filters) => filters
                 .iter()
-                .any(|filter| unsafe { filter.matches(change_state, entity) }),
-            Self::Not(filter) => unsafe { !filter.matches(change_state, entity) },
+                .any(|filter| unsafe { filter.matches(change_state, spawn_ticks, entity) }),
+            Self::Not(filter) => unsafe { !filter.matches(change_state, spawn_ticks, entity) },
         }
     }
 }
@@ -297,9 +310,10 @@ fn with_type_id(expression: &QueryFilterExpr) -> Option<TypeId> {
 
 pub(super) fn simple_filters(expression: &QueryFilterExpr) -> Option<SimpleQueryFilters> {
     match expression {
-        QueryFilterExpr::True | QueryFilterExpr::Added(_, _) | QueryFilterExpr::Changed(_, _) => {
-            Some(SimpleQueryFilters::default())
-        }
+        QueryFilterExpr::True
+        | QueryFilterExpr::Added(_, _)
+        | QueryFilterExpr::Changed(_, _)
+        | QueryFilterExpr::Spawned(_) => Some(SimpleQueryFilters::default()),
         QueryFilterExpr::False => None,
         QueryFilterExpr::Count(type_id, 1, usize::MAX) => Some(SimpleQueryFilters {
             with_components: vec![*type_id],

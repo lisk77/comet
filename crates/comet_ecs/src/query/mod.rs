@@ -23,7 +23,7 @@ pub(crate) use filters::{
 };
 pub use filters::{
     Added, AddedAll, AddedAny, AtLeast, AtMost, Changed, ChangedAll, ChangedAny, Count, Exactly,
-    Not, Or, QueryParam, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
+    Not, Or, QueryParam, Spawned, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
 };
 pub use query_data::QueryItem;
 pub(crate) use query_data::{

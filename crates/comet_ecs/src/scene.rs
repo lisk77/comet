@@ -43,6 +43,7 @@ pub struct Scene {
     bundle_spawn_cache: HashMap<TypeId, BundleSpawnPlan>,
     bundle_add_cache: HashMap<(usize, TypeId), Option<BundleAddPlan>>,
     component_change_state: HashMap<(u32, TypeId), ComponentChangeState>,
+    entity_spawn_ticks: HashMap<Entity, Tick>,
     removed_component_events: HashMap<TypeId, Vec<(Entity, Tick)>>,
     prefabs: PrefabManager,
     commands: SceneCommands,
@@ -73,6 +74,7 @@ impl Scene {
             bundle_spawn_cache: HashMap::new(),
             bundle_add_cache: HashMap::new(),
             component_change_state: HashMap::new(),
+            entity_spawn_ticks: HashMap::new(),
             removed_component_events: HashMap::new(),
             prefabs: PrefabManager::new(),
             commands: SceneCommands::new(),
@@ -378,6 +380,8 @@ impl Scene {
             self.entities[index as usize] = Some(id);
         }
 
+        self.entity_spawn_ticks
+            .insert(id, self.component_event_tick);
         self.active_entities += 1;
         self.get_next_id();
         id
@@ -459,6 +463,7 @@ impl Scene {
         }
 
         self.entities[idx] = None;
+        self.entity_spawn_ticks.remove(&entity_id);
         if idx < self.entity_locations.len() {
             self.entity_locations[idx] = None;
         }
@@ -1479,16 +1484,22 @@ impl Scene {
         &self.component_change_state
     }
 
+    pub(crate) fn query_spawn_ticks(&self) -> &HashMap<Entity, Tick> {
+        &self.entity_spawn_ticks
+    }
+
     pub(crate) fn query_parts_mut(
         &mut self,
     ) -> (
         &mut crate::archetypes::Archetypes,
         &mut HashMap<(u32, TypeId), ComponentChangeState>,
+        &HashMap<Entity, Tick>,
         Tick,
     ) {
         (
             &mut self.archetypes,
             &mut self.component_change_state,
+            &self.entity_spawn_ticks,
             self.component_event_tick,
         )
     }

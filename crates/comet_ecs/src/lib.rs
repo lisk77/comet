@@ -13,8 +13,8 @@ pub use prefabs::{ErasedComponent, PrefabFactory};
 pub use query::QueryItem;
 pub use query::{
     Added, AddedAll, AddedAny, AtLeast, AtMost, Changed, ChangedAll, ChangedAny, Count, Exactly,
-    First, Last, Not, Or, Query, QueryParam, QuerySpec, QuerySpecMut, Range, Skip, Take, With,
-    WithAll, WithAny, Without, WithoutAll, WithoutAny,
+    First, Last, Not, Or, Query, QueryParam, QuerySpec, QuerySpecMut, Range, Skip, Spawned, Take,
+    With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
 };
 pub use scene::*;
 pub use scene_commands::{SceneCommand, SceneCommands};
