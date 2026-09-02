@@ -5,12 +5,15 @@ mod expression;
 use expression::simple_filters;
 pub(crate) use expression::{
     ArchetypeFilterMatch, QueryFilterExpr, QueryFilterState, ResolvedChangeFilter,
-    ResolvedQueryFilter,
+    ResolvedQueryFilter, ResolvedTemporalCountFilter, TemporalFilterKind,
 };
 
 pub struct QueryParam<Data, Filters = ()>(PhantomData<(Data, Filters)>);
 
-pub struct Count<C: ?Sized + Component, const MIN: usize, const MAX: usize>(PhantomData<C>);
+pub struct Count<C: ?Sized + Component, const MIN: usize, const MAX: usize, Condition = ()>(
+    PhantomData<C>,
+    PhantomData<Condition>,
+);
 pub struct Added<C: ?Sized + Component>(PhantomData<C>);
 pub struct Changed<C: ?Sized + Component>(PhantomData<C>);
 pub struct Spawned;
@@ -62,6 +65,12 @@ pub type AddedAll<Cs> = <Cs as FilterTuple>::Added;
 pub type AddedAny<Cs> = Or<<Cs as FilterTuple>::Added>;
 pub type ChangedAll<Cs> = <Cs as FilterTuple>::Changed;
 pub type ChangedAny<Cs> = Or<<Cs as FilterTuple>::Changed>;
+pub type AddedExactly<C, const COUNT: usize> = Count<C, COUNT, COUNT, Added<C>>;
+pub type AddedAtLeast<C, const COUNT: usize> = Count<C, COUNT, { usize::MAX }, Added<C>>;
+pub type AddedAtMost<C, const COUNT: usize> = Count<C, 0, COUNT, Added<C>>;
+pub type ChangedExactly<C, const COUNT: usize> = Count<C, COUNT, COUNT, Changed<C>>;
+pub type ChangedAtLeast<C, const COUNT: usize> = Count<C, COUNT, { usize::MAX }, Changed<C>>;
+pub type ChangedAtMost<C, const COUNT: usize> = Count<C, 0, COUNT, Changed<C>>;
 
 pub(crate) trait QueryFilterSet {
     fn expression(scene: &Scene) -> QueryFilterExpr;
@@ -78,6 +87,34 @@ impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
 {
     fn expression(_scene: &Scene) -> QueryFilterExpr {
         QueryFilterExpr::Count(TypeId::of::<C>(), MIN, MAX)
+    }
+}
+
+impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
+    for Count<C, MIN, MAX, Added<C>>
+{
+    fn expression(scene: &Scene) -> QueryFilterExpr {
+        QueryFilterExpr::TemporalCount(
+            TypeId::of::<C>(),
+            MIN,
+            MAX,
+            scene.default_query_since_tick(),
+            TemporalFilterKind::Added,
+        )
+    }
+}
+
+impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
+    for Count<C, MIN, MAX, Changed<C>>
+{
+    fn expression(scene: &Scene) -> QueryFilterExpr {
+        QueryFilterExpr::TemporalCount(
+            TypeId::of::<C>(),
+            MIN,
+            MAX,
+            scene.default_query_since_tick(),
+            TemporalFilterKind::Changed,
+        )
     }
 }
 

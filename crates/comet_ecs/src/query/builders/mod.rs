@@ -2,6 +2,9 @@ use super::*;
 use crate::QueryTarget;
 use std::ptr;
 
+type TemporalCountCache =
+    HashMap<(usize, TypeId, usize, usize, Tick, TemporalFilterKind), ResolvedQueryFilter>;
+
 fn validate_components(components: &[QueryComponent]) {
     assert!(
         components.len() <= MAX_QUERY_COMPONENTS,
@@ -148,12 +151,81 @@ fn resolve_change_filter(
     }
 }
 
+fn resolve_temporal_count_filter(
+    scene: &Scene,
+    arch_id: usize,
+    arch: &crate::archetypes::Archetype,
+    target_type: TypeId,
+    min: usize,
+    max: usize,
+    since_tick: Tick,
+    kind: TemporalFilterKind,
+    cache: &mut TemporalCountCache,
+) -> ResolvedQueryFilter {
+    let key = (arch_id, target_type, min, max, since_tick, kind);
+    if let Some(filter) = cache.get(&key) {
+        return filter.clone();
+    }
+
+    let mut seen = HashSet::new();
+    let component_types = scene
+        .query_targets(target_type)
+        .iter()
+        .filter(|target| arch.column_index(target.component_type).is_some())
+        .filter_map(|target| {
+            seen.insert(target.component_type)
+                .then_some(target.component_type)
+        })
+        .collect::<Vec<_>>();
+    let candidate_count = component_types.len();
+    let resolved = if min > max || min > candidate_count {
+        ResolvedQueryFilter::False
+    } else if min == 0 && max >= candidate_count {
+        ResolvedQueryFilter::True
+    } else {
+        let matching_entities = arch
+            .entities()
+            .iter()
+            .copied()
+            .filter(|entity| {
+                let count = component_types
+                    .iter()
+                    .filter(|component_type| match kind {
+                        TemporalFilterKind::Added => {
+                            scene.component_added_since_type(*entity, **component_type, since_tick)
+                        }
+                        TemporalFilterKind::Changed => scene.component_changed_since_type(
+                            *entity,
+                            **component_type,
+                            since_tick,
+                        ),
+                    })
+                    .count();
+                count >= min && count <= max
+            })
+            .collect::<HashSet<_>>();
+        if matching_entities.is_empty() {
+            ResolvedQueryFilter::False
+        } else if matching_entities.len() == arch.len() {
+            ResolvedQueryFilter::True
+        } else {
+            ResolvedQueryFilter::TemporalCount(ResolvedTemporalCountFilter {
+                matching_entities: Arc::new(matching_entities),
+            })
+        }
+    };
+    cache.insert(key, resolved.clone());
+    resolved
+}
+
 fn resolve_filter(
     scene: &Scene,
+    arch_id: usize,
     arch: &crate::archetypes::Archetype,
     components: &[QueryComponent],
     targets: &[Option<QueryTarget>; MAX_QUERY_COMPONENTS],
     filter: &QueryFilterExpr,
+    temporal_count_cache: &mut TemporalCountCache,
 ) -> ResolvedQueryFilter {
     match filter {
         QueryFilterExpr::True => ResolvedQueryFilter::True,
@@ -166,6 +238,19 @@ fn resolve_filter(
                 ResolvedQueryFilter::False
             }
         }
+        QueryFilterExpr::TemporalCount(type_id, min, max, since_tick, kind) => {
+            resolve_temporal_count_filter(
+                scene,
+                arch_id,
+                arch,
+                *type_id,
+                *min,
+                *max,
+                *since_tick,
+                *kind,
+                temporal_count_cache,
+            )
+        }
         QueryFilterExpr::Added(type_id, since_tick) => ResolvedQueryFilter::Added(
             resolve_change_filter(scene, arch, components, targets, *type_id, *since_tick),
         ),
@@ -176,18 +261,44 @@ fn resolve_filter(
         QueryFilterExpr::And(filters) => ResolvedQueryFilter::and(
             filters
                 .iter()
-                .map(|filter| resolve_filter(scene, arch, components, targets, filter))
+                .map(|filter| {
+                    resolve_filter(
+                        scene,
+                        arch_id,
+                        arch,
+                        components,
+                        targets,
+                        filter,
+                        temporal_count_cache,
+                    )
+                })
                 .collect(),
         ),
         QueryFilterExpr::Or(filters) => ResolvedQueryFilter::or(
             filters
                 .iter()
-                .map(|filter| resolve_filter(scene, arch, components, targets, filter))
+                .map(|filter| {
+                    resolve_filter(
+                        scene,
+                        arch_id,
+                        arch,
+                        components,
+                        targets,
+                        filter,
+                        temporal_count_cache,
+                    )
+                })
                 .collect(),
         ),
-        QueryFilterExpr::Not(filter) => {
-            ResolvedQueryFilter::not(resolve_filter(scene, arch, components, targets, filter))
-        }
+        QueryFilterExpr::Not(filter) => ResolvedQueryFilter::not(resolve_filter(
+            scene,
+            arch_id,
+            arch,
+            components,
+            targets,
+            filter,
+            temporal_count_cache,
+        )),
     }
 }
 
@@ -319,10 +430,19 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
     let spawn_ticks = scene.query_spawn_ticks() as *const _;
     let component_event_tick = scene.component_event_tick();
     let mut accesses = Vec::with_capacity(resolved.len());
+    let mut temporal_count_cache = TemporalCountCache::new();
 
     for (arch_id, targets) in resolved {
         let arch = scene.archetypes().get(arch_id);
-        let filter = resolve_filter(scene, arch, &components, &targets, &state.expression);
+        let filter = resolve_filter(
+            scene,
+            arch_id,
+            arch,
+            &components,
+            &targets,
+            &state.expression,
+            &mut temporal_count_cache,
+        );
         if filter.is_false() {
             continue;
         }
@@ -366,11 +486,20 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
 ) -> Vec<QueryAccess> {
     let components = Data::components();
     validate_components(&components);
+    let mut temporal_count_cache = TemporalCountCache::new();
     let resolved = resolved_accesses(scene, &components, state)
         .into_iter()
         .filter_map(|(arch_id, targets)| {
             let arch = scene.archetypes().get(arch_id);
-            let filter = resolve_filter(scene, arch, &components, &targets, &state.expression);
+            let filter = resolve_filter(
+                scene,
+                arch_id,
+                arch,
+                &components,
+                &targets,
+                &state.expression,
+                &mut temporal_count_cache,
+            );
             (!filter.is_false()).then_some((arch_id, targets, filter))
         })
         .collect::<Vec<_>>();

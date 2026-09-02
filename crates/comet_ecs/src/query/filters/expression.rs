@@ -7,10 +7,22 @@ pub(crate) struct ResolvedChangeFilter {
 }
 
 #[derive(Clone)]
+pub(crate) struct ResolvedTemporalCountFilter {
+    pub(crate) matching_entities: Arc<HashSet<Entity>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum TemporalFilterKind {
+    Added,
+    Changed,
+}
+
+#[derive(Clone)]
 pub(crate) enum QueryFilterExpr {
     True,
     False,
     Count(TypeId, usize, usize),
+    TemporalCount(TypeId, usize, usize, Tick, TemporalFilterKind),
     Added(TypeId, Tick),
     Changed(TypeId, Tick),
     Spawned(Tick),
@@ -74,6 +86,16 @@ impl QueryFilterExpr {
                 let count = target_count(*type_id);
                 ArchetypeFilterMatch::from_bool(count >= *min && count <= *max)
             }
+            Self::TemporalCount(type_id, min, max, _, _) => {
+                let count = target_count(*type_id);
+                if min > max || *min > count {
+                    ArchetypeFilterMatch::Never
+                } else if *min == 0 && *max >= count {
+                    ArchetypeFilterMatch::Always
+                } else {
+                    ArchetypeFilterMatch::Dynamic
+                }
+            }
             Self::Added(type_id, _) | Self::Changed(type_id, _) => {
                 if target_count(*type_id) > 0 {
                     ArchetypeFilterMatch::Dynamic
@@ -98,7 +120,7 @@ impl QueryFilterExpr {
 
     fn has_trait_cardinality_filter(&self, scene: &Scene) -> bool {
         match self {
-            Self::Count(type_id, _, _) => scene
+            Self::Count(type_id, _, _) | Self::TemporalCount(type_id, _, _, _, _) => scene
                 .query_targets(*type_id)
                 .iter()
                 .any(|target| target.component_type != *type_id),
@@ -162,6 +184,7 @@ pub(crate) enum ResolvedQueryFilter {
     False,
     Added(ResolvedChangeFilter),
     Changed(ResolvedChangeFilter),
+    TemporalCount(ResolvedTemporalCountFilter),
     Spawned(Tick),
     And(Vec<Self>),
     Or(Vec<Self>),
@@ -231,6 +254,7 @@ impl ResolvedQueryFilter {
             Self::Changed(filter) => unsafe {
                 matches_change_filter(change_state, entity, filter, |state| state.changed_tick)
             },
+            Self::TemporalCount(filter) => filter.matching_entities.contains(&entity),
             Self::Spawned(since_tick) => unsafe {
                 (&*spawn_ticks)
                     .get(&entity)
@@ -311,6 +335,7 @@ fn with_type_id(expression: &QueryFilterExpr) -> Option<TypeId> {
 pub(super) fn simple_filters(expression: &QueryFilterExpr) -> Option<SimpleQueryFilters> {
     match expression {
         QueryFilterExpr::True
+        | QueryFilterExpr::TemporalCount(_, _, _, _, _)
         | QueryFilterExpr::Added(_, _)
         | QueryFilterExpr::Changed(_, _)
         | QueryFilterExpr::Spawned(_) => Some(SimpleQueryFilters::default()),

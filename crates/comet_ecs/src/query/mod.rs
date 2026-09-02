@@ -3,6 +3,7 @@ use crate::{Component, Entity, Scene, Tick};
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 mod arities;
 mod builders;
@@ -19,11 +20,12 @@ pub(crate) use builders::{build_query_accesses, build_query_accesses_mut};
 pub(crate) use fetch::{EntityFetch, QueryAccess, ReadFetch, WriteFetch};
 pub(crate) use filters::{
     typed_filters, ArchetypeFilterMatch, QueryFilterExpr, QueryFilterSet, QueryFilterState,
-    ResolvedChangeFilter, ResolvedQueryFilter,
+    ResolvedChangeFilter, ResolvedQueryFilter, ResolvedTemporalCountFilter, TemporalFilterKind,
 };
 pub use filters::{
-    Added, AddedAll, AddedAny, AtLeast, AtMost, Changed, ChangedAll, ChangedAny, Count, Exactly,
-    Not, Or, QueryParam, Spawned, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
+    Added, AddedAll, AddedAny, AddedAtLeast, AddedAtMost, AddedExactly, AtLeast, AtMost, Changed,
+    ChangedAll, ChangedAny, ChangedAtLeast, ChangedAtMost, ChangedExactly, Count, Exactly, Not, Or,
+    QueryParam, Spawned, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
 };
 pub use query_data::QueryItem;
 pub(crate) use query_data::{
