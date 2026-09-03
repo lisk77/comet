@@ -3,7 +3,7 @@ use crate::QueryTarget;
 use std::ptr;
 
 type TemporalCountCache =
-    HashMap<(usize, TypeId, usize, usize, Tick, TemporalFilterKind), ResolvedQueryFilter>;
+    HashMap<(usize, Arc<[TypeId]>, usize, usize, Tick, TemporalFilterKind), ResolvedQueryFilter>;
 
 fn validate_components(components: &[QueryComponent]) {
     assert!(
@@ -21,14 +21,31 @@ fn validate_components(components: &[QueryComponent]) {
     );
 }
 
+fn archetype_target_types(
+    scene: &Scene,
+    arch: &crate::archetypes::Archetype,
+    target_types: &[TypeId],
+) -> Vec<TypeId> {
+    let mut seen = HashSet::new();
+    target_types
+        .iter()
+        .flat_map(|target_type| scene.query_targets(*target_type))
+        .filter(|target| arch.column_index(target.component_type).is_some())
+        .filter_map(|target| {
+            seen.insert(target.component_type)
+                .then_some(target.component_type)
+        })
+        .collect()
+}
+
 fn archetype_target_count(
     scene: &Scene,
     arch: &crate::archetypes::Archetype,
-    target_type: TypeId,
+    target_types: &[TypeId],
 ) -> usize {
-    scene
-        .query_targets(target_type)
+    target_types
         .iter()
+        .flat_map(|target_type| scene.query_targets(*target_type))
         .filter(|target| arch.column_index(target.component_type).is_some())
         .map(|target| target.component_type)
         .collect::<HashSet<_>>()
@@ -42,7 +59,7 @@ fn archetype_matches_filters(
 ) -> bool {
     state
         .expression
-        .archetype_match(&|type_id| archetype_target_count(scene, arch, type_id))
+        .archetype_match(&|type_ids| archetype_target_count(scene, arch, type_ids))
         != ArchetypeFilterMatch::Never
 }
 
@@ -155,28 +172,19 @@ fn resolve_temporal_count_filter(
     scene: &Scene,
     arch_id: usize,
     arch: &crate::archetypes::Archetype,
-    target_type: TypeId,
+    target_types: &Arc<[TypeId]>,
     min: usize,
     max: usize,
     since_tick: Tick,
     kind: TemporalFilterKind,
     cache: &mut TemporalCountCache,
 ) -> ResolvedQueryFilter {
-    let key = (arch_id, target_type, min, max, since_tick, kind);
+    let key = (arch_id, target_types.clone(), min, max, since_tick, kind);
     if let Some(filter) = cache.get(&key) {
         return filter.clone();
     }
 
-    let mut seen = HashSet::new();
-    let component_types = scene
-        .query_targets(target_type)
-        .iter()
-        .filter(|target| arch.column_index(target.component_type).is_some())
-        .filter_map(|target| {
-            seen.insert(target.component_type)
-                .then_some(target.component_type)
-        })
-        .collect::<Vec<_>>();
+    let component_types = archetype_target_types(scene, arch, target_types);
     let candidate_count = component_types.len();
     let resolved = if min > max || min > candidate_count {
         ResolvedQueryFilter::False
@@ -230,20 +238,20 @@ fn resolve_filter(
     match filter {
         QueryFilterExpr::True => ResolvedQueryFilter::True,
         QueryFilterExpr::False => ResolvedQueryFilter::False,
-        QueryFilterExpr::Count(type_id, min, max) => {
-            let count = archetype_target_count(scene, arch, *type_id);
+        QueryFilterExpr::Count(type_ids, min, max) => {
+            let count = archetype_target_count(scene, arch, type_ids);
             if count >= *min && count <= *max {
                 ResolvedQueryFilter::True
             } else {
                 ResolvedQueryFilter::False
             }
         }
-        QueryFilterExpr::TemporalCount(type_id, min, max, since_tick, kind) => {
+        QueryFilterExpr::TemporalCount(type_ids, min, max, since_tick, kind) => {
             resolve_temporal_count_filter(
                 scene,
                 arch_id,
                 arch,
-                *type_id,
+                type_ids,
                 *min,
                 *max,
                 *since_tick,

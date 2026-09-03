@@ -537,25 +537,35 @@ impl Scene {
     ) -> Option<(Vec<TypeId>, Vec<TypeId>, Vec<TypeId>, Vec<TypeId>)> {
         let with_components = Self::normalized_components(with_components);
         let without_components = Self::normalized_components(without_components);
-        let with_any_components = Self::normalized_components(with_any_components);
+        let mut with_any_components = Self::normalized_components(with_any_components);
         let without_any_components = Self::normalized_components(without_any_components);
 
-        let mut include_components = with_components.clone();
-        include_components.extend(with_any_components.iter().copied());
-        include_components.sort_unstable();
-        include_components.dedup();
+        let mut excluded_components = without_components.clone();
+        excluded_components.extend(without_any_components.iter().copied());
+        excluded_components.sort_unstable();
+        excluded_components.dedup();
 
-        let mut exclude_components = without_components.clone();
-        exclude_components.extend(without_any_components.iter().copied());
-        exclude_components.sort_unstable();
-        exclude_components.dedup();
-
-        if include_components
+        if with_components
             .iter()
-            .any(|component_type| exclude_components.binary_search(component_type).is_ok())
+            .any(|component_type| excluded_components.binary_search(component_type).is_ok())
         {
             return None;
         }
+
+        if with_components
+            .iter()
+            .any(|component_type| with_any_components.binary_search(component_type).is_ok())
+        {
+            with_any_components.clear();
+        } else if !with_any_components.is_empty() {
+            with_any_components.retain(|component_type| {
+                excluded_components.binary_search(component_type).is_err()
+            });
+            if with_any_components.is_empty() {
+                return None;
+            }
+        }
+
         Some((
             with_components,
             without_components,

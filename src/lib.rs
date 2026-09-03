@@ -117,14 +117,15 @@ pub mod prelude {
     };
     pub use comet_ecs::{
         bundle, register_prefab, spawn_prefab, Added, AddedAll, AddedAny, AddedAtLeast,
-        AddedAtMost, AddedExactly, Anchor, AtLeast, AtMost, Bundle, Camera, Camera2d, Camera3d,
-        CameraViewport, Changed, ChangedAll, ChangedAny, ChangedAtLeast, ChangedAtMost,
-        ChangedExactly, Collider, Component, Count, EcsError, EcsModule, EcsModuleExt, Entity,
-        Exactly, First, Last, NeededComponents, Not, Or, OrthographicProjection,
-        PerspectiveProjection, Projection, Query, QueryTargets, Range, RequiredComponents,
-        ResolutionScaling, Scene, Screen, ScreenPosition, Skip, Spawned, Sprite, Take, Text,
-        TextJustification, TextLayout, TextSize, Timer, Transform, With, WithAll, WithAny, Without,
-        WithoutAll, WithoutAny,
+        AddedAtLeastOf, AddedAtMost, AddedAtMostOf, AddedExactly, AddedExactlyOf, Anchor, AtLeast,
+        AtLeastOf, AtMost, AtMostOf, Bundle, Camera, Camera2d, Camera3d, CameraViewport, Changed,
+        ChangedAll, ChangedAny, ChangedAtLeast, ChangedAtLeastOf, ChangedAtMost, ChangedAtMostOf,
+        ChangedExactly, ChangedExactlyOf, Collider, Component, Count, CountOf, EcsError, EcsModule,
+        EcsModuleExt, Entity, Exactly, ExactlyOf, First, Last, NeededComponents, Not, Or,
+        OrthographicProjection, PerspectiveProjection, Projection, Query, QueryTargets, Range,
+        RequiredComponents, ResolutionScaling, Scene, Screen, ScreenPosition, Skip, Spawned,
+        Sprite, Take, Text, TextJustification, TextLayout, TextSize, Timer, Transform, With,
+        WithAll, WithAny, Without, WithoutAll, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{

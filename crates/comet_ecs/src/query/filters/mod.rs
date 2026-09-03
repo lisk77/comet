@@ -14,8 +14,12 @@ pub struct Count<C: ?Sized + Component, const MIN: usize, const MAX: usize, Cond
     PhantomData<C>,
     PhantomData<Condition>,
 );
-pub struct Added<C: ?Sized + Component>(PhantomData<C>);
-pub struct Changed<C: ?Sized + Component>(PhantomData<C>);
+pub struct CountOf<Components, const MIN: usize, const MAX: usize, Condition = ()>(
+    PhantomData<Components>,
+    PhantomData<Condition>,
+);
+pub struct Added<C: ?Sized>(PhantomData<C>);
+pub struct Changed<C: ?Sized>(PhantomData<C>);
 pub struct Spawned;
 pub struct Or<Filters>(PhantomData<Filters>);
 pub struct Not<Filter>(PhantomData<Filter>);
@@ -27,10 +31,20 @@ pub trait FilterTuple {
     type Changed;
 }
 
+pub(crate) trait FilterTupleInfo {
+    fn type_ids() -> Vec<TypeId>;
+}
+
 impl FilterTuple for () {
     type With = ();
     type Added = ();
     type Changed = ();
+}
+
+impl FilterTupleInfo for () {
+    fn type_ids() -> Vec<TypeId> {
+        Vec::new()
+    }
 }
 
 macro_rules! impl_filter_tuple {
@@ -39,6 +53,12 @@ macro_rules! impl_filter_tuple {
             type With = ($(With<$name>,)+);
             type Added = ($(Added<$name>,)+);
             type Changed = ($(Changed<$name>,)+);
+        }
+
+        impl<$($name: Component),+> FilterTupleInfo for ($($name,)+) {
+            fn type_ids() -> Vec<TypeId> {
+                vec![$(TypeId::of::<$name>()),+]
+            }
         }
     };
 }
@@ -55,6 +75,10 @@ impl_filter_tuple!(A, B, C, D, E, F, G, H);
 pub type Exactly<C, const COUNT: usize> = Count<C, COUNT, COUNT>;
 pub type AtLeast<C, const COUNT: usize> = Count<C, COUNT, { usize::MAX }>;
 pub type AtMost<C, const COUNT: usize> = Count<C, 0, COUNT>;
+
+pub type ExactlyOf<Components, const COUNT: usize> = CountOf<Components, COUNT, COUNT>;
+pub type AtLeastOf<Components, const COUNT: usize> = CountOf<Components, COUNT, { usize::MAX }>;
+pub type AtMostOf<Components, const COUNT: usize> = CountOf<Components, 0, COUNT>;
 pub type With<C> = AtLeast<C, 1>;
 pub type Without<C> = Exactly<C, 0>;
 pub type WithAll<Cs> = <Cs as FilterTuple>::With;
@@ -68,9 +92,21 @@ pub type ChangedAny<Cs> = Or<<Cs as FilterTuple>::Changed>;
 pub type AddedExactly<C, const COUNT: usize> = Count<C, COUNT, COUNT, Added<C>>;
 pub type AddedAtLeast<C, const COUNT: usize> = Count<C, COUNT, { usize::MAX }, Added<C>>;
 pub type AddedAtMost<C, const COUNT: usize> = Count<C, 0, COUNT, Added<C>>;
+pub type AddedExactlyOf<Components, const COUNT: usize> =
+    CountOf<Components, COUNT, COUNT, Added<Components>>;
+pub type AddedAtLeastOf<Components, const COUNT: usize> =
+    CountOf<Components, COUNT, { usize::MAX }, Added<Components>>;
+pub type AddedAtMostOf<Components, const COUNT: usize> =
+    CountOf<Components, 0, COUNT, Added<Components>>;
 pub type ChangedExactly<C, const COUNT: usize> = Count<C, COUNT, COUNT, Changed<C>>;
 pub type ChangedAtLeast<C, const COUNT: usize> = Count<C, COUNT, { usize::MAX }, Changed<C>>;
 pub type ChangedAtMost<C, const COUNT: usize> = Count<C, 0, COUNT, Changed<C>>;
+pub type ChangedExactlyOf<Components, const COUNT: usize> =
+    CountOf<Components, COUNT, COUNT, Changed<Components>>;
+pub type ChangedAtLeastOf<Components, const COUNT: usize> =
+    CountOf<Components, COUNT, { usize::MAX }, Changed<Components>>;
+pub type ChangedAtMostOf<Components, const COUNT: usize> =
+    CountOf<Components, 0, COUNT, Changed<Components>>;
 
 pub(crate) trait QueryFilterSet {
     fn expression(scene: &Scene) -> QueryFilterExpr;
@@ -86,7 +122,43 @@ impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
     for Count<C, MIN, MAX>
 {
     fn expression(_scene: &Scene) -> QueryFilterExpr {
-        QueryFilterExpr::Count(TypeId::of::<C>(), MIN, MAX)
+        QueryFilterExpr::count(vec![TypeId::of::<C>()].into(), MIN, MAX)
+    }
+}
+
+impl<Components: FilterTupleInfo, const MIN: usize, const MAX: usize> QueryFilterSet
+    for CountOf<Components, MIN, MAX>
+{
+    fn expression(_scene: &Scene) -> QueryFilterExpr {
+        QueryFilterExpr::count(Components::type_ids().into(), MIN, MAX)
+    }
+}
+
+impl<Components: FilterTupleInfo, const MIN: usize, const MAX: usize> QueryFilterSet
+    for CountOf<Components, MIN, MAX, Added<Components>>
+{
+    fn expression(scene: &Scene) -> QueryFilterExpr {
+        QueryFilterExpr::temporal_count(
+            Components::type_ids().into(),
+            MIN,
+            MAX,
+            scene.default_query_since_tick(),
+            TemporalFilterKind::Added,
+        )
+    }
+}
+
+impl<Components: FilterTupleInfo, const MIN: usize, const MAX: usize> QueryFilterSet
+    for CountOf<Components, MIN, MAX, Changed<Components>>
+{
+    fn expression(scene: &Scene) -> QueryFilterExpr {
+        QueryFilterExpr::temporal_count(
+            Components::type_ids().into(),
+            MIN,
+            MAX,
+            scene.default_query_since_tick(),
+            TemporalFilterKind::Changed,
+        )
     }
 }
 
@@ -94,8 +166,8 @@ impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
     for Count<C, MIN, MAX, Added<C>>
 {
     fn expression(scene: &Scene) -> QueryFilterExpr {
-        QueryFilterExpr::TemporalCount(
-            TypeId::of::<C>(),
+        QueryFilterExpr::temporal_count(
+            vec![TypeId::of::<C>()].into(),
             MIN,
             MAX,
             scene.default_query_since_tick(),
@@ -108,8 +180,8 @@ impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
     for Count<C, MIN, MAX, Changed<C>>
 {
     fn expression(scene: &Scene) -> QueryFilterExpr {
-        QueryFilterExpr::TemporalCount(
-            TypeId::of::<C>(),
+        QueryFilterExpr::temporal_count(
+            vec![TypeId::of::<C>()].into(),
             MIN,
             MAX,
             scene.default_query_since_tick(),

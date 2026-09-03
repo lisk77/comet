@@ -23,9 +23,11 @@ pub(crate) use filters::{
     ResolvedChangeFilter, ResolvedQueryFilter, ResolvedTemporalCountFilter, TemporalFilterKind,
 };
 pub use filters::{
-    Added, AddedAll, AddedAny, AddedAtLeast, AddedAtMost, AddedExactly, AtLeast, AtMost, Changed,
-    ChangedAll, ChangedAny, ChangedAtLeast, ChangedAtMost, ChangedExactly, Count, Exactly, Not, Or,
-    QueryParam, Spawned, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
+    Added, AddedAll, AddedAny, AddedAtLeast, AddedAtLeastOf, AddedAtMost, AddedAtMostOf,
+    AddedExactly, AddedExactlyOf, AtLeast, AtLeastOf, AtMost, AtMostOf, Changed, ChangedAll,
+    ChangedAny, ChangedAtLeast, ChangedAtLeastOf, ChangedAtMost, ChangedAtMostOf, ChangedExactly,
+    ChangedExactlyOf, Count, CountOf, Exactly, ExactlyOf, Not, Or, QueryParam, Spawned, With,
+    WithAll, WithAny, Without, WithoutAll, WithoutAny,
 };
 pub use query_data::QueryItem;
 pub(crate) use query_data::{

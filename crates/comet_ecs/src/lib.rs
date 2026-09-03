@@ -12,10 +12,12 @@ pub use prefabs::{ErasedComponent, PrefabFactory};
 #[doc(hidden)]
 pub use query::QueryItem;
 pub use query::{
-    Added, AddedAll, AddedAny, AddedAtLeast, AddedAtMost, AddedExactly, AtLeast, AtMost, Changed,
-    ChangedAll, ChangedAny, ChangedAtLeast, ChangedAtMost, ChangedExactly, Count, Exactly, First,
-    Last, Not, Or, Query, QueryParam, QuerySpec, QuerySpecMut, Range, Skip, Spawned, Take, With,
-    WithAll, WithAny, Without, WithoutAll, WithoutAny,
+    Added, AddedAll, AddedAny, AddedAtLeast, AddedAtLeastOf, AddedAtMost, AddedAtMostOf,
+    AddedExactly, AddedExactlyOf, AtLeast, AtLeastOf, AtMost, AtMostOf, Changed, ChangedAll,
+    ChangedAny, ChangedAtLeast, ChangedAtLeastOf, ChangedAtMost, ChangedAtMostOf, ChangedExactly,
+    ChangedExactlyOf, Count, CountOf, Exactly, ExactlyOf, First, Last, Not, Or, Query, QueryParam,
+    QuerySpec, QuerySpecMut, Range, Skip, Spawned, Take, With, WithAll, WithAny, Without,
+    WithoutAll, WithoutAny,
 };
 pub use scene::*;
 pub use scene_commands::{SceneCommand, SceneCommands};

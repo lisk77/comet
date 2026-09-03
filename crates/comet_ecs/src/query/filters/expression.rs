@@ -21,8 +21,8 @@ pub(crate) enum TemporalFilterKind {
 pub(crate) enum QueryFilterExpr {
     True,
     False,
-    Count(TypeId, usize, usize),
-    TemporalCount(TypeId, usize, usize, Tick, TemporalFilterKind),
+    Count(Arc<[TypeId]>, usize, usize),
+    TemporalCount(Arc<[TypeId]>, usize, usize, Tick, TemporalFilterKind),
     Added(TypeId, Tick),
     Changed(TypeId, Tick),
     Spawned(Tick),
@@ -32,6 +32,32 @@ pub(crate) enum QueryFilterExpr {
 }
 
 impl QueryFilterExpr {
+    pub(super) fn count(type_ids: Arc<[TypeId]>, min: usize, max: usize) -> Self {
+        if min > max || (type_ids.is_empty() && min > 0) {
+            Self::False
+        } else if type_ids.is_empty() {
+            Self::True
+        } else {
+            Self::Count(type_ids, min, max)
+        }
+    }
+
+    pub(super) fn temporal_count(
+        type_ids: Arc<[TypeId]>,
+        min: usize,
+        max: usize,
+        since_tick: Tick,
+        kind: TemporalFilterKind,
+    ) -> Self {
+        if min > max || (type_ids.is_empty() && min > 0) {
+            Self::False
+        } else if type_ids.is_empty() {
+            Self::True
+        } else {
+            Self::TemporalCount(type_ids, min, max, since_tick, kind)
+        }
+    }
+
     pub(super) fn and(filters: Vec<Self>) -> Self {
         let mut flattened = Vec::new();
         for filter in filters {
@@ -77,17 +103,17 @@ impl QueryFilterExpr {
 
     pub(crate) fn archetype_match(
         &self,
-        target_count: &impl Fn(TypeId) -> usize,
+        target_count: &impl Fn(&[TypeId]) -> usize,
     ) -> ArchetypeFilterMatch {
         match self {
             Self::True => ArchetypeFilterMatch::Always,
             Self::False => ArchetypeFilterMatch::Never,
-            Self::Count(type_id, min, max) => {
-                let count = target_count(*type_id);
+            Self::Count(type_ids, min, max) => {
+                let count = target_count(type_ids);
                 ArchetypeFilterMatch::from_bool(count >= *min && count <= *max)
             }
-            Self::TemporalCount(type_id, min, max, _, _) => {
-                let count = target_count(*type_id);
+            Self::TemporalCount(type_ids, min, max, _, _) => {
+                let count = target_count(type_ids);
                 if min > max || *min > count {
                     ArchetypeFilterMatch::Never
                 } else if *min == 0 && *max >= count {
@@ -97,7 +123,7 @@ impl QueryFilterExpr {
                 }
             }
             Self::Added(type_id, _) | Self::Changed(type_id, _) => {
-                if target_count(*type_id) > 0 {
+                if target_count(std::slice::from_ref(type_id)) > 0 {
                     ArchetypeFilterMatch::Dynamic
                 } else {
                     ArchetypeFilterMatch::Never
@@ -120,10 +146,14 @@ impl QueryFilterExpr {
 
     fn has_trait_cardinality_filter(&self, scene: &Scene) -> bool {
         match self {
-            Self::Count(type_id, _, _) | Self::TemporalCount(type_id, _, _, _, _) => scene
-                .query_targets(*type_id)
-                .iter()
-                .any(|target| target.component_type != *type_id),
+            Self::Count(type_ids, _, _) | Self::TemporalCount(type_ids, _, _, _, _) => {
+                type_ids.iter().any(|type_id| {
+                    scene
+                        .query_targets(*type_id)
+                        .iter()
+                        .any(|target| target.component_type != *type_id)
+                })
+            }
             Self::And(filters) | Self::Or(filters) => filters
                 .iter()
                 .any(|filter| filter.has_trait_cardinality_filter(scene)),
@@ -327,7 +357,9 @@ impl QueryFilterState {
 
 fn with_type_id(expression: &QueryFilterExpr) -> Option<TypeId> {
     match expression {
-        QueryFilterExpr::Count(type_id, 1, usize::MAX) => Some(*type_id),
+        QueryFilterExpr::Count(type_ids, 1, usize::MAX) if type_ids.len() == 1 => {
+            type_ids.first().copied()
+        }
         _ => None,
     }
 }
@@ -340,22 +372,44 @@ pub(super) fn simple_filters(expression: &QueryFilterExpr) -> Option<SimpleQuery
         | QueryFilterExpr::Changed(_, _)
         | QueryFilterExpr::Spawned(_) => Some(SimpleQueryFilters::default()),
         QueryFilterExpr::False => None,
-        QueryFilterExpr::Count(type_id, 1, usize::MAX) => Some(SimpleQueryFilters {
-            with_components: vec![*type_id],
+        QueryFilterExpr::Count(type_ids, 1, usize::MAX) if type_ids.len() == 1 => {
+            Some(SimpleQueryFilters {
+                with_components: type_ids.to_vec(),
+                ..Default::default()
+            })
+        }
+        QueryFilterExpr::Count(type_ids, 1, usize::MAX) => Some(SimpleQueryFilters {
+            with_any_components: type_ids.to_vec(),
             ..Default::default()
         }),
-        QueryFilterExpr::Count(type_id, 0, 0) => Some(SimpleQueryFilters {
-            without_components: vec![*type_id],
+        QueryFilterExpr::Count(type_ids, 0, 0) if type_ids.len() == 1 => Some(SimpleQueryFilters {
+            without_components: type_ids.to_vec(),
+            ..Default::default()
+        }),
+        QueryFilterExpr::Count(type_ids, 0, 0) => Some(SimpleQueryFilters {
+            without_any_components: type_ids.to_vec(),
             ..Default::default()
         }),
         QueryFilterExpr::Count(_, _, _) => None,
         QueryFilterExpr::Not(filter) => match filter.as_ref() {
-            QueryFilterExpr::Count(type_id, 1, usize::MAX) => Some(SimpleQueryFilters {
-                without_components: vec![*type_id],
+            QueryFilterExpr::Count(type_ids, 1, usize::MAX) if type_ids.len() == 1 => {
+                Some(SimpleQueryFilters {
+                    without_components: type_ids.to_vec(),
+                    ..Default::default()
+                })
+            }
+            QueryFilterExpr::Count(type_ids, 1, usize::MAX) => Some(SimpleQueryFilters {
+                without_any_components: type_ids.to_vec(),
                 ..Default::default()
             }),
-            QueryFilterExpr::Count(type_id, 0, 0) => Some(SimpleQueryFilters {
-                with_components: vec![*type_id],
+            QueryFilterExpr::Count(type_ids, 0, 0) if type_ids.len() == 1 => {
+                Some(SimpleQueryFilters {
+                    with_components: type_ids.to_vec(),
+                    ..Default::default()
+                })
+            }
+            QueryFilterExpr::Count(type_ids, 0, 0) => Some(SimpleQueryFilters {
+                with_any_components: type_ids.to_vec(),
                 ..Default::default()
             }),
             QueryFilterExpr::Or(filters)
