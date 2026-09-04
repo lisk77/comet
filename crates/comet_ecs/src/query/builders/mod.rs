@@ -240,15 +240,14 @@ fn resolve_temporal_count_filter(
                 count >= min && count <= max
             })
             .collect::<HashSet<_>>();
-        if matching_entities.is_empty() {
-            ResolvedQueryFilter::False
-        } else if matching_entities.len() == arch.len() {
-            ResolvedQueryFilter::True
-        } else {
-            ResolvedQueryFilter::TemporalCount(ResolvedTemporalCountFilter {
-                matching_entities: Arc::new(matching_entities),
-            })
-        }
+        ResolvedQueryFilter::TemporalCount(ResolvedTemporalCountFilter {
+            matching_entities: Arc::new(matching_entities),
+            component_types: component_types.into(),
+            min,
+            max,
+            since_tick,
+            kind,
+        })
     };
     cache.insert(key, resolved.clone());
     resolved

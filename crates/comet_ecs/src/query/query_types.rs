@@ -53,6 +53,22 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
         }
     }
 
+    pub fn baseline_tick(mut self, tick: Tick) -> Self {
+        for access in &mut self.accesses {
+            unsafe {
+                access.filter.set_baseline_tick(
+                    tick,
+                    access.change_state,
+                    access.entities,
+                    access.len,
+                )
+            };
+        }
+        self.selected_entities = None;
+        self.selected_rows = None;
+        self
+    }
+
     pub fn added_since<C: Component>(mut self, tick: Tick) -> Self {
         set_since_filter(&mut self.added_since_filters, TypeId::of::<C>(), tick);
         self.selected_entities = None;

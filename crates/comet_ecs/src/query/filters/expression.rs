@@ -9,6 +9,11 @@ pub(crate) struct ResolvedChangeFilter {
 #[derive(Clone)]
 pub(crate) struct ResolvedTemporalCountFilter {
     pub(crate) matching_entities: Arc<HashSet<Entity>>,
+    pub(crate) component_types: Arc<[TypeId]>,
+    pub(crate) min: usize,
+    pub(crate) max: usize,
+    pub(crate) since_tick: Tick,
+    pub(crate) kind: TemporalFilterKind,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -273,6 +278,55 @@ impl ResolvedQueryFilter {
         matches!(self, Self::False)
     }
 
+    pub(crate) unsafe fn set_baseline_tick(
+        &mut self,
+        tick: Tick,
+        change_state: *const HashMap<(u32, TypeId), ComponentChangeState>,
+        entities: *const Entity,
+        len: usize,
+    ) {
+        match self {
+            Self::Added(filter) | Self::Changed(filter) | Self::Modified(filter) => {
+                filter.since_tick = tick;
+            }
+            Self::TemporalCount(filter) => {
+                filter.since_tick = tick;
+                let change_state = unsafe { &*change_state };
+                let entities = unsafe { std::slice::from_raw_parts(entities, len) };
+                filter.matching_entities = Arc::new(
+                    entities
+                        .iter()
+                        .copied()
+                        .filter(|entity| {
+                            let count = filter
+                                .component_types
+                                .iter()
+                                .filter(|component_type| {
+                                    change_state
+                                        .get(&(entity.index, **component_type))
+                                        .is_some_and(|state| {
+                                            temporal_component_matches(state, tick, filter.kind)
+                                        })
+                                })
+                                .count();
+                            count >= filter.min && count <= filter.max
+                        })
+                        .collect(),
+                );
+            }
+            Self::Spawned(since_tick) => *since_tick = tick,
+            Self::And(filters) | Self::Or(filters) => {
+                for filter in filters {
+                    unsafe { filter.set_baseline_tick(tick, change_state, entities, len) };
+                }
+            }
+            Self::Not(filter) => unsafe {
+                filter.set_baseline_tick(tick, change_state, entities, len)
+            },
+            Self::True | Self::False => {}
+        }
+    }
+
     pub(crate) unsafe fn matches(
         &self,
         change_state: *const HashMap<(u32, TypeId), ComponentChangeState>,
@@ -336,6 +390,21 @@ unsafe fn matches_modified_filter(
                     && !tick_is_newer_than(state.added_tick, filter.since_tick)
             })
     })
+}
+
+fn temporal_component_matches(
+    state: &ComponentChangeState,
+    since_tick: Tick,
+    kind: TemporalFilterKind,
+) -> bool {
+    match kind {
+        TemporalFilterKind::Added => tick_is_newer_than(state.added_tick, since_tick),
+        TemporalFilterKind::Changed => tick_is_newer_than(state.changed_tick, since_tick),
+        TemporalFilterKind::Modified => {
+            tick_is_newer_than(state.changed_tick, since_tick)
+                && !tick_is_newer_than(state.added_tick, since_tick)
+        }
+    }
 }
 
 fn tick_is_newer_than(tick: Tick, last_seen_tick: Tick) -> bool {
