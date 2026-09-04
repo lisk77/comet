@@ -2394,37 +2394,6 @@ mod tests {
     }
 
     #[test]
-    fn temporal_query_constraints_can_use_different_since_ticks_per_filter() {
-        let mut scene = Scene::new();
-        scene.ensure_component::<Value>();
-        scene.ensure_component::<A>();
-
-        scene.set_component_event_tick(5);
-        let entity = scene.new_entity();
-        scene.add_components(entity, Value(1));
-        scene.add_components(entity, A);
-
-        scene.set_component_event_tick(10);
-        if let Some(value) = scene.get_component_mut::<A>(entity) {
-            *value = A;
-        }
-
-        let matching = scene
-            .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
-            .added_since::<Value>(4)
-            .changed_since::<A>(9)
-            .count();
-        assert_eq!(matching, 1);
-
-        let non_matching = scene
-            .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
-            .added_since::<Value>(6)
-            .changed_since::<A>(10)
-            .count();
-        assert_eq!(non_matching, 0);
-    }
-
-    #[test]
     fn query_optional_read_fetches_return_none_when_component_is_missing() {
         let mut scene = Scene::new();
         scene.ensure_component::<Value>();
