@@ -10,15 +10,15 @@ fn validate_components(components: &[QueryComponent]) {
         components.len() <= MAX_QUERY_COMPONENTS,
         "query fetches more than {MAX_QUERY_COMPONENTS} components"
     );
-    assert!(
-        !has_duplicate_type_ids(
-            &components
-                .iter()
-                .map(|component| component.type_id)
-                .collect::<Vec<_>>()
-        ),
-        "query called with duplicate component types"
-    );
+    for first in 0..components.len() {
+        for second in (first + 1)..components.len() {
+            assert!(
+                components[first].type_id != components[second].type_id
+                    || (!components[first].writes && !components[second].writes),
+                "query called with duplicate component types"
+            );
+        }
+    }
 }
 
 fn archetype_target_types(

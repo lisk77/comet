@@ -6,7 +6,6 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 mod aggregates;
-mod arities;
 mod builders;
 mod fetch;
 mod filters;
@@ -17,7 +16,6 @@ mod scene_query;
 mod selectors;
 
 pub use aggregates::Amount;
-pub(crate) use arities::has_duplicate_type_ids;
 pub(crate) use builders::{build_query_accesses, build_query_accesses_mut};
 pub(crate) use fetch::{EntityFetch, QueryAccess, ReadFetch, WriteFetch};
 pub(crate) use filters::{
