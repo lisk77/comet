@@ -77,6 +77,10 @@ fn append_range(info: QueryElementInfo, range: QueryRange) -> QueryElementInfo {
             component.ranges.push(range);
             QueryElementInfo::Component(component)
         }
+        QueryElementInfo::Amount(mut amount) => {
+            amount.ranges.push(range);
+            QueryElementInfo::Amount(amount)
+        }
     }
 }
 
@@ -112,10 +116,22 @@ where
         entity: Entity,
         columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
         casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        amounts: &[usize],
         row: usize,
         component_slot: &mut usize,
+        amount_slot: &mut usize,
     ) -> Option<Self::Item> {
-        unsafe { T::fetch(entity, columns, casters, row, component_slot) }
+        unsafe {
+            T::fetch(
+                entity,
+                columns,
+                casters,
+                amounts,
+                row,
+                component_slot,
+                amount_slot,
+            )
+        }
     }
 }
 
@@ -156,10 +172,22 @@ where
         entity: Entity,
         columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
         casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        amounts: &[usize],
         row: usize,
         component_slot: &mut usize,
+        amount_slot: &mut usize,
     ) -> Option<Self::Item> {
-        unsafe { T::fetch(entity, columns, casters, row, component_slot) }
+        unsafe {
+            T::fetch(
+                entity,
+                columns,
+                casters,
+                amounts,
+                row,
+                component_slot,
+                amount_slot,
+            )
+        }
     }
 }
 

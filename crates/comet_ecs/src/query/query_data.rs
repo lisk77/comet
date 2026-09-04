@@ -8,6 +8,7 @@ pub(crate) struct QueryComponent {
     pub(crate) required: bool,
     pub(crate) writes: bool,
     pub(crate) ranges: Vec<QueryRange>,
+    pub(crate) row_order: usize,
 }
 
 impl QueryComponent {
@@ -17,25 +18,37 @@ impl QueryComponent {
             required: T::required(),
             writes: T::writes(),
             ranges: T::ranges(),
+            row_order: 0,
         }
     }
+}
+
+pub(crate) struct QueryAmount {
+    pub(crate) type_id: TypeId,
+    pub(crate) ranges: Vec<QueryRange>,
+    pub(crate) row_order: usize,
 }
 
 pub(crate) enum QueryElementInfo {
     Entity(Vec<QueryRange>),
     Component(QueryComponent),
+    Amount(QueryAmount),
 }
 
 pub(crate) struct QueryLayout {
     pub(crate) components: Vec<QueryComponent>,
+    pub(crate) amounts: Vec<QueryAmount>,
     pub(crate) entity_ranges: Vec<QueryRange>,
+    row_order: usize,
 }
 
 impl QueryLayout {
     fn empty() -> Self {
         Self {
             components: Vec::new(),
+            amounts: Vec::new(),
             entity_ranges: Vec::new(),
+            row_order: 0,
         }
     }
 
@@ -50,7 +63,16 @@ impl QueryLayout {
                     self.entity_ranges = ranges;
                 }
             }
-            QueryElementInfo::Component(component) => self.components.push(component),
+            QueryElementInfo::Component(mut component) => {
+                component.row_order = self.row_order;
+                self.row_order += 1;
+                self.components.push(component);
+            }
+            QueryElementInfo::Amount(mut amount) => {
+                amount.row_order = self.row_order;
+                self.row_order += 1;
+                self.amounts.push(amount);
+            }
         }
     }
 }
@@ -92,8 +114,10 @@ pub(crate) trait QueryElement<'a>: QueryItem<'a> {
         entity: Entity,
         columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
         casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        amounts: &[usize],
         row: usize,
         component_slot: &mut usize,
+        amount_slot: &mut usize,
     ) -> Option<Self::Item>;
 }
 
@@ -101,14 +125,6 @@ pub(crate) trait ReadQueryElement<'a>: QueryElement<'a> {}
 
 pub(crate) trait QueryData<'a>: QueryItem<'a> + Sized {
     fn layout() -> QueryLayout;
-
-    fn components() -> Vec<QueryComponent> {
-        Self::layout().components
-    }
-
-    fn entity_ranges() -> Vec<QueryRange> {
-        Self::layout().entity_ranges
-    }
 
     unsafe fn mark_changed(
         change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
@@ -122,6 +138,7 @@ pub(crate) trait QueryData<'a>: QueryItem<'a> + Sized {
         entity: Entity,
         columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
         casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        amounts: &[usize],
         row: usize,
     ) -> Option<Self::Item>;
 }
@@ -183,8 +200,10 @@ macro_rules! impl_component_query_element {
                 _entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
                 casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+                _amounts: &[usize],
                 row: usize,
                 component_slot: &mut usize,
+                _amount_slot: &mut usize,
             ) -> Option<Self::Item> {
                 let slot = *component_slot;
                 *component_slot += 1;
@@ -233,8 +252,10 @@ where
         _entity: Entity,
         columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
         casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        _amounts: &[usize],
         row: usize,
         component_slot: &mut usize,
+        _amount_slot: &mut usize,
     ) -> Option<Self::Item> {
         let slot = *component_slot;
         *component_slot += 1;
@@ -263,8 +284,10 @@ impl<'a> QueryElement<'a> for Entity {
         entity: Entity,
         _columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
         _casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        _amounts: &[usize],
         _row: usize,
         _component_slot: &mut usize,
+        _amount_slot: &mut usize,
     ) -> Option<Self::Item> {
         Some(entity)
     }
@@ -308,16 +331,20 @@ macro_rules! impl_query_data_element {
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
                 casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+                amounts: &[usize],
                 row: usize,
             ) -> Option<Self::Item> {
                 let mut component_slot = 0;
+                let mut amount_slot = 0;
                 unsafe {
                     <Self as QueryElement<'a>>::fetch(
                         entity,
                         columns,
                         casters,
+                        amounts,
                         row,
                         &mut component_slot,
+                        &mut amount_slot,
                     )
                 }
             }
@@ -333,6 +360,7 @@ macro_rules! impl_query_data_element {
 
 impl_query_data_element!([C: ?Sized + Component] &'a C);
 impl_query_data_element!([C: ?Sized + Component] &'a mut C);
+impl_query_data_element!([C: ?Sized + Component] Amount<&'a C>);
 impl_query_data_element!([T] Option<T>);
 impl_query_data_element!([T, const START: usize, const END: usize] Range<T, START, END>);
 impl_query_data_element!([T] Last<T>);
@@ -355,6 +383,7 @@ impl<'a> QueryData<'a> for Entity {
         entity: Entity,
         _columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
         _casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+        _amounts: &[usize],
         _row: usize,
     ) -> Option<Self::Item> {
         Some(entity)
@@ -408,16 +437,20 @@ macro_rules! impl_tuple_query_data {
                 entity: Entity,
                 columns: &[*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
                 casters: &[Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+                amounts: &[usize],
                 row: usize,
             ) -> Option<Self::Item> {
                 let mut component_slot = 0;
+                let mut amount_slot = 0;
                 unsafe {
                     Some(($(<$ty as QueryElement<'a>>::fetch(
                         entity,
                         columns,
                         casters,
+                        amounts,
                         row,
                         &mut component_slot,
+                        &mut amount_slot,
                     )?,)+))
                 }
             }

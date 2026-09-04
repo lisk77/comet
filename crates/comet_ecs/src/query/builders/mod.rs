@@ -52,6 +52,23 @@ fn archetype_target_count(
         .len()
 }
 
+fn resolve_amounts(
+    scene: &Scene,
+    arch: &crate::archetypes::Archetype,
+    amounts: &[QueryAmount],
+) -> Vec<usize> {
+    amounts
+        .iter()
+        .map(|amount| {
+            scene
+                .query_targets(amount.type_id)
+                .iter()
+                .filter(|target| arch.column_index(target.component_type).is_some())
+                .count()
+        })
+        .collect()
+}
+
 fn archetype_matches_filters(
     scene: &Scene,
     arch: &crate::archetypes::Archetype,
@@ -427,18 +444,19 @@ fn resolved_accesses(
     resolved
 }
 
-pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
-    scene: &'a Scene,
+pub(crate) fn build_query_accesses(
+    scene: &Scene,
     state: &QueryFilterState,
+    layout: &QueryLayout,
 ) -> Vec<QueryAccess> {
-    let components = Data::components();
-    validate_components(&components);
-    let resolved = resolved_accesses(scene, &components, state);
+    validate_components(&layout.components);
+    let resolved = resolved_accesses(scene, &layout.components, state);
     let change_state = scene.query_change_state() as *const _ as *mut _;
     let spawn_ticks = scene.query_spawn_ticks() as *const _;
     let component_event_tick = scene.component_event_tick();
     let mut accesses = Vec::with_capacity(resolved.len());
     let mut temporal_count_cache = TemporalCountCache::new();
+    let mut amount_cache: HashMap<usize, Arc<[usize]>> = HashMap::new();
 
     for (arch_id, targets) in resolved {
         let arch = scene.archetypes().get(arch_id);
@@ -446,7 +464,7 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
             scene,
             arch_id,
             arch,
-            &components,
+            &layout.components,
             &targets,
             &state.expression,
             &mut temporal_count_cache,
@@ -454,6 +472,12 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
         if filter.is_false() {
             continue;
         }
+        let amounts = (!layout.amounts.is_empty()).then(|| {
+            amount_cache
+                .entry(arch_id)
+                .or_insert_with(|| resolve_amounts(scene, arch, &layout.amounts).into())
+                .clone()
+        });
         let mut columns = [ptr::null_mut(); MAX_QUERY_COMPONENTS];
         let mut component_types = [None; MAX_QUERY_COMPONENTS];
         let mut casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS] =
@@ -476,6 +500,7 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
             columns,
             component_types,
             casters,
+            amounts,
             change_state,
             spawn_ticks,
             component_event_tick,
@@ -488,14 +513,15 @@ pub(crate) fn build_query_accesses<'a, Data: QueryData<'a>>(
     accesses
 }
 
-pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
-    scene: &'a mut Scene,
+pub(crate) fn build_query_accesses_mut(
+    scene: &mut Scene,
     state: &QueryFilterState,
+    layout: &QueryLayout,
 ) -> Vec<QueryAccess> {
-    let components = Data::components();
-    validate_components(&components);
+    validate_components(&layout.components);
     let mut temporal_count_cache = TemporalCountCache::new();
-    let resolved = resolved_accesses(scene, &components, state)
+    let mut amount_cache: HashMap<usize, Arc<[usize]>> = HashMap::new();
+    let resolved = resolved_accesses(scene, &layout.components, state)
         .into_iter()
         .filter_map(|(arch_id, targets)| {
             let arch = scene.archetypes().get(arch_id);
@@ -503,12 +529,21 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
                 scene,
                 arch_id,
                 arch,
-                &components,
+                &layout.components,
                 &targets,
                 &state.expression,
                 &mut temporal_count_cache,
             );
-            (!filter.is_false()).then_some((arch_id, targets, filter))
+            if filter.is_false() {
+                return None;
+            }
+            let amounts = (!layout.amounts.is_empty()).then(|| {
+                amount_cache
+                    .entry(arch_id)
+                    .or_insert_with(|| resolve_amounts(scene, arch, &layout.amounts).into())
+                    .clone()
+            });
+            Some((arch_id, targets, filter, amounts))
         })
         .collect::<Vec<_>>();
     let (archetypes, change_state, spawn_ticks, component_event_tick) = scene.query_parts_mut();
@@ -516,7 +551,7 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
     let spawn_ticks = spawn_ticks as *const _;
     let mut accesses = Vec::with_capacity(resolved.len());
 
-    for (arch_id, targets, filter) in resolved {
+    for (arch_id, targets, filter, amounts) in resolved {
         let arch = archetypes.get_mut(arch_id);
         let entities = arch.entities().as_ptr();
         let len = arch.len();
@@ -543,6 +578,7 @@ pub(crate) fn build_query_accesses_mut<'a, Data: QueryData<'a>>(
             columns,
             component_types,
             casters,
+            amounts,
             change_state,
             spawn_ticks,
             component_event_tick,

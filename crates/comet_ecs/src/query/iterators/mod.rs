@@ -201,7 +201,13 @@ impl<'a, Data: QueryData<'a>, Filters> Iterator for Query<'a, Data, Filters> {
                     &access.columns,
                     &access.component_types,
                 );
-                return Data::fetch(entity, &access.columns, &access.casters, row);
+                return Data::fetch(
+                    entity,
+                    &access.columns,
+                    &access.casters,
+                    access.amounts.as_deref().unwrap_or_default(),
+                    row,
+                );
             }
         }
     }

@@ -17,14 +17,16 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
     where
         Data: QueryData<'a>,
     {
-        let components = Data::components();
+        let layout = Data::layout();
+        let row_ranges = concrete_row_ranges(scene, &layout.components, &layout.amounts);
+        let accesses = build_query_accesses(scene, &state, &layout);
         Self {
-            accesses: build_query_accesses::<Data>(scene, &state),
+            accesses,
             idx: 0,
             added_since_filters: Vec::new(),
             changed_since_filters: Vec::new(),
-            entity_ranges: Data::entity_ranges(),
-            row_ranges: concrete_row_ranges(scene, &components),
+            entity_ranges: layout.entity_ranges,
+            row_ranges,
             selected_entities: None,
             selected_rows: None,
             _marker: PhantomData,
@@ -35,15 +37,15 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
     where
         Data: QueryData<'a>,
     {
-        let components = Data::components();
-        let entity_ranges = Data::entity_ranges();
-        let row_ranges = concrete_row_ranges(scene, &components);
+        let layout = Data::layout();
+        let row_ranges = concrete_row_ranges(scene, &layout.components, &layout.amounts);
+        let accesses = build_query_accesses_mut(scene, &state, &layout);
         Self {
-            accesses: build_query_accesses_mut::<Data>(scene, &state),
+            accesses,
             idx: 0,
             added_since_filters: Vec::new(),
             changed_since_filters: Vec::new(),
-            entity_ranges,
+            entity_ranges: layout.entity_ranges,
             row_ranges,
             selected_entities: None,
             selected_rows: None,
