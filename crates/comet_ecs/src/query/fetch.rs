@@ -5,15 +5,16 @@ pub(crate) struct QueryAccess {
     pub(crate) columns: [*mut comet_structs::Column; MAX_QUERY_COMPONENTS],
     pub(crate) component_types: [Option<TypeId>; MAX_QUERY_COMPONENTS],
     pub(crate) casters: [Option<crate::QueryCaster>; MAX_QUERY_COMPONENTS],
+    pub(crate) amounts: Option<Arc<[usize]>>,
     pub(crate) change_state: *mut HashMap<(u32, TypeId), ComponentChangeState>,
+    pub(crate) spawn_ticks: *const HashMap<Entity, Tick>,
     pub(crate) component_event_tick: Tick,
-    pub(crate) added_since_filters: Vec<ResolvedChangeFilter>,
-    pub(crate) changed_since_filters: Vec<ResolvedChangeFilter>,
+    pub(crate) filter: ResolvedQueryFilter,
     pub(crate) len: usize,
     pub(crate) row: usize,
 }
 
-pub trait EntityFetch {
+pub(crate) trait EntityFetch {
     type Item;
 
     unsafe fn get(entities: *const Entity, len: usize, row: usize) -> Option<Self::Item>;
@@ -31,14 +32,13 @@ impl EntityFetch for Entity {
     }
 }
 
-pub trait ReadFetch<'a> {}
+pub(crate) trait ReadFetch<'a> {}
 
 impl<'a, C: ?Sized + Component> ReadFetch<'a> for &'a C {}
-impl<'a, C: ?Sized + Component> ReadFetch<'a> for Option<&'a C> {}
+impl<'a, T: ReadFetch<'a>> ReadFetch<'a> for Option<T> {}
 
-pub trait WriteFetch<'a> {
+pub(crate) trait WriteFetch<'a>: QueryItem<'a> {
     type Target: ?Sized + Component;
-    type Item;
 
     fn type_id() -> TypeId {
         TypeId::of::<Self::Target>()
@@ -55,11 +55,14 @@ pub trait WriteFetch<'a> {
     fn required() -> bool {
         true
     }
+
+    fn ranges() -> Vec<QueryRange> {
+        Vec::new()
+    }
 }
 
 impl<'a, C: ?Sized + Component> WriteFetch<'a> for &'a mut C {
     type Target = C;
-    type Item = &'a mut C;
 
     unsafe fn get(
         col: *mut comet_structs::Column,
@@ -78,7 +81,6 @@ impl<'a, C: ?Sized + Component> WriteFetch<'a> for &'a mut C {
 
 impl<'a, C: ?Sized + Component> WriteFetch<'a> for &'a C {
     type Target = C;
-    type Item = &'a C;
 
     unsafe fn get(
         col: *mut comet_structs::Column,
@@ -95,9 +97,11 @@ impl<'a, C: ?Sized + Component> WriteFetch<'a> for &'a C {
     }
 }
 
-impl<'a, C: ?Sized + Component> WriteFetch<'a> for Option<&'a C> {
-    type Target = C;
-    type Item = Option<&'a C>;
+impl<'a, T> WriteFetch<'a> for Option<T>
+where
+    T: WriteFetch<'a>,
+{
+    type Target = T::Target;
 
     unsafe fn get(
         col: *mut comet_structs::Column,
@@ -107,42 +111,18 @@ impl<'a, C: ?Sized + Component> WriteFetch<'a> for Option<&'a C> {
         if col.is_null() {
             return Some(None);
         }
-        let caster = caster?;
-        let value = unsafe { (&*col).get_raw(row) };
-        Some(Some(unsafe { &*caster.cast_ref::<C>(value) }))
+        unsafe { T::get(col, caster, row).map(Some) }
     }
 
     fn writes() -> bool {
-        false
+        T::writes()
     }
 
     fn required() -> bool {
         false
     }
-}
 
-impl<'a, C: ?Sized + Component> WriteFetch<'a> for Option<&'a mut C> {
-    type Target = C;
-    type Item = Option<&'a mut C>;
-
-    unsafe fn get(
-        col: *mut comet_structs::Column,
-        caster: Option<&crate::QueryCaster>,
-        row: usize,
-    ) -> Option<Self::Item> {
-        if col.is_null() {
-            return Some(None);
-        }
-        let caster = caster?;
-        let value = unsafe { (&*col).get_raw(row) };
-        Some(Some(unsafe { &mut *caster.cast_mut::<C>(value) }))
-    }
-
-    fn writes() -> bool {
-        true
-    }
-
-    fn required() -> bool {
-        false
+    fn ranges() -> Vec<QueryRange> {
+        T::ranges()
     }
 }

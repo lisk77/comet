@@ -7,7 +7,7 @@ use crate::scene_commands::{SceneCommand, SceneCommands};
 use crate::scene_internals::{BundleAddPlan, BundleSpawnPlan};
 use crate::{
     Component, ComponentTuple, EcsError, Entity, EntityLocation, IdQueue, NeededComponent,
-    NeededComponents, QueryTarget, QueryTargets, RequiredComponent, RequiredComponents, Tick,
+    NeededComponents, QueryTarget, QueryTargets, RequiredBundle, RequiredComponents, Tick,
 };
 use comet_log::*;
 use comet_structs::{Column, ComponentSet};
@@ -32,7 +32,7 @@ pub struct Scene {
     component_registry: Vec<Option<TypeId>>,
     component_index: HashMap<TypeId, usize>,
     component_info: HashMap<TypeId, ComponentInfo>,
-    required_components: HashMap<TypeId, Vec<RequiredComponent>>,
+    required_components: HashMap<TypeId, Vec<RequiredBundle>>,
     needed_components: HashMap<TypeId, Vec<NeededComponent>>,
     needed_by: HashMap<TypeId, HashSet<TypeId>>,
     query_targets: HashMap<TypeId, Vec<QueryTarget>>,
@@ -43,6 +43,7 @@ pub struct Scene {
     bundle_spawn_cache: HashMap<TypeId, BundleSpawnPlan>,
     bundle_add_cache: HashMap<(usize, TypeId), Option<BundleAddPlan>>,
     component_change_state: HashMap<(u32, TypeId), ComponentChangeState>,
+    entity_spawn_ticks: HashMap<Entity, Tick>,
     removed_component_events: HashMap<TypeId, Vec<(Entity, Tick)>>,
     prefabs: PrefabManager,
     commands: SceneCommands,
@@ -73,6 +74,7 @@ impl Scene {
             bundle_spawn_cache: HashMap::new(),
             bundle_add_cache: HashMap::new(),
             component_change_state: HashMap::new(),
+            entity_spawn_ticks: HashMap::new(),
             removed_component_events: HashMap::new(),
             prefabs: PrefabManager::new(),
             commands: SceneCommands::new(),
@@ -378,6 +380,8 @@ impl Scene {
             self.entities[index as usize] = Some(id);
         }
 
+        self.entity_spawn_ticks
+            .insert(id, self.component_event_tick);
         self.active_entities += 1;
         self.get_next_id();
         id
@@ -459,6 +463,7 @@ impl Scene {
         }
 
         self.entities[idx] = None;
+        self.entity_spawn_ticks.remove(&entity_id);
         if idx < self.entity_locations.len() {
             self.entity_locations[idx] = None;
         }
@@ -532,25 +537,35 @@ impl Scene {
     ) -> Option<(Vec<TypeId>, Vec<TypeId>, Vec<TypeId>, Vec<TypeId>)> {
         let with_components = Self::normalized_components(with_components);
         let without_components = Self::normalized_components(without_components);
-        let with_any_components = Self::normalized_components(with_any_components);
+        let mut with_any_components = Self::normalized_components(with_any_components);
         let without_any_components = Self::normalized_components(without_any_components);
 
-        let mut include_components = with_components.clone();
-        include_components.extend(with_any_components.iter().copied());
-        include_components.sort_unstable();
-        include_components.dedup();
+        let mut excluded_components = without_components.clone();
+        excluded_components.extend(without_any_components.iter().copied());
+        excluded_components.sort_unstable();
+        excluded_components.dedup();
 
-        let mut exclude_components = without_components.clone();
-        exclude_components.extend(without_any_components.iter().copied());
-        exclude_components.sort_unstable();
-        exclude_components.dedup();
-
-        if include_components
+        if with_components
             .iter()
-            .any(|component_type| exclude_components.binary_search(component_type).is_ok())
+            .any(|component_type| excluded_components.binary_search(component_type).is_ok())
         {
             return None;
         }
+
+        if with_components
+            .iter()
+            .any(|component_type| with_any_components.binary_search(component_type).is_ok())
+        {
+            with_any_components.clear();
+        } else if !with_any_components.is_empty() {
+            with_any_components.retain(|component_type| {
+                excluded_components.binary_search(component_type).is_err()
+            });
+            if with_any_components.is_empty() {
+                return None;
+            }
+        }
+
         Some((
             with_components,
             without_components,
@@ -681,7 +696,7 @@ impl Scene {
         let mut requirements = RequiredComponents::new();
         C::register_required_components(&mut requirements);
         self.required_components
-            .insert(type_id, requirements.into_components());
+            .insert(type_id, requirements.into_bundles());
 
         let mut needs = NeededComponents::new();
         C::register_needed_components(&mut needs);
@@ -886,11 +901,24 @@ impl Scene {
             .unwrap_or_default();
 
         for required in requirements {
-            (required.register_fn)(self);
-            if present.insert(required.type_id) {
-                components.push((required.factory)());
+            if required
+                .component_types
+                .iter()
+                .any(|component_type| !present.contains(component_type))
+            {
+                let required_components = (required.factory)();
+                for component in &required_components {
+                    (component.register_fn)(self);
+                }
+                for component in required_components {
+                    if present.insert(component.type_id) {
+                        components.push(component);
+                    }
+                }
             }
-            self.expand_requirements_from(required.type_id, components, present, states, stack);
+            for component_type in required.component_types {
+                self.expand_requirements_from(component_type, components, present, states, stack);
+            }
         }
 
         let popped = stack.pop();
@@ -1466,16 +1494,22 @@ impl Scene {
         &self.component_change_state
     }
 
+    pub(crate) fn query_spawn_ticks(&self) -> &HashMap<Entity, Tick> {
+        &self.entity_spawn_ticks
+    }
+
     pub(crate) fn query_parts_mut(
         &mut self,
     ) -> (
         &mut crate::archetypes::Archetypes,
         &mut HashMap<(u32, TypeId), ComponentChangeState>,
+        &HashMap<Entity, Tick>,
         Tick,
     ) {
         (
             &mut self.archetypes,
             &mut self.component_change_state,
+            &self.entity_spawn_ticks,
             self.component_event_tick,
         )
     }
@@ -2357,37 +2391,6 @@ mod tests {
 
         let changed_count = scene.query::<&Value, crate::Changed<Value>>().count();
         assert_eq!(changed_count, 1);
-    }
-
-    #[test]
-    fn temporal_query_constraints_can_use_different_since_ticks_per_filter() {
-        let mut scene = Scene::new();
-        scene.ensure_component::<Value>();
-        scene.ensure_component::<A>();
-
-        scene.set_component_event_tick(5);
-        let entity = scene.new_entity();
-        scene.add_components(entity, Value(1));
-        scene.add_components(entity, A);
-
-        scene.set_component_event_tick(10);
-        if let Some(value) = scene.get_component_mut::<A>(entity) {
-            *value = A;
-        }
-
-        let matching = scene
-            .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
-            .added_since::<Value>(4)
-            .changed_since::<A>(9)
-            .count();
-        assert_eq!(matching, 1);
-
-        let non_matching = scene
-            .query::<&Value, (crate::Added<Value>, crate::Changed<A>)>()
-            .added_since::<Value>(6)
-            .changed_since::<A>(10)
-            .count();
-        assert_eq!(non_matching, 0);
     }
 
     #[test]

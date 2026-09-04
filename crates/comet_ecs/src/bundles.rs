@@ -50,6 +50,11 @@ pub trait Bundle: 'static {
     }
 }
 
+#[doc(hidden)]
+pub trait BundleInfo: Bundle {
+    fn component_type_ids() -> Vec<TypeId>;
+}
+
 #[macro_export]
 macro_rules! bundle {
     ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
@@ -130,6 +135,14 @@ macro_rules! bundle {
                     );
                     offset = end;
                 )*
+            }
+        }
+
+        impl $crate::__private::BundleInfo for $name {
+            fn component_type_ids() -> Vec<std::any::TypeId> {
+                let mut type_ids = Vec::new();
+                $(type_ids.extend(<$ty as $crate::__private::BundleInfo>::component_type_ids());)*
+                type_ids
             }
         }
     };

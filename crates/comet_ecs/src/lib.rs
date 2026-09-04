@@ -9,8 +9,16 @@ pub use entity::*;
 pub use error::EcsError;
 pub use id::*;
 pub use prefabs::{ErasedComponent, PrefabFactory};
+#[doc(hidden)]
+pub use query::QueryItem;
 pub use query::{
-    Added, Changed, Query, QueryParam, QuerySpec, QuerySpecMut, With, WithAny, Without, WithoutAny,
+    Added, AddedAll, AddedAny, AddedAtLeast, AddedAtLeastOf, AddedAtMost, AddedAtMostOf,
+    AddedExactly, AddedExactlyOf, Amount, AtLeast, AtLeastOf, AtMost, AtMostOf, Changed,
+    ChangedAll, ChangedAny, ChangedAtLeast, ChangedAtLeastOf, ChangedAtMost, ChangedAtMostOf,
+    ChangedExactly, ChangedExactlyOf, Count, CountOf, Exactly, ExactlyOf, First, Last, Modified,
+    ModifiedAll, ModifiedAny, ModifiedAtLeast, ModifiedAtLeastOf, ModifiedAtMost, ModifiedAtMostOf,
+    ModifiedExactly, ModifiedExactlyOf, Not, Or, Query, QueryParam, QuerySpec, QuerySpecMut, Range,
+    Skip, Spawned, Take, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
 };
 pub use scene::*;
 pub use scene_commands::{SceneCommand, SceneCommands};
@@ -20,6 +28,7 @@ pub type Tick = u32;
 
 #[doc(hidden)]
 pub mod __private {
+    pub use crate::bundles::BundleInfo;
     pub use comet_structs::Column;
 }
 

@@ -1,3 +1,4 @@
+use crate::bundles::BundleInfo;
 use crate::{Bundle, Component, EcsError, ErasedComponent, Scene};
 use comet_structs::Column;
 use std::any::TypeId;
@@ -50,6 +51,12 @@ impl Bundle for () {
     }
 }
 
+impl BundleInfo for () {
+    fn component_type_ids() -> Vec<TypeId> {
+        Vec::new()
+    }
+}
+
 impl<C: Component> Bundle for C {
     fn into_components(self) -> Vec<ErasedComponent> {
         vec![ErasedComponent::new(self)]
@@ -80,6 +87,12 @@ impl<C: Component> Bundle for C {
         unsafe {
             columns[col_idx].push_unchecked_reserved::<C>(self);
         }
+    }
+}
+
+impl<C: Component> BundleInfo for C {
+    fn component_type_ids() -> Vec<TypeId> {
+        vec![TypeId::of::<C>()]
     }
 }
 
@@ -159,6 +172,14 @@ macro_rules! impl_component_tuple {
                     $name.write_components_reserved(columns, &column_indices[offset..end], row);
                     offset = end;
                 )+
+            }
+        }
+
+        impl<$($name: BundleInfo),+> BundleInfo for ($($name,)+) {
+            fn component_type_ids() -> Vec<TypeId> {
+                let mut type_ids = Vec::new();
+                $(type_ids.extend($name::component_type_ids());)+
+                type_ids
             }
         }
     };

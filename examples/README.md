@@ -21,4 +21,5 @@ cargo run --example <example_name>
 | [prefabs](prefabs.rs) | Registers and spawns prefab entities. |
 | [required_components](required_components.rs) | Uses `#[require(...)]` to insert required components automatically. |
 | [query_change_filters](query_change_filters.rs) | Uses the typed `Added<T>` and `Changed<T>` query filters. |
+| [trait_query](trait_query.rs) | Defines stat components and recursive bundles for trait queries. |
 | [gizmos](gizmos.rs) | Defines a component gizmo and controls its visibility. |

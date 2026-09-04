@@ -116,12 +116,18 @@ pub mod prelude {
         sRgba, Color as CometColor, Hsla, Hsva, Hwba, Laba, Lcha, LinearRgba, Oklaba, Oklcha, Xyza,
     };
     pub use comet_ecs::{
-        bundle, register_prefab, spawn_prefab, Added, Anchor, Bundle, Camera, Camera2d, Camera3d,
-        CameraViewport, Changed, Collider, Component, EcsModule, EcsModuleExt, Entity,
-        EcsError, NeededComponents, OrthographicProjection, PerspectiveProjection, Projection,
-        Query, QueryTargets, RequiredComponents, ResolutionScaling, Scene, Screen, ScreenPosition,
-        Sprite, Text, TextJustification, TextLayout, TextSize, Timer, Transform, With, WithAny,
-        Without, WithoutAny,
+        bundle, register_prefab, spawn_prefab, Added, AddedAll, AddedAny, AddedAtLeast,
+        AddedAtLeastOf, AddedAtMost, AddedAtMostOf, AddedExactly, AddedExactlyOf, Amount, Anchor,
+        AtLeast, AtLeastOf, AtMost, AtMostOf, Bundle, Camera, Camera2d, Camera3d, CameraViewport,
+        Changed, ChangedAll, ChangedAny, ChangedAtLeast, ChangedAtLeastOf, ChangedAtMost,
+        ChangedAtMostOf, ChangedExactly, ChangedExactlyOf, Collider, Component, Count, CountOf,
+        EcsError, EcsModule, EcsModuleExt, Entity, Exactly, ExactlyOf, First, Last, Modified,
+        ModifiedAll, ModifiedAny, ModifiedAtLeast, ModifiedAtLeastOf, ModifiedAtMost,
+        ModifiedAtMostOf, ModifiedExactly, ModifiedExactlyOf, NeededComponents, Not, Or,
+        OrthographicProjection, PerspectiveProjection, Projection, Query, QueryTargets, Range,
+        RequiredComponents, ResolutionScaling, Scene, Screen, ScreenPosition, Skip, Spawned,
+        Sprite, Take, Text, TextJustification, TextLayout, TextSize, Timer, Transform, With,
+        WithAll, WithAny, Without, WithoutAll, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{
