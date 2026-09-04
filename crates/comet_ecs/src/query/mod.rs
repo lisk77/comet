@@ -28,8 +28,10 @@ pub use filters::{
     Added, AddedAll, AddedAny, AddedAtLeast, AddedAtLeastOf, AddedAtMost, AddedAtMostOf,
     AddedExactly, AddedExactlyOf, AtLeast, AtLeastOf, AtMost, AtMostOf, Changed, ChangedAll,
     ChangedAny, ChangedAtLeast, ChangedAtLeastOf, ChangedAtMost, ChangedAtMostOf, ChangedExactly,
-    ChangedExactlyOf, Count, CountOf, Exactly, ExactlyOf, Not, Or, QueryParam, Spawned, With,
-    WithAll, WithAny, Without, WithoutAll, WithoutAny,
+    ChangedExactlyOf, Count, CountOf, Exactly, ExactlyOf, Modified, ModifiedAll, ModifiedAny,
+    ModifiedAtLeast, ModifiedAtLeastOf, ModifiedAtMost, ModifiedAtMostOf, ModifiedExactly,
+    ModifiedExactlyOf, Not, Or, QueryParam, Spawned, With, WithAll, WithAny, Without, WithoutAll,
+    WithoutAny,
 };
 pub use query_data::QueryItem;
 pub(crate) use query_data::{

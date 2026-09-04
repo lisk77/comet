@@ -224,6 +224,17 @@ fn resolve_temporal_count_filter(
                             **component_type,
                             since_tick,
                         ),
+                        TemporalFilterKind::Modified => {
+                            scene.component_changed_since_type(
+                                *entity,
+                                **component_type,
+                                since_tick,
+                            ) && !scene.component_added_since_type(
+                                *entity,
+                                **component_type,
+                                since_tick,
+                            )
+                        }
                     })
                     .count();
                 count >= min && count <= max
@@ -280,6 +291,9 @@ fn resolve_filter(
             resolve_change_filter(scene, arch, components, targets, *type_id, *since_tick),
         ),
         QueryFilterExpr::Changed(type_id, since_tick) => ResolvedQueryFilter::Changed(
+            resolve_change_filter(scene, arch, components, targets, *type_id, *since_tick),
+        ),
+        QueryFilterExpr::Modified(type_id, since_tick) => ResolvedQueryFilter::Modified(
             resolve_change_filter(scene, arch, components, targets, *type_id, *since_tick),
         ),
         QueryFilterExpr::Spawned(since_tick) => ResolvedQueryFilter::Spawned(*since_tick),

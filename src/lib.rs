@@ -121,11 +121,13 @@ pub mod prelude {
         AtLeast, AtLeastOf, AtMost, AtMostOf, Bundle, Camera, Camera2d, Camera3d, CameraViewport,
         Changed, ChangedAll, ChangedAny, ChangedAtLeast, ChangedAtLeastOf, ChangedAtMost,
         ChangedAtMostOf, ChangedExactly, ChangedExactlyOf, Collider, Component, Count, CountOf,
-        EcsError, EcsModule, EcsModuleExt, Entity, Exactly, ExactlyOf, First, Last,
-        NeededComponents, Not, Or, OrthographicProjection, PerspectiveProjection, Projection,
-        Query, QueryTargets, Range, RequiredComponents, ResolutionScaling, Scene, Screen,
-        ScreenPosition, Skip, Spawned, Sprite, Take, Text, TextJustification, TextLayout, TextSize,
-        Timer, Transform, With, WithAll, WithAny, Without, WithoutAll, WithoutAny,
+        EcsError, EcsModule, EcsModuleExt, Entity, Exactly, ExactlyOf, First, Last, Modified,
+        ModifiedAll, ModifiedAny, ModifiedAtLeast, ModifiedAtLeastOf, ModifiedAtMost,
+        ModifiedAtMostOf, ModifiedExactly, ModifiedExactlyOf, NeededComponents, Not, Or,
+        OrthographicProjection, PerspectiveProjection, Projection, Query, QueryTargets, Range,
+        RequiredComponents, ResolutionScaling, Scene, Screen, ScreenPosition, Skip, Spawned,
+        Sprite, Take, Text, TextJustification, TextLayout, TextSize, Timer, Transform, With,
+        WithAll, WithAny, Without, WithoutAll, WithoutAny,
     };
     pub use comet_gizmos::{Gizmo, GizmoBuffer};
     pub use comet_input::{

@@ -15,6 +15,7 @@ pub(crate) struct ResolvedTemporalCountFilter {
 pub(crate) enum TemporalFilterKind {
     Added,
     Changed,
+    Modified,
 }
 
 #[derive(Clone)]
@@ -25,6 +26,7 @@ pub(crate) enum QueryFilterExpr {
     TemporalCount(Arc<[TypeId]>, usize, usize, Tick, TemporalFilterKind),
     Added(TypeId, Tick),
     Changed(TypeId, Tick),
+    Modified(TypeId, Tick),
     Spawned(Tick),
     And(Vec<Self>),
     Or(Vec<Self>),
@@ -122,7 +124,7 @@ impl QueryFilterExpr {
                     ArchetypeFilterMatch::Dynamic
                 }
             }
-            Self::Added(type_id, _) | Self::Changed(type_id, _) => {
+            Self::Added(type_id, _) | Self::Changed(type_id, _) | Self::Modified(type_id, _) => {
                 if target_count(std::slice::from_ref(type_id)) > 0 {
                     ArchetypeFilterMatch::Dynamic
                 } else {
@@ -162,6 +164,7 @@ impl QueryFilterExpr {
             | Self::False
             | Self::Added(_, _)
             | Self::Changed(_, _)
+            | Self::Modified(_, _)
             | Self::Spawned(_) => false,
         }
     }
@@ -214,6 +217,7 @@ pub(crate) enum ResolvedQueryFilter {
     False,
     Added(ResolvedChangeFilter),
     Changed(ResolvedChangeFilter),
+    Modified(ResolvedChangeFilter),
     TemporalCount(ResolvedTemporalCountFilter),
     Spawned(Tick),
     And(Vec<Self>),
@@ -284,6 +288,9 @@ impl ResolvedQueryFilter {
             Self::Changed(filter) => unsafe {
                 matches_change_filter(change_state, entity, filter, |state| state.changed_tick)
             },
+            Self::Modified(filter) => unsafe {
+                matches_modified_filter(change_state, entity, filter)
+            },
             Self::TemporalCount(filter) => filter.matching_entities.contains(&entity),
             Self::Spawned(since_tick) => unsafe {
                 (&*spawn_ticks)
@@ -312,6 +319,22 @@ unsafe fn matches_change_filter(
         change_state
             .get(&(entity.index, *type_id))
             .is_some_and(|state| tick_is_newer_than(tick(state), filter.since_tick))
+    })
+}
+
+unsafe fn matches_modified_filter(
+    change_state: *const HashMap<(u32, TypeId), ComponentChangeState>,
+    entity: Entity,
+    filter: &ResolvedChangeFilter,
+) -> bool {
+    let change_state = unsafe { &*change_state };
+    filter.component_types.iter().any(|type_id| {
+        change_state
+            .get(&(entity.index, *type_id))
+            .is_some_and(|state| {
+                tick_is_newer_than(state.changed_tick, filter.since_tick)
+                    && !tick_is_newer_than(state.added_tick, filter.since_tick)
+            })
     })
 }
 
@@ -370,6 +393,7 @@ pub(super) fn simple_filters(expression: &QueryFilterExpr) -> Option<SimpleQuery
         | QueryFilterExpr::TemporalCount(_, _, _, _, _)
         | QueryFilterExpr::Added(_, _)
         | QueryFilterExpr::Changed(_, _)
+        | QueryFilterExpr::Modified(_, _)
         | QueryFilterExpr::Spawned(_) => Some(SimpleQueryFilters::default()),
         QueryFilterExpr::False => None,
         QueryFilterExpr::Count(type_ids, 1, usize::MAX) if type_ids.len() == 1 => {

@@ -20,6 +20,7 @@ pub struct CountOf<Components, const MIN: usize, const MAX: usize, Condition = (
 );
 pub struct Added<C: ?Sized>(PhantomData<C>);
 pub struct Changed<C: ?Sized>(PhantomData<C>);
+pub struct Modified<C: ?Sized>(PhantomData<C>);
 pub struct Spawned;
 pub struct Or<Filters>(PhantomData<Filters>);
 pub struct Not<Filter>(PhantomData<Filter>);
@@ -29,6 +30,7 @@ pub trait FilterTuple {
     type With;
     type Added;
     type Changed;
+    type Modified;
 }
 
 pub(crate) trait FilterTupleInfo {
@@ -39,6 +41,7 @@ impl FilterTuple for () {
     type With = ();
     type Added = ();
     type Changed = ();
+    type Modified = ();
 }
 
 impl FilterTupleInfo for () {
@@ -53,6 +56,7 @@ macro_rules! impl_filter_tuple {
             type With = ($(With<$name>,)+);
             type Added = ($(Added<$name>,)+);
             type Changed = ($(Changed<$name>,)+);
+            type Modified = ($(Modified<$name>,)+);
         }
 
         impl<$($name: Component),+> FilterTupleInfo for ($($name,)+) {
@@ -89,6 +93,8 @@ pub type AddedAll<Cs> = <Cs as FilterTuple>::Added;
 pub type AddedAny<Cs> = Or<<Cs as FilterTuple>::Added>;
 pub type ChangedAll<Cs> = <Cs as FilterTuple>::Changed;
 pub type ChangedAny<Cs> = Or<<Cs as FilterTuple>::Changed>;
+pub type ModifiedAll<Cs> = <Cs as FilterTuple>::Modified;
+pub type ModifiedAny<Cs> = Or<<Cs as FilterTuple>::Modified>;
 pub type AddedExactly<C, const COUNT: usize> = Count<C, COUNT, COUNT, Added<C>>;
 pub type AddedAtLeast<C, const COUNT: usize> = Count<C, COUNT, { usize::MAX }, Added<C>>;
 pub type AddedAtMost<C, const COUNT: usize> = Count<C, 0, COUNT, Added<C>>;
@@ -107,6 +113,15 @@ pub type ChangedAtLeastOf<Components, const COUNT: usize> =
     CountOf<Components, COUNT, { usize::MAX }, Changed<Components>>;
 pub type ChangedAtMostOf<Components, const COUNT: usize> =
     CountOf<Components, 0, COUNT, Changed<Components>>;
+pub type ModifiedExactly<C, const COUNT: usize> = Count<C, COUNT, COUNT, Modified<C>>;
+pub type ModifiedAtLeast<C, const COUNT: usize> = Count<C, COUNT, { usize::MAX }, Modified<C>>;
+pub type ModifiedAtMost<C, const COUNT: usize> = Count<C, 0, COUNT, Modified<C>>;
+pub type ModifiedExactlyOf<Components, const COUNT: usize> =
+    CountOf<Components, COUNT, COUNT, Modified<Components>>;
+pub type ModifiedAtLeastOf<Components, const COUNT: usize> =
+    CountOf<Components, COUNT, { usize::MAX }, Modified<Components>>;
+pub type ModifiedAtMostOf<Components, const COUNT: usize> =
+    CountOf<Components, 0, COUNT, Modified<Components>>;
 
 pub(crate) trait QueryFilterSet {
     fn expression(scene: &Scene) -> QueryFilterExpr;
@@ -162,6 +177,20 @@ impl<Components: FilterTupleInfo, const MIN: usize, const MAX: usize> QueryFilte
     }
 }
 
+impl<Components: FilterTupleInfo, const MIN: usize, const MAX: usize> QueryFilterSet
+    for CountOf<Components, MIN, MAX, Modified<Components>>
+{
+    fn expression(scene: &Scene) -> QueryFilterExpr {
+        QueryFilterExpr::temporal_count(
+            Components::type_ids().into(),
+            MIN,
+            MAX,
+            scene.default_query_since_tick(),
+            TemporalFilterKind::Modified,
+        )
+    }
+}
+
 impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
     for Count<C, MIN, MAX, Added<C>>
 {
@@ -190,6 +219,20 @@ impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
     }
 }
 
+impl<C: ?Sized + Component, const MIN: usize, const MAX: usize> QueryFilterSet
+    for Count<C, MIN, MAX, Modified<C>>
+{
+    fn expression(scene: &Scene) -> QueryFilterExpr {
+        QueryFilterExpr::temporal_count(
+            vec![TypeId::of::<C>()].into(),
+            MIN,
+            MAX,
+            scene.default_query_since_tick(),
+            TemporalFilterKind::Modified,
+        )
+    }
+}
+
 impl<C: ?Sized + Component> QueryFilterSet for Added<C> {
     fn expression(scene: &Scene) -> QueryFilterExpr {
         QueryFilterExpr::Added(TypeId::of::<C>(), scene.default_query_since_tick())
@@ -199,6 +242,12 @@ impl<C: ?Sized + Component> QueryFilterSet for Added<C> {
 impl<C: ?Sized + Component> QueryFilterSet for Changed<C> {
     fn expression(scene: &Scene) -> QueryFilterExpr {
         QueryFilterExpr::Changed(TypeId::of::<C>(), scene.default_query_since_tick())
+    }
+}
+
+impl<C: ?Sized + Component> QueryFilterSet for Modified<C> {
+    fn expression(scene: &Scene) -> QueryFilterExpr {
+        QueryFilterExpr::Modified(TypeId::of::<C>(), scene.default_query_since_tick())
     }
 }
 
