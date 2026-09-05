@@ -591,7 +591,7 @@ impl Scene {
         without_components: &[TypeId],
         with_any_components: &[TypeId],
         without_any_components: &[TypeId],
-    ) -> Vec<(usize, usize)> {
+    ) -> (Vec<(usize, usize)>, bool, usize) {
         let Some((
             with_components,
             without_components,
@@ -604,7 +604,7 @@ impl Scene {
             without_any_components,
         )
         else {
-            return Vec::new();
+            return (Vec::new(), false, 0);
         };
 
         {
@@ -617,7 +617,7 @@ impl Scene {
                 &with_any_components,
                 &without_any_components,
             ) {
-                return matches;
+                return (matches, true, 0);
             }
         }
 
@@ -653,7 +653,8 @@ impl Scene {
             &without_any_components,
             matches.clone(),
         );
-        matches
+        let inspected = self.archetypes.len();
+        (matches, false, inspected)
     }
 
     fn has_live_component_instances(&self, type_id: TypeId) -> bool {

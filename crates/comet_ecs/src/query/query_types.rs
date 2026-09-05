@@ -7,17 +7,24 @@ pub struct Query<'a, Data, Filters = ()> {
     pub(crate) row_ranges: Vec<QueryRange>,
     pub(crate) selected_entities: Option<HashSet<Entity>>,
     pub(crate) selected_rows: Option<HashSet<(usize, usize)>>,
+    pub(crate) diagnostics: QueryDiagnostics,
     pub(crate) _marker: PhantomData<(&'a (), Data, Filters)>,
 }
 
 impl<'a, Data, Filters> Query<'a, Data, Filters> {
-    pub(crate) fn from_state(scene: &'a Scene, state: QueryFilterState) -> Self
+    pub(crate) fn from_state(
+        scene: &'a Scene,
+        state: QueryFilterState,
+        mut diagnostics: QueryDiagnostics,
+    ) -> Self
     where
         Data: QueryData<'a>,
     {
+        diagnostics.begin_planning();
         let layout = Data::layout();
         let row_ranges = concrete_row_ranges(scene, &layout.components, &layout.amounts);
-        let accesses = build_query_accesses(scene, &state, &layout);
+        let accesses = build_query_accesses(scene, &state, &layout, &mut diagnostics);
+        diagnostics.finish_build(&layout, &accesses, row_ranges.len());
         Self {
             accesses,
             idx: 0,
@@ -25,17 +32,24 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
             row_ranges,
             selected_entities: None,
             selected_rows: None,
+            diagnostics,
             _marker: PhantomData,
         }
     }
 
-    pub(crate) fn from_state_mut(scene: &'a mut Scene, state: QueryFilterState) -> Self
+    pub(crate) fn from_state_mut(
+        scene: &'a mut Scene,
+        state: QueryFilterState,
+        mut diagnostics: QueryDiagnostics,
+    ) -> Self
     where
         Data: QueryData<'a>,
     {
+        diagnostics.begin_planning();
         let layout = Data::layout();
         let row_ranges = concrete_row_ranges(scene, &layout.components, &layout.amounts);
-        let accesses = build_query_accesses_mut(scene, &state, &layout);
+        let accesses = build_query_accesses_mut(scene, &state, &layout, &mut diagnostics);
+        diagnostics.finish_build(&layout, &accesses, row_ranges.len());
         Self {
             accesses,
             idx: 0,
@@ -43,6 +57,7 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
             row_ranges,
             selected_entities: None,
             selected_rows: None,
+            diagnostics,
             _marker: PhantomData,
         }
     }
@@ -61,5 +76,11 @@ impl<'a, Data, Filters> Query<'a, Data, Filters> {
         self.selected_entities = None;
         self.selected_rows = None;
         self
+    }
+}
+
+impl<Data, Filters> Drop for Query<'_, Data, Filters> {
+    fn drop(&mut self) {
+        self.diagnostics.publish();
     }
 }

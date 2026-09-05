@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = []
-diagnostics = []
+diagnostics = ["dep:comet_diagnostics", "dep:serde"]
 
 [dependencies]
 comet_app = { workspace = true }
@@ -17,4 +17,6 @@ comet_structs = { workspace = true }
 comet_colors = { workspace = true }
 comet_gizmos = { workspace = true }
 thiserror = { workspace = true }
+comet_diagnostics = { workspace = true, optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
 wgpu = { workspace = true }

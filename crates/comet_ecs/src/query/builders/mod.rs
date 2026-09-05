@@ -344,12 +344,14 @@ fn resolved_accesses(
     scene: &Scene,
     components: &[QueryComponent],
     state: &QueryFilterState,
+    diagnostics: &mut QueryDiagnostics,
 ) -> Vec<(usize, [Option<QueryTarget>; MAX_QUERY_COMPONENTS])> {
     if components.is_empty() {
         return scene
             .archetypes()
             .iter()
             .enumerate()
+            .inspect(|_| diagnostics.inspect_archetype())
             .filter(|(_, archetype)| archetype_matches_filters(scene, archetype, state))
             .map(|(archetype, _)| (archetype, std::array::from_fn(|_| None)))
             .collect();
@@ -388,6 +390,7 @@ fn resolved_accesses(
         && uses_candidate_ranges(scene, components[0].type_id)
     {
         for (arch_id, arch) in scene.archetypes().iter().enumerate() {
+            diagnostics.inspect_archetype();
             if !archetype_matches_filters(scene, arch, state) {
                 continue;
             }
@@ -405,6 +408,7 @@ fn resolved_accesses(
         for anchor in anchor_targets {
             if scan_archetypes {
                 for (arch_id, arch) in scene.archetypes().iter().enumerate() {
+                    diagnostics.inspect_archetype();
                     if arch.column_index(anchor.component_type).is_none()
                         || !archetype_matches_filters(scene, arch, state)
                     {
@@ -418,13 +422,22 @@ fn resolved_accesses(
                 }
             } else {
                 let simple = state.simple.as_ref().unwrap();
-                for (arch_id, _) in scene.cached_single_plan(
+                let (matches, cache_hit, inspected) = scene.cached_single_plan(
                     anchor.component_type,
                     &simple.with_components,
                     &simple.without_components,
                     &simple.with_any_components,
                     &simple.without_any_components,
-                ) {
+                );
+                if cache_hit {
+                    diagnostics.cache_hit();
+                } else {
+                    diagnostics.cache_miss();
+                }
+                for _ in 0..inspected {
+                    diagnostics.inspect_archetype();
+                }
+                for (arch_id, _) in matches {
                     let arch = scene.archetypes().get(arch_id);
                     for targets in
                         resolve_archetype_targets(scene, arch, components, Some(anchor.clone()))
@@ -438,6 +451,7 @@ fn resolved_accesses(
     }
 
     for (arch_id, arch) in scene.archetypes().iter().enumerate() {
+        diagnostics.inspect_archetype();
         if !archetype_matches_filters(scene, arch, state) {
             continue;
         }
@@ -461,9 +475,11 @@ pub(crate) fn build_query_accesses(
     scene: &Scene,
     state: &QueryFilterState,
     layout: &QueryLayout,
+    diagnostics: &mut QueryDiagnostics,
 ) -> Vec<QueryAccess> {
     validate_components(&layout.components);
-    let resolved = resolved_accesses(scene, &layout.components, state);
+    let resolved = resolved_accesses(scene, &layout.components, state, diagnostics);
+    diagnostics.planned_combinations(resolved.len());
     let change_state = scene.query_change_state() as *const _ as *mut _;
     let spawn_ticks = scene.query_spawn_ticks() as *const _;
     let component_event_tick = scene.component_event_tick();
@@ -483,6 +499,7 @@ pub(crate) fn build_query_accesses(
             &mut temporal_count_cache,
         );
         if filter.is_false() {
+            diagnostics.filtered_access();
             continue;
         }
         let amounts = (!layout.amounts.is_empty()).then(|| {
@@ -530,11 +547,14 @@ pub(crate) fn build_query_accesses_mut(
     scene: &mut Scene,
     state: &QueryFilterState,
     layout: &QueryLayout,
+    diagnostics: &mut QueryDiagnostics,
 ) -> Vec<QueryAccess> {
     validate_components(&layout.components);
     let mut temporal_count_cache = TemporalCountCache::new();
     let mut amount_cache: HashMap<usize, Arc<[usize]>> = HashMap::new();
-    let resolved = resolved_accesses(scene, &layout.components, state)
+    let resolved_accesses = resolved_accesses(scene, &layout.components, state, diagnostics);
+    diagnostics.planned_combinations(resolved_accesses.len());
+    let resolved = resolved_accesses
         .into_iter()
         .filter_map(|(arch_id, targets)| {
             let arch = scene.archetypes().get(arch_id);
@@ -548,6 +568,7 @@ pub(crate) fn build_query_accesses_mut(
                 &mut temporal_count_cache,
             );
             if filter.is_false() {
+                diagnostics.filtered_access();
                 return None;
             }
             let amounts = (!layout.amounts.is_empty()).then(|| {

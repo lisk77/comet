@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 mod aggregates;
 mod builders;
+mod diagnostics;
 mod fetch;
 mod filters;
 mod iterators;
@@ -17,6 +18,7 @@ mod selectors;
 
 pub use aggregates::Amount;
 pub(crate) use builders::{build_query_accesses, build_query_accesses_mut};
+pub(crate) use diagnostics::QueryDiagnostics;
 pub(crate) use fetch::{EntityFetch, QueryAccess, ReadFetch, WriteFetch};
 pub(crate) use filters::{
     typed_filters, ArchetypeFilterMatch, QueryFilterExpr, QueryFilterSet, QueryFilterState,

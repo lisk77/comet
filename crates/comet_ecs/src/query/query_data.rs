@@ -483,7 +483,8 @@ where
     type Filters = Filters;
 
     fn build(scene: &'a Scene) -> Query<'a, Data, Filters> {
-        Query::from_state(scene, typed_filters::<Filters>(scene))
+        let diagnostics = QueryDiagnostics::new::<Data, Filters>(false, scene.archetypes().len());
+        Query::from_state(scene, typed_filters::<Filters>(scene), diagnostics)
     }
 }
 
@@ -496,7 +497,8 @@ where
     type Filters = Filters;
 
     fn build(scene: &'a mut Scene) -> Query<'a, Data, Filters> {
+        let diagnostics = QueryDiagnostics::new::<Data, Filters>(true, scene.archetypes().len());
         let state = typed_filters::<Filters>(scene);
-        Query::from_state_mut(scene, state)
+        Query::from_state_mut(scene, state, diagnostics)
     }
 }
