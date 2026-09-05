@@ -3,6 +3,10 @@ name = "comet_audio"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+diagnostics = []
+
 [dependencies]
 kira = "0.10.8"
 comet_assets = { workspace = true }

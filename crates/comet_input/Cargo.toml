@@ -3,6 +3,10 @@ name = "comet_input"
 version = "0.1.1"
 edition = "2021"
 
+[features]
+default = []
+diagnostics = []
+
 [dependencies]
 comet_app = { workspace = true }
 comet_window = { workspace = true }

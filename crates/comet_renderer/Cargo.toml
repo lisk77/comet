@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 comet_debug = []
+diagnostics = ["dep:comet_diagnostics", "dep:serde"]
 
 [dependencies]
 comet_app = { workspace = true }
@@ -18,6 +19,8 @@ comet_assets = { workspace = true }
 comet_colors = { workspace = true }
 comet_log = { workspace = true }
 comet_structs = { workspace = true }
+comet_diagnostics = { workspace = true, optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
 bytemuck = { workspace = true }
 cgmath = "0.18"
 wgpu = { workspace = true, features = ["glsl", "wgsl", "naga-ir"] }

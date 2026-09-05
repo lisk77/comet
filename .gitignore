@@ -1,4 +1,5 @@
 /Cargo.lock
 /target
+/.comet
 /build.rs
 /src/main.rs
