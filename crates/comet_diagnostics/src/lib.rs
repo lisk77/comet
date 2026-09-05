@@ -1,9 +1,9 @@
 use serde::Serialize;
 use std::{
-    collections::HashSet,
-    fs::OpenOptions,
+    collections::{hash_map::Entry, HashMap, HashSet},
+    fs::{create_dir_all, File, OpenOptions},
     io::{BufWriter, Write},
-    path::PathBuf,
+    path::Path,
     sync::{mpsc, Arc, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -48,11 +48,7 @@ impl Diagnostics {
                         .map(str::to_owned)
                         .collect()
                 });
-                let sender = std::env::var("COMET_DIAGNOSTICS_OUTPUT")
-                    .ok()
-                    .and_then(|output| output.strip_prefix("file:").map(PathBuf::from))
-                    .as_ref()
-                    .and_then(start_jsonl_writer);
+                let sender = selected.as_ref().and_then(|_| start_jsonl_writer());
                 Diagnostics {
                     enabled_modules: Arc::new(EnabledModules { selected }),
                     sender,
@@ -95,33 +91,68 @@ impl Diagnostics {
     }
 }
 
-fn start_jsonl_writer(path: &PathBuf) -> Option<mpsc::SyncSender<Record>> {
-    let file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)
-        .ok()?;
+fn start_jsonl_writer() -> Option<mpsc::SyncSender<Record>> {
     let (sender, receiver) = mpsc::sync_channel::<Record>(CHANNEL_CAPACITY);
     std::thread::Builder::new()
         .name("comet-diagnostics".to_owned())
         .spawn(move || {
-            let mut writer = BufWriter::new(file);
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |duration| duration.as_nanos());
+            let mut writers = HashMap::<&'static str, BufWriter<File>>::new();
             while let Ok(record) = receiver.recv() {
-                let json = JsonlRecord {
-                    timestamp_ms: record.timestamp_ms,
-                    module: record.module,
-                    kind: record.kind,
-                    data: &record.data,
+                let Some(writer) = writer_for(&mut writers, record.module, timestamp) else {
+                    continue;
                 };
-                if serde_json::to_writer(&mut writer, &json).is_err()
-                    || writer.write_all(b"\n").is_err()
-                    || writer.flush().is_err()
-                {
-                    break;
+                if write_record(writer, &record).is_err() {
+                    writers.remove(record.module);
                 }
             }
         })
         .ok()?;
     Some(sender)
+}
+
+fn writer_for<'a>(
+    writers: &'a mut HashMap<&'static str, BufWriter<File>>,
+    module: &'static str,
+    timestamp: u128,
+) -> Option<&'a mut BufWriter<File>> {
+    match writers.entry(module) {
+        Entry::Occupied(entry) => Some(entry.into_mut()),
+        Entry::Vacant(entry) => {
+            let directory = Path::new(".comet")
+                .join("diagnostics")
+                .join(module_directory(module));
+            create_dir_all(&directory).ok()?;
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(directory.join(format!("{timestamp}.jsonl")))
+                .ok()?;
+            Some(entry.insert(BufWriter::new(file)))
+        }
+    }
+}
+
+fn write_record(writer: &mut BufWriter<File>, record: &Record) -> Result<(), ()> {
+    let json = JsonlRecord {
+        timestamp_ms: record.timestamp_ms,
+        module: record.module,
+        kind: record.kind,
+        data: &record.data,
+    };
+    serde_json::to_writer(&mut *writer, &json).map_err(|_| ())?;
+    writer.write_all(b"\n").map_err(|_| ())?;
+    writer.flush().map_err(|_| ())
+}
+
+fn module_directory(module: &str) -> String {
+    module
+        .chars()
+        .map(|character| match character {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => character,
+            _ => '_',
+        })
+        .collect()
 }
